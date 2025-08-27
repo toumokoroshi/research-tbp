@@ -32,7 +32,8 @@
 // 任意の2組の軌道要素からSALIを計算する関数
 double calc_SALI(const std::array<double, 6>& ref_state,
                  const std::array<double, 6>& perturbed_state1,
-                 const std::array<double, 6>& perturbed_state2);
+                 const std::array<double, 6>& perturbed_state2,
+                int mode = 6);
 double calc_r1(const Point3D& point, const double mu);
 
 double calc_r2(const Point3D& point, const double mu);
@@ -480,38 +481,101 @@ int main() {
 
 double calc_SALI(const std::array<double, 6>& ref_state,
                  const std::array<double, 6>& perturbed_state1,
-                 const std::array<double, 6>& perturbed_state2) {
-    std::array<double, 3> q_ref{ref_state[0], ref_state[1], ref_state[2]};
-    std::array<double, 3> q_pertubed1{
-        perturbed_state1[0], perturbed_state1[1], perturbed_state1[2]};
-    std::array<double, 3> q_pertubed2{
-        perturbed_state2[0], perturbed_state2[1], perturbed_state2[2]};
-    std::array<double, 3> p_ref{
-        ref_state[3] - ref_state[0], ref_state[4] + ref_state[1], ref_state[5]};
-    std::array<double, 3> p_pertubed1{perturbed_state1[3] - perturbed_state1[0],
-                                      perturbed_state1[4] + perturbed_state1[1],
-                                      perturbed_state1[5]};
-    std::array<double, 3> p_pertubed2{perturbed_state2[3] - perturbed_state2[0],
-                                      perturbed_state2[4] + perturbed_state2[1],
-                                      perturbed_state2[5]};
-    Vector3d deviation_vec1{perturbed_state1[0] - ref_state[0],
-                            perturbed_state1[1] - ref_state[1],
-                            perturbed_state1[2] - ref_state[2]};
-    Vector3d deviation_vec2{perturbed_state2[0] - ref_state[0],
-                            perturbed_state2[1] - ref_state[1],
-                            perturbed_state2[2] - ref_state[2]};
+                 const std::array<double, 6>& perturbed_state2,
+                int mode) {
+    double SALI = 5.0;
+    if(mode == 3) {
+        std::array<double, 3> q_ref{ref_state[0], ref_state[1], ref_state[2]};
+        std::array<double, 3> q_pertubed1{
+            perturbed_state1[0], perturbed_state1[1], perturbed_state1[2]};
+        std::array<double, 3> q_pertubed2{
+            perturbed_state2[0], perturbed_state2[1], perturbed_state2[2]};
+        std::array<double, 3> p_ref{
+            ref_state[3] - ref_state[0], ref_state[4] + ref_state[1], ref_state[5]};
+        std::array<double, 3> p_pertubed1{perturbed_state1[3] - perturbed_state1[0],
+                                        perturbed_state1[4] + perturbed_state1[1],
+                                        perturbed_state1[5]};
+        std::array<double, 3> p_pertubed2{perturbed_state2[3] - perturbed_state2[0],
+                                        perturbed_state2[4] + perturbed_state2[1],
+                                        perturbed_state2[5]};
+        Vector3d deviation_vec1{perturbed_state1[0] - ref_state[0],
+                                perturbed_state1[1] - ref_state[1],
+                                perturbed_state1[2] - ref_state[2]};
+        Vector3d deviation_vec2{perturbed_state2[0] - ref_state[0],
+                                perturbed_state2[1] - ref_state[1],
+                                perturbed_state2[2] - ref_state[2]};
 
-    Vector3d normalized_dev_vec1 = deviation_vec1.normalise();
-    Vector3d normalized_dev_vec2 = deviation_vec2.normalise();
+        Vector3d normalized_dev_vec1 = deviation_vec1.normalise();
+        Vector3d normalized_dev_vec2 = deviation_vec2.normalise();
+        Vector3d sa = normalized_dev_vec1 - normalized_dev_vec2;
+        Vector3d wa = normalized_dev_vec1 + normalized_dev_vec2;
 
-    Vector3d sa = normalized_dev_vec1 - normalized_dev_vec2;
-    Vector3d wa = normalized_dev_vec1 + normalized_dev_vec2;
+        double sa_norm = sa.magnitude();
+        double wa_norm = wa.magnitude();
 
-    double sa_norm = sa.magnitude();
-    double wa_norm = wa.magnitude();
+        SALI = std::min(sa_norm, wa_norm);
+    }
+    else if(mode == 6) {
+        // refとの差分を計算
+        std::array<double, 6> diff1{
+            perturbed_state1[0] - ref_state[0],
+            perturbed_state1[1] - ref_state[1],
+            perturbed_state1[2] - ref_state[2],
+            perturbed_state1[3] - ref_state[3],
+            perturbed_state1[4] - ref_state[4],
+            perturbed_state1[5] - ref_state[5]};
+        std::array<double, 6> diff2{
+            perturbed_state2[0] - ref_state[0],
+            perturbed_state2[1] - ref_state[1],
+            perturbed_state2[2] - ref_state[2],
+            perturbed_state2[3] - ref_state[3],
+            perturbed_state2[4] - ref_state[4],
+            perturbed_state2[5] - ref_state[5]};
+        // 差分ベクトルを正規化
+        double norm1 = std::sqrt(diff1[0] * diff1[0] + diff1[1] * diff1[1] +
+                            diff1[2] * diff1[2] + diff1[3] * diff1[3] +
+                            diff1[4] * diff1[4] + diff1[5] * diff1[5]);
+        double norm2 = std::sqrt(diff2[0] * diff2[0] + diff2[1] * diff2[1] +
+                            diff2[2] * diff2[2] + diff2[3] * diff2[3] +
+                            diff2[4] * diff2[4] + diff2[5] * diff2[5]);
+        if (norm1 == 0 || norm2 == 0) {
+            // 差分ベクトルがゼロの場合、SALIは定義できない
+            return -1.0;
+        }
+        std::array<double, 6> normalized_diff1{
+            diff1[0] / norm1, diff1[1] / norm1, diff1[2] / norm1,
+            diff1[3] / norm1, diff1[4] / norm1, diff1[5] / norm1};
+        std::array<double, 6> normalized_diff2{
+            diff2[0] / norm2, diff2[1] / norm2, diff2[2] / norm2,
+            diff2[3] / norm2, diff2[4] / norm2, diff2[5] / norm2};
+        
+        std::array<double, 6> d_plus{
+            normalized_diff1[0] + normalized_diff2[0],
+            normalized_diff1[1] + normalized_diff2[1],
+            normalized_diff1[2] + normalized_diff2[2],
+            normalized_diff1[3] + normalized_diff2[3],
+            normalized_diff1[4] + normalized_diff2[4],
+            normalized_diff1[5] + normalized_diff2[5]};
+        std::array<double, 6> d_minus{
+            normalized_diff1[0] - normalized_diff2[0],
+            normalized_diff1[1] - normalized_diff2[1],
+            normalized_diff1[2] - normalized_diff2[2],
+            normalized_diff1[3] - normalized_diff2[3],
+            normalized_diff1[4] - normalized_diff2[4],
+            normalized_diff1[5] - normalized_diff2[5]};
 
-    // SALIの計算
-    return std::min(sa_norm, wa_norm);
+        // d_plusとd_minusのノルムを計算
+        double d_plus_norm = std::sqrt(d_plus[0] * d_plus[0] + d_plus[1] * d_plus[1] +
+                                    d_plus[2] * d_plus[2] + d_plus[3] * d_plus[3] +
+                                    d_plus[4] * d_plus[4] + d_plus[5] * d_plus[5]);
+        double d_minus_norm = std::sqrt(d_minus[0] * d_minus[0] + d_minus[1] * d_minus[1] +
+                                        d_minus[2] * d_minus[2] + d_minus[3] * d_minus[3] +
+                                        d_minus[4] * d_minus[4] + d_minus[5] * d_minus[5]);
+        // d_plusとd_minusのノルムを比較して最小値を返す
+        // SALIの計算
+        SALI =  std::min(d_plus_norm, d_minus_norm);
+    }
+    return SALI;
 }
 
 double calc_r1(const Point3D& point, const double mu) {

@@ -261,7 +261,7 @@ double calc_jacobi_integral(const std::array<T, N>& x, double mu = DEFAULT_MU) {
 }
 
 template <typename T>
-double calc_v_abs(const T& r, onst double JACOBI_INTEGRAL, const double mu = DEFAULT_MU) {
+double calc_v_abs(const T& r,const double mu = DEFAULT_MU, const double JACOBI_INTEGRAL) {
     double r1 = calc_r1(r, mu);
     double r2 = calc_r2(r, mu);
     double x = get_x(r);

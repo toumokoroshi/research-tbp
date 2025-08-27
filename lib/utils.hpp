@@ -70,8 +70,12 @@ std::vector<T> createSphereMesh(const double ROI_radius,
                 double distanceSquared = std::pow(x - cx, 2) +
                                          std::pow(y - cy, 2) +
                                          std::pow(z - cz, 2);
-
                 if (distanceSquared <= radiusSquared) {
+                    // 初回だけプリント
+                    if (meshPoints.empty()) {
+                        std::cout << " <> mesh point : " << x << ", " << y << ", " << z
+                                  << std::endl;
+                    }
                     meshPoints.emplace_back(x, y, z);
                 }
             }

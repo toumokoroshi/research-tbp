@@ -67,7 +67,7 @@ double CRTBP::calc_r1() const {
 }
 
 double CRTBP::calc_r2() const {
-    return std::sqrt((posi_[0] - 1 + mu_) * (posi_[0] - 1 + mu_) + posi_[1] * posi_[1] +
+    return std::sqrt((posi_[0] - 1. + mu_) * (posi_[0] - 1. + mu_) + posi_[1] * posi_[1] +
                      posi_[2] * posi_[2]);
 }
 
