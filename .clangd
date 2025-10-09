@@ -1,0 +1,18 @@
+InlayHints:
+  Enabled: Yes
+  ParameterNames: No
+  DeducedTypes: No
+  Designators: No
+
+# If:
+#   PathMatch:
+#     - C:/WORKSPACE/NUcube1p_git/COBC/FM/C2A/trunk/
+
+CompileFlags:
+    Add: 
+        - -Wall
+        - -Wextra
+        - -Wno-unknown-pragmas
+        - -Wno-unused
+        - -Wno-unused-parameter
+        - -Wno-sign-compare
