@@ -44,7 +44,7 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}")
+set(CMAKE_INSTALL_PREFIX "${CMAKE_SOURCE_DIR}/bin")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
@@ -83,3 +83,4 @@ find_package(OpenMP REQUIRED)
 # -------------------------------------------------------------
 add_subdirectory(lib)
 add_subdirectory(apps)
+add_subdirectory(test)
