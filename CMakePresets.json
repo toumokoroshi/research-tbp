@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default Config",
+      "description": "Default settings with oneAPI and custom Boost path",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "icx",
+        "CMAKE_CXX_COMPILER": "icpx",
+        "CMAKE_CXX_COMPILER_FORCED": "TRUE",
+        "CMAKE_C_COMPILER_FORCED": "TRUE",
+        "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "default",
+      "configurePreset": "default"
+    }
+  ]
+}
