@@ -20,30 +20,31 @@ rem #############################################
 echo.
 echo Deleting old build directory...
 if exist build rmdir /s /q build
+if exist CMakeCache.txt del CMakeCache.txt
 
 rem #############################################
 rem # [4] プロジェクトを構成 ^& ビルド
 rem #############################################
 echo.
 echo Configuring the project with CMake...
-cmake --preset=default
+cmake --preset=vs-intel
 
-@REM if errorlevel 1 (
-@REM     echo ERROR: CMake configuration failed.
-@REM     pause
-@REM     goto :eof
-@REM )
+if errorlevel 1 (
+    echo ERROR: CMake configuration failed.
+    pause
+    goto :eof
+)
 
-@REM echo.
-@REM echo Building the project...
-@REM cmake --build build
+echo.
+echo Building the project...
+cmake --build build
 
-@REM if errorlevel 1 (
-@REM     echo ERROR: Build failed.
-@REM     pause
-@REM     goto :eof
-@REM )
+if errorlevel 1 (
+    echo ERROR: Build failed.
+    pause
+    goto :eof
+)
 
-@REM echo.
-@REM echo --- Build process finished successfully. ---
-@REM pause
+echo.
+echo --- Build process finished successfully. ---
+pause

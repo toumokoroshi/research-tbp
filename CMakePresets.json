@@ -2,14 +2,30 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "default",
-      "displayName": "Default Config",
-      "description": "Default settings with oneAPI and custom Boost path",
+      "name": "vs-intel",
+      "displayName": "Visual Studio with Intel LLVM",
+      "description": "Using Visual Studio generator with Intel compilers",
+      "generator": "Visual Studio 17 2022",
+      "binaryDir": "${sourceDir}/build",
+      "toolset": "Intel C++ Compiler 2025",
+      "architecture": "x64",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
+      }
+    },
+    {
+      "name": "ninja-intel",
+      "displayName": "Ninja with Intel LLVM (MSVC mode)",
+      "description": "Using Ninja with Intel compilers in MSVC compatibility mode",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_C_COMPILER": "icx",
         "CMAKE_CXX_COMPILER": "icpx",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER_ID": "MSVC",
+        "CMAKE_C_COMPILER_ID": "MSVC",
         "CMAKE_CXX_COMPILER_FORCED": "TRUE",
         "CMAKE_C_COMPILER_FORCED": "TRUE",
         "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
@@ -18,8 +34,13 @@
   ],
   "buildPresets": [
     {
-      "name": "default",
-      "configurePreset": "default"
+      "name": "vs-intel",
+      "configurePreset": "vs-intel",
+      "configuration": "Debug"
+    },
+    {
+      "name": "ninja-intel",
+      "configurePreset": "ninja-intel"
     }
   ]
 }
