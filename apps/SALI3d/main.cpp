@@ -179,7 +179,7 @@ int main() {
   std::string configfilename;
 
   // CMakeから渡されたCONFIG_DIRマクロを使用
-  std::string config_base_path = TOSTRING(CONFIG_DIR);
+  std::string config_base_path = CONFIG_DIR;
 
   if (mode2 == '1') {
     configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig.txt";
@@ -187,6 +187,7 @@ int main() {
     configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig_1.txt";
   }
 
+  std::cout << "<>        config file : " << configfilename << std::endl;
   ifs.open(configfilename);
 
   if (!ifs) {
@@ -423,7 +424,7 @@ int main() {
 
     //  日付と時刻をファイル名にしてファイル出力
     // CMakeから渡されたOUTPUT_DIRマクロを使用
-    std::string output_base_path = TOSTRING(OUTPUT_DIR);
+    std::string output_base_path = OUTPUT_DIR;
     std::string filename =
         output_base_path + "/SALI/3DSALI_" + getcurrent_date() + ".dat";
     std::ofstream ofs1(filename);

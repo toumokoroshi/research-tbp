@@ -16,3 +16,4 @@ CompileFlags:
         - -Wno-unused
         - -Wno-unused-parameter
         - -Wno-sign-compare
+        - -std=c++17

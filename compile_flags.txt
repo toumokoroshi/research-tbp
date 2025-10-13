@@ -1,4 +1,7 @@
 -I
 C:\\Program Files (x86)\\Intel\\oneAPI\\compiler\\2025.2\\include
 -I
-C:\WORKSPACE\Research_git\TBP\lib\include
+C:\\WORKSPACE\\Research_git\\TBP\\lib\\include
+-I
+C:\\Program_Languages\\cpp_lib\\boost-1_88_0
+

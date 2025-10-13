@@ -36,7 +36,7 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
 else()
     # Unix系またはGNU/Clangモードの場合
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
-    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wshadow -Wconversion")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O3 -Wall -Wextra -Wshadow -Wconversion")
 endif()
 
 # ビルドタイプが指定されていない場合はDebugに設定
