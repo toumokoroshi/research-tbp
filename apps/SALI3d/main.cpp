@@ -14,6 +14,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -429,8 +430,19 @@ int main() {
         output_base_path + "/SALI/3DSALI_" + getcurrent_date() + ".dat";
     std::ofstream ofs1(filename);
     if (!ofs1) {
-      std::cerr << "Failed to open file." << std::endl;
-      return -1;
+      // ファイルが開けなかった場合、ディレクトリが存在しない可能性があるため作成を試みる
+      std::filesystem::path filepath(filename);
+      std::filesystem::path dir = filepath.parent_path();
+      if (!std::filesystem::exists(dir)) {
+        std::filesystem::create_directories(dir);
+      }
+      // 再度ファイルを開く
+      ofs1.open(filename);
+      if (!ofs1) {
+        std::cerr << "Failed to open file even after creating directory: "
+                  << filename << std::endl;
+        return -1;
+      }
     }
     // 計算のコンフィグレーションをファイルに書き込む
     ofs1 << "MESH SIZE=" << MESH_SIZE << std::endl;

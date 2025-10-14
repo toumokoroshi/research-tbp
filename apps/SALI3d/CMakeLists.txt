@@ -23,7 +23,7 @@ endif()
 
 target_compile_definitions(SALI3d PRIVATE
     CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
-    OUTPUT_DIR="${CMAKE_BINARY_DIR}/results"
+    OUTPUT_DIR="${CMAKE_SOURCE_DIR}/data"
 )
 
 install(TARGETS SALI3d DESTINATION bin)
