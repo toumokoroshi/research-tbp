@@ -40,10 +40,10 @@ struct Point3D {
   Point3D(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
 };
 
-template <typename T>
-inline std::vector<T> createSphereMesh(const double ROI_radius,
-                                       const int divisions, const T &center) {
-  std::vector<T> meshPoints;
+inline std::vector<Point3D> createSphereMesh(const double ROI_radius,
+                                             const int divisions,
+                                             const Point3D &center) {
+  std::vector<Point3D> meshPoints;
   if (divisions <= 0)
     return meshPoints;
 
@@ -54,15 +54,10 @@ inline std::vector<T> createSphereMesh(const double ROI_radius,
     for (int j = 0; j < divisions; ++j) {
       for (int k = 0; k < divisions; ++k) {
         double cx, cy, cz;
-        if constexpr (std::is_same<T, Point3D>::value) {
-          cx = center.x;
-          cy = center.y;
-          cz = center.z;
-        } else if constexpr (std::is_same<T, std::array<double, 3>>::value) {
-          cx = center[0];
-          cy = center[1];
-          cz = center[2];
-        }
+        cx = center.x;
+        cy = center.y;
+        cz = center.z;
+
         double x = cx - ROI_radius + i * step;
         double y = cy - ROI_radius + j * step;
         double z = cz - ROI_radius + k * step;
@@ -81,29 +76,22 @@ inline std::vector<T> createSphereMesh(const double ROI_radius,
     }
   }
 
-  std::sort(meshPoints.begin(), meshPoints.end(), [](const T &a, const T &b) {
-    if constexpr (std::is_same<T, Point3D>::value) {
-      if (a.z != b.z)
-        return a.z < b.z;
-      if (a.y != b.y)
-        return a.y < b.y;
-      return a.x < b.x;
-    } else if constexpr (std::is_same<T, std::array<double, 3>>::value) {
-      if (a[2] != b[2])
-        return a[2] < b[2];
-      if (a[1] != b[1])
-        return a[1] < b[1];
-      return a[0] < b[0];
-    }
-  });
+  std::sort(meshPoints.begin(), meshPoints.end(),
+            [](const Point3D &a, const Point3D &b) {
+              if (a.z != b.z)
+                return a.z < b.z;
+              if (a.y != b.y)
+                return a.y < b.y;
+              return a.x < b.x;
+            });
 
   return meshPoints;
 }
 
-template <typename T>
-inline std::vector<T> create_cube_mesh(const double ROI_length,
-                                       const int divisions, const T &center) {
-  std::vector<T> meshPoints;
+inline std::vector<Point3D> create_cube_mesh(const double ROI_length,
+                                             const int divisions,
+                                             const Point3D &center) {
+  std::vector<Point3D> meshPoints;
   if (divisions <= 0)
     return meshPoints;
 
@@ -112,36 +100,23 @@ inline std::vector<T> create_cube_mesh(const double ROI_length,
   for (int i = 0; i < divisions; ++i) {
     for (int j = 0; j < divisions; ++j) {
       for (int k = 0; k < divisions; ++k) {
-        if constexpr (std::is_same<T, Point3D>::value) {
-          double x = center.x - ROI_length + i * step;
-          double y = center.y - ROI_length + j * step;
-          double z = center.z - ROI_length + k * step;
-          meshPoints.emplace_back(x, y, z);
-        } else if constexpr (std::is_same<T, std::array<double, 3>>::value) {
-          double x = center[0] - ROI_length + i * step;
-          double y = center[1] - ROI_length + j * step;
-          double z = center[2] - ROI_length + k * step;
-          meshPoints.emplace_back(x, y, z);
-        }
+
+        double x = center.x - ROI_length + i * step;
+        double y = center.y - ROI_length + j * step;
+        double z = center.z - ROI_length + k * step;
+        meshPoints.emplace_back(x, y, z);
       }
     }
   }
 
-  std::sort(meshPoints.begin(), meshPoints.end(), [](const T &a, const T &b) {
-    if constexpr (std::is_same<T, Point3D>::value) {
-      if (a.z != b.z)
-        return a.z < b.z;
-      if (a.y != b.y)
-        return a.y < b.y;
-      return a.x < b.x;
-    } else if constexpr (std::is_same<T, std::array<double, 3>>::value) {
-      if (a[2] != b[2])
-        return a[2] < b[2];
-      if (a[1] != b[1])
-        return a[1] < b[1];
-      return a[0] < b[0];
-    }
-  });
+  std::sort(meshPoints.begin(), meshPoints.end(),
+            [](const Point3D &a, const Point3D &b) {
+              if (a.z != b.z)
+                return a.z < b.z;
+              if (a.y != b.y)
+                return a.y < b.y;
+              return a.x < b.x;
+            });
 
   return meshPoints;
 }

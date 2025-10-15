@@ -1,6 +1,7 @@
 # 共有ライブラリのソースファイル
 set(LIB_SOURCES
     src/crtbp.cpp
+    src/rtbp.cpp
     # src/solver.cpp
     # src/io_utils.cpp
 )
@@ -22,11 +23,13 @@ target_include_directories(mylib
 set_property(TARGET mylib PROPERTY CXX_STANDARD 17)
 set_property(TARGET mylib PROPERTY CXX_STANDARD_REQUIRED ON)
 
-# # 外部ライブラリとのリンク（例: OpenMP）
-# find_package(OpenMP)
-# if(OpenMP_CXX_FOUND)
-#     target_link_libraries(mylib PUBLIC OpenMP::OpenMP_CXX)
+# 外部ライブラリとのリンク
+target_link_libraries(mylib PUBLIC Boost::headers)
+target_link_libraries(mylib PUBLIC OpenMP::OpenMP_CXX)
 # endif()
+# if (Boost_FOUND)
+#     target_include_directories(mylib PUBLIC ${Boost_INCLUDE_DIRS})
+#     target_link_libraries(mylib PUBLIC ${Boost_LIBRARIES})
 
 # # mylibをインストールする設定（オプション）
 # # これにより、ビルドしたライブラリとヘッダーをシステムにインストールできる

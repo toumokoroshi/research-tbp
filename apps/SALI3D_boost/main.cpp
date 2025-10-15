@@ -1,9 +1,9 @@
 /**
- * @file main_sali_3d copy.cpp
- * @author your name (you@domain.com)
- * @brief
+ * @file main.cpp
+ * @author tabata hyuga
+ * @brief CRTBP 3D SALI calculation based on Jacobi Integral
  * @version 0.1
- * @date 2025-01-28
+ * @date 2025/10/15
  *
  * @note rtbp
  *
@@ -47,19 +47,17 @@ int main() {
   Point3D MeshCenter(1.0 - MU, 0, 0);
   double ROI_length = 0;
 
-  std::cout
-      << "<>----------------------------------------------------------------"
-      << std::endl;
-  std::cout << "<>            CRTBP 3dSALI Calculation based on Jacobi Integral"
+  std::cout << "<> ------------------------------------------------"
             << std::endl;
-  std::cout << "<>-------------------------------------------------------------"
+  std::cout << "<>  CRTBP 3dSALI Calculation based on Jacobi Integral"
+            << std::endl;
+  std::cout << "<> ------------------------------------------------"
                "---\n\n\n\n"
             << std::endl;
   // #ifndef _DEBUG
-  std::cout
-      << "<>****************************************************************"
-      << std::endl;
-  std::cout << "<>  [mode] : " << std::endl;
+  std::cout << "<>             ---------------------                "
+            << std::endl;
+  std::cout << "<>  > input simulation mode : " << std::endl;
   std::cout << "<>        1. New simulation" << std::endl;
   std::cout << "<>        2. Detailed simulation for existing data"
             << std::endl;
@@ -69,9 +67,9 @@ int main() {
   std::cin >> mode;
   std::cout << std::endl;
   if (mode == '1') {
-    std::cout << "selected mode : New simulation\n" << std::endl;
+    std::cout << "<> >> selected 1 : New simulation\n" << std::endl;
   } else if (mode == '2') {
-    std::cout << "selected mode : Detailed simulation for existing data\n"
+    std::cout << "<> >> selected 2 : Detailed simulation for existing data\n"
               << std::endl;
   } else {
     std::cout << "selected mode : Exit\n" << std::endl;
@@ -80,17 +78,19 @@ int main() {
 
   if (mode == '2') {
     // ファイルを読み込んで、ターゲットのメッシュ番号を指定
-    std::cout << "<>        [input file name to refer] : ";
+    std::cout << "<>             ---------------------                "
+              << std::endl;
+    std::cout << "<> > input file name to refer : ";
     std::string filename_interested;
     std::cin >> filename_interested;
     std::cout << std::endl;
     // メッシュ番号を指定
-    std::cout << "<>        [input mesh number to focus on] : ";
+    std::cout << "<> > input mesh number to focus on  : ";
     std::string mesh_num_of_interest;
     std::cin >> mesh_num_of_interest;
     std::cout << std::endl;
 
-    std::cout << "<>        [input the length of ROI] : ";
+    std::cout << "<> > input the length of ROI : ";
     std::string ROI_length_;
     std::cin >> ROI_length_;
     std::cout << std::endl;
@@ -99,7 +99,8 @@ int main() {
     // ファイル読み込み
     std::ifstream ifs(filename_interested);
     if (!ifs) {
-      std::cerr << "Can't open file : " << filename_interested << std::endl;
+      std::cerr << "<> > Can't open file : " << filename_interested
+                << std::endl;
       return -1;
     }
     std::vector<std::streampos> linePositions = indexFile(filename_interested);
@@ -109,7 +110,7 @@ int main() {
         std::stoi(mesh_num_of_interest) + HEADER_SIZE; // 読み込みたい行番号
     std::string line =
         readSpecificLine(filename_interested, linePositions, targetLine);
-    std::cout << "<>        interested line : " << line << std::endl;
+    std::cout << "<> >> interested line : " << line << std::endl;
     std::stringstream ss(line);
     std::array<double, 7> data;
     for (int i = 0; i < 7; i++) {
@@ -121,15 +122,13 @@ int main() {
     MeshCenter.z = data[4];
   }
   // #endif
-  std::cout
-      << "<>****************************************************************"
-      << std::endl;
-  std::cout << "<>           --simulation config--\n" << std::endl;
-  std::cout << "<>    reading config file\n" << std::endl;
+  std::cout << "<>             ---------------------                "
+            << std::endl;
+  std::cout << "<>          < simulation config >\n" << std::endl;
+  std::cout << "<> reading config file...\n" << std::endl;
 
   char mode2;
-  std::cout << "<>  [single simulation or continuous simulation] : "
-            << std::endl;
+  std::cout << "<>  > select simulation loop config : " << std::endl;
   std::cout << "<>        1. Scan Earth's vecinity (single config file)"
             << std::endl;
   std::cout << "<>        2. Scan Earth's vecinity (multi-config file)"
@@ -143,16 +142,16 @@ int main() {
 
   double is_continuous = 0;
   if (mode2 == '1') {
-    std::cout << "<>    selected mode : single simulation\n" << std::endl;
+    std::cout << "<> > selected mode : single simulation\n" << std::endl;
     is_continuous = 0;
   } else if (mode2 == '2') {
-    std::cout << "<>    selected mode : continuous simulation\n" << std::endl;
+    std::cout << "<> > selected mode : continuous simulation\n" << std::endl;
     is_continuous = 1;
   } else if (mode2 == '3')
-    std::cout << "<>    selected mode : Scan the optional trajectory\n"
+    std::cout << "<> > selected mode : Scan the optional trajectory\n"
               << std::endl;
   else {
-    std::cout << "selected mode : Exit\n" << std::endl;
+    std::cout << "<> > selected mode : Exit\n" << std::endl;
     return 0;
   }
 
@@ -177,7 +176,7 @@ int main() {
   ifs.open(configfilename);
 
   if (!ifs) {
-    std::cerr << "Failed to open file." << std::endl;
+    std::cerr << "<> <ERROR> Failed to open file." << std::endl;
     return -1;
   }
 
@@ -237,13 +236,15 @@ int main() {
       __KEYWAIT__
     }
 
-    std::cout << std::endl;
-    std::cout << "<>           --SALI caluculation --" << std::endl;
-    std::cout << std::endl;
+    std::cout << "<>             ---------------------                "
+              << std::endl;
+    std::cout << "<>           < SALI caluculation >" << std::endl;
+    std::cout << "<>             ---------------------                "
+              << std::endl;
     std::cout << std::endl;
 
-    std::cout << "<>        Generating mesh ";
-    std::vector<std::array<double, 3>> meshPoints;
+    std::cout << "<> Generating mesh... ";
+    std::vector<Point3D> meshPoints;
     if (mode == '1') {
       std::cout << "based on SOI radius" << std::endl;
       meshPoints = createSphereMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
@@ -256,12 +257,12 @@ int main() {
     countt = meshPoints.size();
 
     std::cout << std::endl;
-    std::cout << "<>        " << countt << " mesh generated successfully"
+    std::cout << "<> " << countt << " mesh generated successfully..."
               << std::endl;
     std::cout << std::endl;
     std::cout << std::endl;
 
-    std::cout << "<>        Start calclation" << std::endl;
+    std::cout << "<> Start calclation..." << std::endl;
 
     /* メッシュ上の点を用いてSALIを計算 */
     constexpr double perturbation = 1e-10;
