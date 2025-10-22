@@ -286,7 +286,6 @@ int main() {
                 << "automatically determined as " << OMP_Fmax << std::endl;
     }
     WaitForEnter();
-    WaitForEnter();
     omp_set_num_threads(OMP_Fmax);
     std::cout
         << "<>****************************************************************"
