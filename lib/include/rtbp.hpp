@@ -17,10 +17,11 @@
 #include <boost/numeric/odeint.hpp>
 #include <cmath>
 #include <iostream>
-// #include <utils.hpp>
+#include <utils.hpp>
 // #include <vector3d.hpp>
 #include <vector>
 
+#include "utils.hpp"
 #include "vector3d.hpp"
 
 namespace rtbp {
@@ -141,14 +142,6 @@ static Vector3d apply_matrix(std::array<std::array<double, 3>, 3> rot_matrix,
               rot_matrix[2][2] * v.z()};
 };
 
-// EquationOfMotionのインターフェースクラス
-class EquationOfMotion {
-public:
-  virtual void operator()(const state &x, state &dxdt,
-                          const double t) = 0; // 純粋仮想関数
-  virtual ~EquationOfMotion() = default;       // 仮想デストラクタ
-};
-
 /**
  * @brief 円制限三体問題の関数をまとめた名前空間
  *
@@ -209,24 +202,27 @@ template <typename T> double get_z(const T &r) {
 }
 
 // r1の計算,
-template <typename T> double calc_r1(const T &r, double mu = DEFAULT_MU) {
+template <typename T>
+double calc_r1(const T &r, const AstroConstants &astro_params) {
   double x = get_x(r);
   double y = get_y(r);
   double z = get_z(r);
-  return std::sqrt((x + mu) * (x + mu) + y * y + z * z);
+  return std::sqrt((x + astro_params.mu) * (x + astro_params.mu) + y * y +
+                   z * z);
 }
 
 // r2の計算,
-template <typename T> double calc_r2(const T &r, double mu = DEFAULT_MU) {
+template <typename T> double calc_r2(const T &r, AstroConstants &astro_params) {
   double x = get_x(r);
   double y = get_y(r);
   double z = get_z(r);
-  return std::sqrt((x - 1 + mu) * (x - 1 + mu) + y * y + z * z);
+  return std::sqrt((x - 1 + astro_params.mu) * (x - 1 + astro_params.mu) +
+                   y * y + z * z);
 }
 
 // ポテンシャルエネルギーの計算
 template <typename T>
-double calc_potential_energy(const T &r, double mu = DEFAULT_MU) {
+double calc_potential_energy(const T &r, const AstroConstants &astro_params) {
   double x = get_x(r);
   double y = get_y(r);
   double r1 = calc_r1(r);
@@ -236,11 +232,13 @@ double calc_potential_energy(const T &r, double mu = DEFAULT_MU) {
     throw std::domain_error("Invalid distance calculated");
   }
 
-  return 0.5 * (x * x + y * y) + (1 - mu) / r1 + mu / r2;
+  return 0.5 * (x * x + y * y) + (1 - astro_params.mu) / r1 +
+         astro_params.mu / r2;
 }
 
 template <typename T, std::size_t N>
-double calc_jacobi_integral(const std::array<T, N> &x, double mu = DEFAULT_MU) {
+double calc_jacobi_integral(const std::array<T, N> &x,
+                            const AstroConstants &astro_params) {
   double x_, y_, z_, vx_, vy_, vz_;
   if constexpr (std::is_same_v<T, double> && N == 6) {
     x_ = x[0];
@@ -258,27 +256,32 @@ double calc_jacobi_integral(const std::array<T, N> &x, double mu = DEFAULT_MU) {
     vz_ = x[1].z();
   }
 
-  double r1 = std::sqrt((x_ + mu) * (x_ + mu) + y_ * y_ + z_ * z_);
-  double r2 = std::sqrt((x_ - 1 + mu) * (x_ - 1 + mu) + y_ * y_ + z_ * z_);
+  double r1 = std::sqrt((x_ + astro_params.mu) * (x_ + astro_params.mu) +
+                        y_ * y_ + z_ * z_);
+  double r2 =
+      std::sqrt((x_ - 1 + astro_params.mu) * (x_ - 1 + astro_params.mu) +
+                y_ * y_ + z_ * z_);
 
   return -(vx_ * vx_ + vy_ * vy_ + vz_ * vz_) +
-         2. * calc_potential_energy(x, mu);
+         2. * calc_potential_energy(x, astro_params);
 }
 
 template <typename T>
 double calc_v_abs(const T &r, const double JACOBI_INTEGRAL,
-                  const double mu = DEFAULT_MU) {
-  double r1 = calc_r1(r, mu);
-  double r2 = calc_r2(r, mu);
+                  const AstroConstants &astro_params) {
+  double r1 = calc_r1(r, astro_params.mu);
+  double r2 = calc_r2(r, astro_params.mu);
   double x = get_x(r);
   double y = get_y(r);
   double z = get_z(r);
-  return std::sqrt(x * x + y * y + 2. * (1. - mu) / r1 + 2. * mu / r2 +
-                   mu * (1. - mu) - JACOBI_INTEGRAL);
+  return std::sqrt(x * x + y * y + 2. * (1. - astro_params.mu) / r1 +
+                   2. * astro_params.mu / r2 +
+                   astro_params.mu * (1. - astro_params.mu) - JACOBI_INTEGRAL);
 }
 
 template <typename T>
-Vector3d calc_velocity(const T &point, const double v_abs, const double mu,
+Vector3d calc_velocity(const T &point, const double v_abs,
+                       const AstroConstants &astro_params,
                        const double inclination, const double OMEGA,
                        const double theta) {
   // 回転軸と回転角からクオータニオン経由で回転行列を生成
@@ -338,7 +341,7 @@ Vector3d calc_velocity(const T &point, const double v_abs, const double mu,
     y = point[1];
     z = point[2];
   }
-  Vector3d r2_vector{x - 1. + mu, y, z};
+  Vector3d r2_vector{x - 1. + astro_params.mu, y, z};
   Vector3d h_vector = r2_vector.gaiseki(normal_vector);
   Vector3d normalized_h_vector = h_vector.normalise();
 
@@ -361,9 +364,10 @@ Vector3d calc_velocity(const T &point, const double v_abs, const double mu,
 }
 
 template <typename T, std::size_t N>
-const std::array<T, N> frame_transformation(const std::array<T, N> &ast_state,
-                                            const std::array<T, N> &p2_state,
-                                            double mu) {
+const std::array<T, N>
+frame_transformation(const std::array<T, N> &ast_state,
+                     const std::array<T, N> &p2_state,
+                     const AstroConstants &astro_params) {
   // std::array<double, 6>かstd::array<Vector3d, 2>のみ受け付ける
   static_assert((std::is_same_v<T, double> && N == 6) ||
                     (std::is_same_v<T, Vector3d> && N == 2),
@@ -430,8 +434,8 @@ const std::array<T, N> frame_transformation(const std::array<T, N> &ast_state,
   //  変換行列convert_G_to_R1の微分を計算
   // theta1の微分
 
-  double ND_time_ref =
-      std::sqrt(AU * AU * AU / (G * M_SUN)); // Non-Dimensional time
+  double ND_time_ref = std::sqrt(astro_params.au * astro_params.au /
+                                 astro_params.gm_sun); // Non-Dimensional time
   double mean_motion = 1 / ND_time_ref;
   std::cout << "mean motion = " << mean_motion << std::endl;
   // conbert AU/day to Non-Dimensional
@@ -556,41 +560,45 @@ const std::array<T, N> frame_transformation(const std::array<T, N> &ast_state,
 // EquationOfMotionを継承
 class EquationOfMotion : public rtbp::EquationOfMotion {
 private:
-  double mu_;
+  AstroConstants astro_params_;
 
 public:
-  explicit EquationOfMotion(double mu = DEFAULT_MU) : mu_(mu) {}
+  explicit EquationOfMotion(const AstroConstants &astro_params)
+      : astro_params_(astro_params) {}
 
   void operator()(const state &x, state &dxdt, const double /* t */) const {
     const double x_ = x[0], y_ = x[1], z_ = x[2];
     const double vx_ = x[3], vy_ = x[4], vz_ = x[5];
 
-    const double r1 = calc_r1(x);
-    const double r2 = calc_r2(x);
+    const double r1 = calc_r1(x, astro_params_);
+    const double r2 = calc_r2(x, astro_params_);
 
     dxdt[0] = vx_;
     dxdt[1] = vy_;
     dxdt[2] = vz_;
-    dxdt[3] = 2. * vy_ + x_ - (1. - mu_) * (x_ + mu_) / (r1 * r1 * r1) -
-              mu_ * (x_ - 1. + mu_) / (r2 * r2 * r2);
-    dxdt[4] = -2. * vx_ + y_ - (1. - mu_) * y_ / (r1 * r1 * r1) -
-              mu_ * y_ / (r2 * r2 * r2);
-    dxdt[5] = -(1. - mu_) * z_ / (r1 * r1 * r1) - mu_ * z_ / (r2 * r2 * r2);
+    dxdt[3] =
+        2. * vy_ + x_ -
+        (1. - astro_params_.mu) * (x_ + astro_params_.mu) / (r1 * r1 * r1) -
+        astro_params_.mu * (x_ - 1. + astro_params_.mu) / (r2 * r2 * r2);
+    dxdt[4] = -2. * vx_ + y_ - (1. - astro_params_.mu) * y_ / (r1 * r1 * r1) -
+              astro_params_.mu * y_ / (r2 * r2 * r2);
+    dxdt[5] = -(1. - astro_params_.mu) * z_ / (r1 * r1 * r1) -
+              astro_params_.mu * z_ / (r2 * r2 * r2);
   }
 };
 class observer {
 private:
   double init_jacobi_;
-  double mu_;
+  AstroConstants astro_params_;
 
 public:
   std::vector<std::array<double, 8>> &m_out;
-  explicit observer(double init_jacobi, double mu,
+  explicit observer(double init_jacobi, const AstroConstants &astro_params,
                     std::vector<std::array<double, 8>> &out)
-      : init_jacobi_(init_jacobi), mu_(mu), m_out(out) {}
+      : init_jacobi_(init_jacobi), astro_params_(astro_params), m_out(out) {}
 
   void operator()(const state &x, double t) const {
-    double jacobi_integral = calc_jacobi_integral(x, mu_);
+    double jacobi_integral = calc_jacobi_integral(x, astro_params_);
     m_out.push_back({t, x[0], x[1], x[2], x[3], x[4], x[5],
                      init_jacobi_ - jacobi_integral});
   }
@@ -599,13 +607,13 @@ public:
 class Trajectory {
 private:
   double jacobi_integral_;
-  double mu_;
+  AstroConstants astro_params_;
 
 public:
   std::vector<std::array<double, 8>> trajectory_;
 
-  Trajectory(double jacobi_integral, double mu = DEFAULT_MU)
-      : jacobi_integral_(jacobi_integral), mu_(mu) {}
+  Trajectory(double jacobi_integral, const AstroConstants &astro_params)
+      : jacobi_integral_(jacobi_integral), astro_params_(astro_params) {}
 
   std::vector<std::array<double, 8>> integrate(const state &x0, double t0,
                                                double tf, double dt) {
@@ -613,8 +621,8 @@ public:
     trajectory_.clear();
     trajectory_.reserve(static_cast<size_t>((tf - t0) / dt) + 1);
 
-    auto eom = EquationOfMotion(mu_);
-    auto obs = observer(jacobi_integral_, mu_, trajectory_);
+    auto eom = EquationOfMotion(astro_params_);
+    auto obs = observer(jacobi_integral_, astro_params_, trajectory_);
     boost::numeric::odeint::controlled_runge_kutta<
         boost::numeric::odeint::runge_kutta_fehlberg78<state>>
         stepper;

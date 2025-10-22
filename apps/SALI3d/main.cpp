@@ -58,9 +58,20 @@ std::string readSpecificLine(const std::string &filename,
                              int targetLine);
 
 int main() {
-  constexpr double MU = 3.003e-6; // 地球と太陽の質量比
+
+  std::string astro_param_file =
+      std::string(TOSTRING(CONFIG_DIR)) + "/astro_param/astro_param.txt";
+  AstroConstants astro_params = loadConstants(astro_param_file);
+  const double kAU = astro_params.au; // astronomical unit in meters
+  const double kGMSUN =
+      astro_params.gm_sun; // heliocentric gravitational constant m3 s-2
+  const double kGMEARTH =
+      astro_params.gm_earth; // geocentric gravitational constant m3 s-2
+  const double kMU =
+      kGMEARTH / (kGMSUN + kGMEARTH); // mu parameter of Earth-Sun
+
   constexpr double HEADER_SIZE = 9;
-  Point3D MeshCenter(1.0 - MU, 0, 0);
+  Point3D MeshCenter(1.0 - kMU, 0, 0);
   double ROI_length = 0;
 
   std::cout
@@ -305,12 +316,12 @@ int main() {
       static int mesh_num = 1; // メッシュ番号
 
       // non-biased velocity
-      double v_abs = calc_v_abs(point, MU, JACOBI_INTEGRAL);
+      double v_abs = calc_v_abs(point, kMU, JACOBI_INTEGRAL);
       double vx = 0.0, vy = 0.0, vz = 0.0;
 
       if (v_abs > 0) {
         Vector3d velocity =
-            calc_velocity(point, v_abs, MU, inclination, OMEGA, THETA);
+            calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
         vx = velocity.x();
         vy = velocity.y();
         vz = velocity.z();
@@ -319,18 +330,19 @@ int main() {
         velo_err = 1;
       }
 
-      CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, MU, CALC_TIMESTEP);
+      CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, kMU,
+                      CALC_TIMESTEP);
       CRTBP perturbed_state1(point.x + perturbation, point.y, point.z, vx, vy,
-                             vz, MU, CALC_TIMESTEP);
+                             vz, kMU, CALC_TIMESTEP);
       CRTBP perturbed_state2(point.x, point.y + perturbation, point.z, vx, vy,
-                             vz, MU, CALC_TIMESTEP);
+                             vz, kMU, CALC_TIMESTEP);
 
 #ifndef SALI_only_XY
       CRTBP perturbed_state3(point.x, point.y, point.z + perturbation, vx, vy,
-                             vz, MU, CALC_TIMESTEP);
+                             vz, kMU, CALC_TIMESTEP);
 #endif
       CRTBP perturbed_state4(point.x, point.y, point.z, vx, vy,
-                             vz + perturbation, MU, CALC_TIMESTEP);
+                             vz + perturbation, kMU, CALC_TIMESTEP);
 
       double time = 0.0;
 #ifndef SALI_only_XY
@@ -389,7 +401,7 @@ int main() {
         SALIzx = -1.0;
 #endif
       }
-      double jacobiii = calc_jacobi_integral(ref_state.current_state(), MU);
+      double jacobiii = calc_jacobi_integral(ref_state.current_state(), kMU);
 #ifdef SALI_only_XY
       std::array<double, 7> SALI_data1{static_cast<double>(mesh_num),
                                        time,

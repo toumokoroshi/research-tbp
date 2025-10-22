@@ -2,11 +2,13 @@
 #define UTILS_HPP
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <ctime>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -20,7 +22,7 @@
   }
 #endif
 
-// テンプレート関数でキー入力待ちを汎用化
+// 入力キー待ち
 template <typename T> inline void WaitForKey(const std::string &message) {
   std::cout << message << std::endl;
   T input;
@@ -204,4 +206,90 @@ inline std::string getcurrent_date() {
   return oss.str();
 }
 
+/**
+ * @brief 構造体の概要説明
+ *
+ * 詳細説明
+ */
+struct AstroConstants {
+  double au;       ///< 天文単位 (m)
+  double gm_sun;   ///< 太陽の重力定数 (m^3/s^2)
+  double gm_earth; ///< 地球の重力定数 (m^3/s^2)
+  double mu;       ///< 質量比
+  double G;        ///< 万有引力定数 (kg^-1 m^3 s^-2)
+};
+/**
+ * @brief 文字列の前後にある空白文字(スペース, タブなど)を削除する
+ * @param s 対象の文字列
+ * @return トリム後の文字列
+ */
+std::string trim(const std::string &s) {
+  const std::string WHITESPACE = " \t\n\r\f\v";
+  size_t first = s.find_first_not_of(WHITESPACE);
+  if (std::string::npos == first) {
+    return "";
+  }
+  size_t last = s.find_last_not_of(WHITESPACE);
+  return s.substr(first, (last - first + 1));
+}
+/**
+ * @brief 設定ファイルを読み込み、キーと値のマップを返す
+ * @param filename 読み込むファイル名
+ * @return キー(string)と値(long double)の std::map
+ * @throws std::runtime_error ファイルが開けない場合
+ */
+inline AstroConstants loadConstants(const std::string &filename) {
+
+  std::map<std::string, double> constants;
+  std::ifstream file(filename);
+  AstroConstants astroConstants;
+
+  if (!file.is_open()) {
+    // ファイルが開けなかった場合、例外を投げる
+    throw std::runtime_error("エラー: ファイルを開けません: " + filename);
+  }
+
+  std::string line;
+  int line_number = 0;
+
+  while (std::getline(file, line)) {
+    line_number++;
+
+    size_t comment_pos = line.find("//");
+    if (comment_pos != std::string::npos) {
+      line = line.substr(0, comment_pos);
+    }
+
+    size_t eq_pos = line.find('=');
+    if (eq_pos == std::string::npos) {
+      continue;
+    }
+
+    std::string key = trim(line.substr(0, eq_pos));
+    std::string val_str = trim(line.substr(eq_pos + 1));
+
+    if (key.empty() || val_str.empty()) {
+      continue;
+    }
+
+    try {
+      // マップに直接キーと値を格納
+      constants[key] = std::stold(val_str);
+    } catch (const std::exception &e) {
+      std::cerr << "警告 (L" << line_number << "): 値のパースに失敗しました: '"
+                << val_str << "'" << std::endl;
+    }
+  }
+
+  file.close();
+
+  astroConstants.au = constants.at("au") astroConstants.gm_sun =
+      constants.at("gm_sun");
+  astroConstants.gm_earth = constants.at("gm_earth");
+  astroConstants.G = constants.at("G");
+  astroConstants.mu = astroConstants.gm_earth /
+                      (astroConstants.gm_sun +
+                       astroConstants.gm_earth); // mu parameter of Earth-Sun
+  return astroConstants;                         // 読み込んだ構造体を返す
+}
 #endif // UTILS_HPP
