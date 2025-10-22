@@ -271,8 +271,8 @@ int main() {
 
     // [0]:count, [1]time , [2]:x, [3]:y, [4]:z,
     // [5]:jacobi constant
-    // [6]:SALI(x-biased&y-biased), [7]:SALI(x-biased&z-biased),
-    // [8]:SALI(y-biased&z-biased)
+    // [6]:SALI(x-biased&vx-biased), [7]:SALI(x-biased&y-biased),
+    // [8]:SALI(z-biased&v    z-biased)
     SALI_data.reserve(countt);
 
     int totalIterations = meshPoints.size();
@@ -298,84 +298,22 @@ int main() {
         vx = velocity.x();
         vy = velocity.y();
         vz = velocity.z();
-      } else {
-        calc_traj = 0;
-        velo_err = 1;
+      } else {  
       }
 
       double time = 0.0;
-
-      double SALIxy = -1.0;
-      double SALIyz = -1.0;
-      double SALIzx = -1.0;
-
       if (!velo_err) {
         while (calc_traj) {
 
           if (ref_state.calc_r2() > SOI_RADIUS ||
-              ref_state.calc_r2() < FOREBIDDEN_AREA_RADIUS) {
-            abort_calc = 1;
-            calc_traj = 0;
             continue;
           }
-          ref_state.RK4_step_noncanonical();
-          perturbed_state1.RK4_step_noncanonical();
-          perturbed_state2.RK4_step_noncanonical();
-#ifndef SALI_only_XY
-          perturbed_state3.RK4_step_noncanonical();
-#endif
-          time += CALC_TIMESTEP;
         }
         if (!abort_calc) {
-#ifdef SALI_only_XY
-          SALI = calc_SALI(ref_state.current_state(),
-                           perturbed_state1.current_state(),
-                           perturbed_state2.current_state());
-#endif
-#ifndef SALI_only_XY
-          SALIxy = calc_SALI(ref_state.current_state(),
-                             perturbed_state1.current_state(),
-                             perturbed_state2.current_state());
-          SALIyz = calc_SALI(ref_state.current_state(),
-                             perturbed_state2.current_state(),
-                             perturbed_state3.current_state());
-          SALIzx = calc_SALI(ref_state.current_state(),
-                             perturbed_state1.current_state(),
-                             perturbed_state3.current_state());
-#endif
         }
       } else {
-#ifdef SALI_only_XY
-        SALI = -1.0;
-#endif
-#ifndef SALI_only_XY
-        SALIxy = -1.0;
-        SALIyz = -1.0;
-        SALIzx = -1.0;
-#endif
       }
-      double jacobiii = calc_jacobi_integral(ref_state.current_state(), MU);
-#ifdef SALI_only_XY
-      std::array<double, 7> SALI_data1{static_cast<double>(mesh_num),
-                                       time,
-                                       point.x,
-                                       point.y,
-                                       point.z,
-                                       jacobiii,
-                                       SALI};
-#endif
-#ifndef SALI_only_XY
-      std::array<double, 9> SALI_data1{static_cast<double>(mesh_num),
-                                       time,
-                                       point.x,
-                                       point.y,
-                                       point.z,
-                                       jacobiii,
-                                       SALIxy,
-                                       SALIyz,
-                                       SALIzx};
-#endif
-      SALI_data.emplace_back(SALI_data1);
+
       // 進捗を計算
       progress = (mesh_num + 1.0) / totalIterations;
 

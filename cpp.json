@@ -1,0 +1,178 @@
+{
+  "Google Style Header Guard": {
+    "prefix": "gheader",
+    "body": [
+      "#ifndef ${1:PROJECT_PATH_FILE_H_}",
+      "#define ${1:PROJECT_PATH_FILE_H_}",
+      "",
+      "${0}",
+      "",
+      "#endif  // ${1:PROJECT_PATH_FILE_H_}"
+    ],
+    "description": "Google C++ スタイルガイドに準拠したヘッダーガード"
+  },
+  "Doxygen Comment Block": {
+    "prefix": "dox",
+    "body": [
+      "/**",
+      " * @brief ${1:概要説明}",
+      " * ",
+      " * ${2:詳細説明}",
+      " * ${0}",
+      " */"
+    ],
+    "description": "汎用的なDoxygenコメントブロックを挿入します"
+  },
+  "Doxygen C++ Class (Google Style)": {
+    "prefix": "class",
+    "body": [
+      "/**",
+      " * @brief ${1:クラスの概要説明}",
+      " * ",
+      " * ${2:クラスの詳細説明}",
+      " */",
+      "class ${3:ClassName} {",
+      " public:",
+      "  /**",
+      "   * @brief コンストラクタ",
+      "   */",
+      "  ${3:ClassName}();",
+      "",
+      "  /**",
+      "   * @brief デストラクタ",
+      "   */",
+      "  virtual ~${3:ClassName}();",
+      "",
+      "  // コピーコンストラクタとコピー代入演算子を禁止 (Google Style)",
+      "  ${3:ClassName}(const ${3:ClassName}&) = delete;",
+      "  ${3:ClassName}& operator=(const ${3:ClassName}&) = delete;",
+      "",
+      " private:",
+      "  ${0}",
+      "};"
+    ],
+    "description": "Doxygenコメント付きの C++ クラス (Google Style)"
+  },
+  "Doxygen C++ Struct (Google Style)": {
+    "prefix": "struct",
+    "body": [
+      "/**",
+      " * @brief ${1:構造体の概要説明}",
+      " * ",
+      " * ${2:詳細説明}",
+      " */",
+      "struct ${3:StructName} {",
+      "  ${4:Type} ${5:member_variable1};",
+      "  ${6:Type} ${7:member_variable2};",
+      "  ${0}",
+      "};"
+    ],
+    "description": "Doxygenコメント付きの C++ 構造体 (Google Style)"
+  },
+  "Doxygen C++ Enum Class (Google Style)": {
+    "prefix": "enum",
+    "body": [
+      "/**",
+      " * @brief ${1:enumの概要説明}",
+      " */",
+      "enum class ${2:EnumName} {",
+      "  ${3:kValue1} = 0,",
+      "  ${4:kValue2} = 1,",
+      "  ${0}",
+      "};"
+    ],
+    "description": "Doxygenコメント付きの C++ enum class (Google Style)"
+  },
+  "C++ Namespace (Google Style)": {
+    "prefix": "namespace",
+    "body": [
+      "/**",
+      " * @brief ${1:名前空間の概要説明}",
+      " */",
+      "namespace ${2:my_namespace} {",
+      "",
+      "${0}",
+      "",
+      "}  // namespace ${2:my_namespace}"
+    ],
+    "description": "Doxygenコメント付きの C++ 名前空間 (Google Style)"
+  },
+  "Doxygen C++ Function (Google Style)": {
+    "prefix": "func",
+    "body": [
+      "/**",
+      " * @brief ${1:関数の概要説明}",
+      " * ",
+      " * ${2:関数の詳細説明}",
+      " * ",
+      " * @param ${4:param_name} ${5:引数の説明}",
+      " * @return ${6:戻り値の説明}",
+      " */",
+      "${7:void} ${3:FunctionName}(${8:const std::string& ${4:param_name}}) {",
+      "  ${0}",
+      "}"
+    ],
+    "description": "Doxygenコメント付きの C++ 関数 (Google Style)"
+  },
+  "Doxygen C++ Method Declaration (Google Style)": {
+    "prefix": "method",
+    "body": [
+      "/**",
+      " * @brief ${1:メソッドの概要説明}",
+      " * ",
+      " * ${2:メソッドの詳細説明}",
+      " * ",
+      " * @param ${4:param_name} ${5:引数の説明}",
+      " * @return ${6:戻り値の説明}",
+      " */",
+      "${7:void} ${3:MethodName}(${8:const std::string& ${4:param_name}});",
+      "${0}"
+    ],
+    "description": "Doxygenコメント付きの C++ クラスメソッド（宣言部）"
+  },
+  "Doxygen C++ Template Function (Google Style)": {
+    "prefix": "template",
+    "body": [
+      "/**",
+      " * @brief ${1:テンプレート関数の概要説明}",
+      " * @tparam ${2:T} ${3:テンプレートパラメータの説明}",
+      " * @param ${5:param_name} ${6:引数の説明}",
+      " * @return ${7:戻り値の説明}",
+      " */",
+      "template <typename ${2:T}>",
+      "${8:void} ${4:TemplateFunctionName}(${9:const ${2:T}& ${5:param_name}}) {",
+      "  ${0}",
+      "}"
+    ],
+    "description": "Doxygenコメント付きの C++ テンプレート関数 (Google Style)"
+  },
+  "For Loop (Google Style)": {
+    "prefix": "for",
+    "body": [
+      "for (int ${1:i} = 0; ${1:i} < ${2:kCount}; ++${1:i}) {",
+      "  ${0}",
+      "}"
+    ],
+    "description": "C++ for ループ (Google Style, ++i)"
+  },
+  "If Statement (Google Style)": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "  ${0}",
+      "}"
+    ],
+    "description": "C++ if 文 (Google Style)"
+  },
+  "If-Else Statement (Google Style)": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition}) {",
+      "  ${2}",
+      "} else {",
+      "  ${0}",
+      "}"
+    ],
+    "description": "C++ if-else 文 (Google Style)"
+  }
+}

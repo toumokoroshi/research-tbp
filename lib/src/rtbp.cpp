@@ -591,7 +591,7 @@ Trajectory::integrate(const state &x0, double t0, double tf, double dt) {
  * @return std::vector<std::array<double, 8>> 軌道データ [t, x, y, z, vx, vy,
  * vz, jacobi_error]
  */
-std::vector<std::array<double, 8>> integrate(const state &x0, double t0,
+std::vector<std::array<double, 8>> Integrate(const state &x0, double t0,
                                              double tf, double dt, double mu,
                                              SolverType solver_type) {
 
