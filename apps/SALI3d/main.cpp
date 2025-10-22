@@ -199,18 +199,43 @@ int main() {
     std::cerr << "Failed to open file." << std::endl;
     return -1;
   }
-
+  int Core_Max = omp_get_max_threads();
+  int OMP_Fmax{};
+  std::cout << "<>  [OpenMP preparation]" << std::endl;
+  std::cout << "<> On your PC, " << Core_Max
+            << " threads can be used for parallel computing employing OMP."
+            << std::endl;
+  std::cout << "<> >  " << std::endl;
+  std::cout << "<>   * How many threads do you want use for simulation? "
+            << "(input an integer)" << std::endl;
+  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが"
+            << std::endl;
+  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> "
+            << std::endl;
+  std::cout << "<> >>> ";
+  int getcore = 0;
+  std::cin >> getcore;
+  if (getcore <= Core_Max) {
+    OMP_Fmax = getcore;
+    std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax
+              << std::endl;
+  } else {
+    OMP_Fmax = Core_Max;
+    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
+              << "automatically determined as " << OMP_Fmax << std::endl;
+  }
+  WaitForEnter();
+  omp_set_num_threads(OMP_Fmax);
   int configdata_num = 1;
   //  実行時間の計測
   auto start_ofall = std::chrono::system_clock::now();
-  // メインループ部分（while (ifs)の中）
   while (ifs) {
     double progress = 0;
     auto start = std::chrono::system_clock::now();
     std::string str;
     std::cout << std::setprecision(10);
 
-    // 設定ファイル読み込み部分（変更なし）
+    // 設定ファイル読み込み部分
     while (std::getline(ifs, str)) {
       if (str.find("MESH SIZE") != std::string::npos) {
         MESH_SIZE = std::stoi(str.substr(str.find("=") + 1));
@@ -258,40 +283,9 @@ int main() {
       WaitForEnter();
       std::cout << std::endl;
     }
-    int Core_Max = omp_get_max_threads();
-    int OMP_Fmax{};
-    std::cout << "<>  [OpenMP preparation]" << std::endl;
-    std::cout << "<> On your PC, " << Core_Max
-              << " threads can be used for parallel computing employing OMP."
-              << std::endl;
-    std::cout << "<> >  " << std::endl;
-    std::cout << "<>   * How many threads do you want use for simulation? "
-              << "(input an integer)" << std::endl;
-    std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが"
-              << std::endl;
-    std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> "
-              << std::endl;
-    std::cout << "<> >>> ";
-    char getcore = 0;
-    int getcore_int = 0;
-    std::cin >> getcore;
-    getcore_int = static_cast<int>(getcore - '0');
-    if (getcore <= Core_Max) {
-      OMP_Fmax = getcore;
-      std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax
-                << std::endl;
-    } else {
-      OMP_Fmax = Core_Max;
-      std::cout << "  <>     >> Your input is INVALID. OMP threads is "
-                << "automatically determined as " << OMP_Fmax << std::endl;
-    }
-    WaitForEnter();
-    omp_set_num_threads(OMP_Fmax);
-    std::cout
-        << "<>****************************************************************"
-        << std::endl;
+
     std::cout << std::endl;
-    std::cout << "<>           --SALI caluculation --" << std::endl;
+    std::cout << "<>    Start SALI caluculation --" << std::endl;
     std::cout << std::endl;
     std::cout << std::endl;
 
@@ -324,7 +318,7 @@ int main() {
 
     int totalIterations = meshPoints.size();
 
-    // 進捗カウンタ（アトミック操作用）
+    // 進捗カウンタ
     int completed_count = 0;
 
     // OpenMP並列化ループ
@@ -335,7 +329,6 @@ int main() {
       for (int idx = 0; idx < static_cast<int>(meshPoints.size()); ++idx) {
         const auto &point = meshPoints[idx];
 
-        // mesh_numはインデックス+1を使用
         int mesh_num = idx + 1;
 
         // 0:計算終了, 1:計算継続
@@ -462,7 +455,6 @@ int main() {
         completed_count++;
 
         // 進捗表示（定期的に更新、全スレッドが毎回表示するのを防ぐ）
-        // 表示頻度を調整: メッシュ数の1%ごと、または最低でも100回に1回
         int display_interval = std::max(totalIterations / 100, 1);
         if (completed_count % display_interval == 0 ||
             completed_count == totalIterations) {
@@ -481,7 +473,7 @@ int main() {
     std::sort(SALI_data.begin(), SALI_data.end(),
               [](const auto &a, const auto &b) { return a[0] < b[0]; });
 
-    // ファイル出力（以降は変更なし）
+    // ファイル出力
     std::string output_base_path = OUTPUT_DIR;
     std::string filename =
         output_base_path + "/SALI/3DSALI_" + getcurrent_date() + ".dat";

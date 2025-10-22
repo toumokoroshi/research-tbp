@@ -313,4 +313,5 @@ inline AstroConstants loadConstants(const std::string &filename) {
                        astroConstants.gm_earth); // mu parameter of Earth-Sun
   return astroConstants;                         // 読み込んだ構造体を返す
 }
+
 #endif // UTILS_HPP
