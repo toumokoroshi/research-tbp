@@ -2,5 +2,5 @@
 // "Astrodynamic Parameters." JPL Solar System Dynamics, NASA, https://ssd.jpl.nasa.gov/astro_par.html. Accessed 22 Oct. 2025.
 au=149597870700 // m
 gm_sun=1.32712440041279419e+20 // m3 s-2
-gm_earth=398600.435507 // m3 s-2
+gm_earth=3.98600435507e+14 // m3 s-2 originally 398600.435507 km3 s-2
 G=6.67430e-11 // kg-1 m3 s-2	6.67430 (± 0.00015) x 10-11 kg-1 m3 s-2	

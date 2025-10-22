@@ -31,8 +31,10 @@ template <typename T> inline void WaitForKey(const std::string &message) {
 
 // エンターキー入力まで待機する関数
 inline void
-WaitForEnter(const std::string &message = "Press Enter to continue...") {
+WaitForEnter(const std::string &message = "<> Press Enter to continue...") {
   std::cout << message << std::endl;
+  while (std::cin.get() != '\n')
+    continue;
   while (std::cin.get() != '\n')
     continue;
 }
@@ -195,6 +197,25 @@ inline void displayProgressBar(double progress, int barWidth = 40) {
   std::cout.flush();
 }
 
+// スレッドセーフな進捗表示関数
+inline void displayProgressBarThreadSafe(double progress, int barWidth = 40) {
+#pragma omp critical(progress_display)
+  {
+    std::cout << "[";
+    int pos = barWidth * progress;
+    for (int i = 0; i < barWidth; ++i) {
+      if (i < pos)
+        std::cout << "=";
+      else if (i == pos)
+        std::cout << ">";
+      else
+        std::cout << " ";
+    }
+    std::cout << "] " << int(progress * 100.0) << " %\r";
+    std::cout.flush();
+  }
+}
+
 inline std::string getcurrent_date() {
   // 現在の時刻を取得
   std::time_t now = std::time(nullptr);
@@ -223,7 +244,7 @@ struct AstroConstants {
  * @param s 対象の文字列
  * @return トリム後の文字列
  */
-std::string trim(const std::string &s) {
+inline std::string trim(const std::string &s) {
   const std::string WHITESPACE = " \t\n\r\f\v";
   size_t first = s.find_first_not_of(WHITESPACE);
   if (std::string::npos == first) {
@@ -283,8 +304,8 @@ inline AstroConstants loadConstants(const std::string &filename) {
 
   file.close();
 
-  astroConstants.au = constants.at("au") astroConstants.gm_sun =
-      constants.at("gm_sun");
+  astroConstants.au = constants.at("au");
+  astroConstants.gm_sun = constants.at("gm_sun");
   astroConstants.gm_earth = constants.at("gm_earth");
   astroConstants.G = constants.at("G");
   astroConstants.mu = astroConstants.gm_earth /

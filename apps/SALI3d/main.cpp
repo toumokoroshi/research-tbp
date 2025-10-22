@@ -58,17 +58,17 @@ std::string readSpecificLine(const std::string &filename,
                              int targetLine);
 
 int main() {
-
+  // CMakeから渡されたCONFIG_DIRマクロを使用
+  std::string config_base_path = CONFIG_DIR;
   std::string astro_param_file =
-      std::string(TOSTRING(CONFIG_DIR)) + "/astro_param/astro_param.txt";
+      config_base_path + "/astro_param/astro_param.txt";
   AstroConstants astro_params = loadConstants(astro_param_file);
   const double kAU = astro_params.au; // astronomical unit in meters
   const double kGMSUN =
       astro_params.gm_sun; // heliocentric gravitational constant m3 s-2
   const double kGMEARTH =
       astro_params.gm_earth; // geocentric gravitational constant m3 s-2
-  const double kMU =
-      kGMEARTH / (kGMSUN + kGMEARTH); // mu parameter of Earth-Sun
+  const double kMU = astro_params.mu; // mu parameter of Earth-Sun
 
   constexpr double HEADER_SIZE = 9;
   Point3D MeshCenter(1.0 - kMU, 0, 0);
@@ -80,28 +80,29 @@ int main() {
   std::cout << "<>            CRTBP 3dSALI Calculation based on Jacobi Integral"
             << std::endl;
   std::cout << "<>-------------------------------------------------------------"
-               "---\n\n\n\n"
+               "---\n\n"
             << std::endl;
   // #ifndef _DEBUG
   std::cout
       << "<>****************************************************************"
       << std::endl;
-  std::cout << "<>  [mode] : " << std::endl;
+  std::cout << "<>  [mode selection] : " << std::endl;
   std::cout << "<>        1. New simulation" << std::endl;
   std::cout << "<>        2. Detailed simulation for existing data"
             << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>      Input number : ";
+  std::cout << "<>   enter number " << std::endl;
+  std::cout << "<> >>>";
   char mode;
   std::cin >> mode;
   std::cout << std::endl;
   if (mode == '1') {
-    std::cout << "selected mode : New simulation\n" << std::endl;
+    std::cout << "<> > selected mode : New simulation\n" << std::endl;
   } else if (mode == '2') {
-    std::cout << "selected mode : Detailed simulation for existing data\n"
+    std::cout << "<> > selected mode : Detailed simulation for existing data\n"
               << std::endl;
   } else {
-    std::cout << "selected mode : Exit\n" << std::endl;
+    std::cout << "<> > selected mode : Exit\n" << std::endl;
     return 0;
   }
 
@@ -148,19 +149,14 @@ int main() {
     MeshCenter.z = data[4];
   }
   // #endif
-  std::cout
-      << "<>****************************************************************"
-      << std::endl;
-  std::cout << "<>           --simulation config--\n" << std::endl;
-  std::cout << "<>    reading config file\n" << std::endl;
-
   char mode2;
   std::cout << "<>  [single simulation or continuous simulation] : "
             << std::endl;
   std::cout << "<>        1. single simulation" << std::endl;
   std::cout << "<>        2. continuous simulation" << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>      Input number : ";
+  std::cout << "<>      enter number " << std::endl;
+  std::cout << "<> >>> ";
   std::cin >> mode2;
   std::cout << std::endl;
 
@@ -190,9 +186,6 @@ int main() {
   std::ifstream ifs;
   std::string configfilename;
 
-  // CMakeから渡されたCONFIG_DIRマクロを使用
-  std::string config_base_path = CONFIG_DIR;
-
   if (mode2 == '1') {
     configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig.txt";
   } else if (mode2 == '2') {
@@ -210,11 +203,14 @@ int main() {
   int configdata_num = 1;
   //  実行時間の計測
   auto start_ofall = std::chrono::system_clock::now();
+  // メインループ部分（while (ifs)の中）
   while (ifs) {
     double progress = 0;
     auto start = std::chrono::system_clock::now();
     std::string str;
     std::cout << std::setprecision(10);
+
+    // 設定ファイル読み込み部分（変更なし）
     while (std::getline(ifs, str)) {
       if (str.find("MESH SIZE") != std::string::npos) {
         MESH_SIZE = std::stoi(str.substr(str.find("=") + 1));
@@ -242,27 +238,59 @@ int main() {
         inclination = std::stod(str.substr(str.find("=") + 1));
         std::cout << "<>        INCLINATION(deg) : " << inclination
                   << std::endl;
-        inclination = inclination * std::acos(-1) / 180.; // deg to rad
+        inclination = inclination * std::acos(-1) / 180.;
       } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") !=
                  std::string::npos) {
         OMEGA = std::stod(str.substr(str.find("=") + 1));
         std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
-        OMEGA = OMEGA * std::acos(-1) / 180.; // deg to rad
+        OMEGA = OMEGA * std::acos(-1) / 180.;
       } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
         THETA = std::stod(str.substr(str.find("=") + 1));
         std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA
                   << std::endl;
-        THETA = THETA * std::acos(-1) / 180.; // deg to rad
+        THETA = THETA * std::acos(-1) / 180.;
       }
     }
     ifs.close();
     std::cout << "<>    config file read successfully\n" << std::endl;
     if (is_continuous == 0) {
-      std::cout << "<>  [Check the param and Press any key to go ahead]"
-                << std::endl;
-      __KEYWAIT__
+      std::cout << "<>  [read config validation]" << std::endl;
+      WaitForEnter();
+      std::cout << std::endl;
     }
-
+    int Core_Max = omp_get_max_threads();
+    int OMP_Fmax{};
+    std::cout << "<>  [OpenMP preparation]" << std::endl;
+    std::cout << "<> On your PC, " << Core_Max
+              << " threads can be used for parallel computing employing OMP."
+              << std::endl;
+    std::cout << "<> >  " << std::endl;
+    std::cout << "<>   * How many threads do you want use for simulation? "
+              << "(input an integer)" << std::endl;
+    std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが"
+              << std::endl;
+    std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> "
+              << std::endl;
+    std::cout << "<> >>> ";
+    char getcore = 0;
+    int getcore_int = 0;
+    std::cin >> getcore;
+    getcore_int = static_cast<int>(getcore - '0');
+    if (getcore <= Core_Max) {
+      OMP_Fmax = getcore;
+      std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax
+                << std::endl;
+    } else {
+      OMP_Fmax = Core_Max;
+      std::cout << "  <>     >> Your input is INVALID. OMP threads is "
+                << "automatically determined as " << OMP_Fmax << std::endl;
+    }
+    WaitForEnter();
+    WaitForEnter();
+    omp_set_num_threads(OMP_Fmax);
+    std::cout
+        << "<>****************************************************************"
+        << std::endl;
     std::cout << std::endl;
     std::cout << "<>           --SALI caluculation --" << std::endl;
     std::cout << std::endl;
@@ -278,8 +306,7 @@ int main() {
       meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
     }
 
-    int countt = 0;
-    countt = meshPoints.size();
+    int countt = meshPoints.size();
 
     std::cout << std::endl;
     std::cout << "<>        " << countt << " mesh generated successfully"
@@ -289,166 +316,183 @@ int main() {
 
     std::cout << "<>        Start calclation" << std::endl;
 
-    /* メッシュ上の点を用いてSALIを計算 */
     constexpr double perturbation = 1e-10;
 #ifdef SALI_only_XY
-    std::vector<std::array<double, 7>> SALI_data;
+    std::vector<std::array<double, 7>> SALI_data(countt);
 #else
-    std::vector<std::array<double, 10>> SALI_data;
+    std::vector<std::array<double, 10>> SALI_data(countt);
 #endif
-    // [0]:count, [1]time , [2]:x, [3]:y, [4]:z,
-    // [5]:jacobi constant
-    // [6]:SALI(x-biased&y-biased), [7]:SALI(x-biased&z-biased),
-    // [8]:SALI(y-biased&z-biased)
-    SALI_data.reserve(countt);
 
     int totalIterations = meshPoints.size();
-    for (const auto &point : meshPoints) {
-      displayProgressBar(progress);
-      // 0:計算終了, 1:計算継続
-      bool calc_traj = 1;
-      // 0:計算継続,
-      // 1:計算中断,途中でhill球から抜け出したり、禁止領域に入った場合
-      bool abort_calc = 0;
-      // 速度が定義できない場合（速度の絶対値が負になる場合）
-      bool velo_err = 0;
 
-      static int mesh_num = 1; // メッシュ番号
+    // 進捗カウンタ（アトミック操作用）
+    int completed_count = 0;
 
-      // non-biased velocity
-      double v_abs = calc_v_abs(point, kMU, JACOBI_INTEGRAL);
-      double vx = 0.0, vy = 0.0, vz = 0.0;
+    // OpenMP並列化ループ
+#pragma omp parallel shared(SALI_data, meshPoints, completed_count,            \
+                                totalIterations, progress)
+    {
+#pragma omp for schedule(dynamic)
+      for (int idx = 0; idx < static_cast<int>(meshPoints.size()); ++idx) {
+        const auto &point = meshPoints[idx];
 
-      if (v_abs > 0) {
-        Vector3d velocity =
-            calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
-        vx = velocity.x();
-        vy = velocity.y();
-        vz = velocity.z();
-      } else {
-        calc_traj = 0;
-        velo_err = 1;
-      }
+        // mesh_numはインデックス+1を使用
+        int mesh_num = idx + 1;
 
-      CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, kMU,
-                      CALC_TIMESTEP);
-      CRTBP perturbed_state1(point.x + perturbation, point.y, point.z, vx, vy,
-                             vz, kMU, CALC_TIMESTEP);
-      CRTBP perturbed_state2(point.x, point.y + perturbation, point.z, vx, vy,
-                             vz, kMU, CALC_TIMESTEP);
+        // 0:計算終了, 1:計算継続
+        bool calc_traj = 1;
+        // 0:計算継続, 1:計算中断
+        bool abort_calc = 0;
+        // 速度が定義できない場合
+        bool velo_err = 0;
 
-#ifndef SALI_only_XY
-      CRTBP perturbed_state3(point.x, point.y, point.z + perturbation, vx, vy,
-                             vz, kMU, CALC_TIMESTEP);
-#endif
-      CRTBP perturbed_state4(point.x, point.y, point.z, vx, vy,
-                             vz + perturbation, kMU, CALC_TIMESTEP);
+        // non-biased velocity
+        double v_abs = calc_v_abs(point, kMU, JACOBI_INTEGRAL);
+        double vx = 0.0, vy = 0.0, vz = 0.0;
 
-      double time = 0.0;
-#ifndef SALI_only_XY
-      double SALIxy = -1.0;
-      double SALIyz = -1.0;
-      double SALIzx = -1.0;
-#endif
-#ifdef SALI_only_XY
-      double SALI = -1.0;
-#endif
-      if (!velo_err) {
-        while (calc_traj) {
-          if (time > SALI_CALCTIME_THRESHOLD) {
-            calc_traj = 0;
-            continue;
-          }
-          if (ref_state.calc_r2() > SOI ||
-              ref_state.calc_r2() < FOREBIDDEN_AREA_RADIUS) {
-            abort_calc = 1;
-            calc_traj = 0;
-            continue;
-          }
-          ref_state.RK4_step_noncanonical();
-          perturbed_state1.RK4_step_noncanonical();
-          perturbed_state2.RK4_step_noncanonical();
-#ifndef SALI_only_XY
-          perturbed_state3.RK4_step_noncanonical();
-#endif
-          time += CALC_TIMESTEP;
+        if (v_abs > 0) {
+          Vector3d velocity =
+              calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
+          vx = velocity.x();
+          vy = velocity.y();
+          vz = velocity.z();
+        } else {
+          calc_traj = 0;
+          velo_err = 1;
         }
-        if (!abort_calc) {
-#ifdef SALI_only_XY
-          SALI = calc_SALI(ref_state.current_state(),
-                           perturbed_state1.current_state(),
-                           perturbed_state2.current_state());
-#endif
+
+        CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, kMU,
+                        CALC_TIMESTEP);
+        CRTBP perturbed_state1(point.x + perturbation, point.y, point.z, vx, vy,
+                               vz, kMU, CALC_TIMESTEP);
+        CRTBP perturbed_state2(point.x, point.y + perturbation, point.z, vx, vy,
+                               vz, kMU, CALC_TIMESTEP);
+
 #ifndef SALI_only_XY
-          SALIxy = calc_SALI(ref_state.current_state(),
+        CRTBP perturbed_state3(point.x, point.y, point.z + perturbation, vx, vy,
+                               vz, kMU, CALC_TIMESTEP);
+#endif
+        CRTBP perturbed_state4(point.x, point.y, point.z, vx, vy,
+                               vz + perturbation, kMU, CALC_TIMESTEP);
+
+        double time = 0.0;
+#ifndef SALI_only_XY
+        double SALIxy = -1.0;
+        double SALIyz = -1.0;
+        double SALIzx = -1.0;
+#endif
+#ifdef SALI_only_XY
+        double SALI = -1.0;
+#endif
+        if (!velo_err) {
+          while (calc_traj) {
+            if (time > SALI_CALCTIME_THRESHOLD) {
+              calc_traj = 0;
+              continue;
+            }
+            if (ref_state.calc_r2() > SOI ||
+                ref_state.calc_r2() < FOREBIDDEN_AREA_RADIUS) {
+              abort_calc = 1;
+              calc_traj = 0;
+              continue;
+            }
+            ref_state.RK4_step_noncanonical();
+            perturbed_state1.RK4_step_noncanonical();
+            perturbed_state2.RK4_step_noncanonical();
+#ifndef SALI_only_XY
+            perturbed_state3.RK4_step_noncanonical();
+#endif
+            time += CALC_TIMESTEP;
+          }
+          if (!abort_calc) {
+#ifdef SALI_only_XY
+            SALI = calc_SALI(ref_state.current_state(),
                              perturbed_state1.current_state(),
                              perturbed_state2.current_state());
-          SALIyz = calc_SALI(ref_state.current_state(),
-                             perturbed_state2.current_state(),
-                             perturbed_state3.current_state());
-          SALIzx = calc_SALI(ref_state.current_state(),
-                             perturbed_state1.current_state(),
-                             perturbed_state3.current_state());
+#endif
+#ifndef SALI_only_XY
+            SALIxy = calc_SALI(ref_state.current_state(),
+                               perturbed_state1.current_state(),
+                               perturbed_state2.current_state());
+            SALIyz = calc_SALI(ref_state.current_state(),
+                               perturbed_state2.current_state(),
+                               perturbed_state3.current_state());
+            SALIzx = calc_SALI(ref_state.current_state(),
+                               perturbed_state1.current_state(),
+                               perturbed_state3.current_state());
+#endif
+          }
+        } else {
+#ifdef SALI_only_XY
+          SALI = -1.0;
+#endif
+#ifndef SALI_only_XY
+          SALIxy = -1.0;
+          SALIyz = -1.0;
+          SALIzx = -1.0;
 #endif
         }
-      } else {
+        double jacobiii = calc_jacobi_integral(ref_state.current_state(), kMU);
+
 #ifdef SALI_only_XY
-        SALI = -1.0;
+        SALI_data[idx] = {static_cast<double>(mesh_num),
+                          time,
+                          point.x,
+                          point.y,
+                          point.z,
+                          jacobiii,
+                          SALI};
 #endif
 #ifndef SALI_only_XY
-        SALIxy = -1.0;
-        SALIyz = -1.0;
-        SALIzx = -1.0;
+        // 最小値
+        double SALI = std::min({SALIxy, SALIyz, SALIzx});
+        SALI_data[idx] = {static_cast<double>(mesh_num),
+                          time,
+                          point.x,
+                          point.y,
+                          point.z,
+                          jacobiii,
+                          SALIxy,
+                          SALIyz,
+                          SALIzx,
+                          SALI};
 #endif
+
+        // 進捗更新（アトミック操作）
+#pragma omp atomic
+        completed_count++;
+
+        // 進捗表示（定期的に更新、全スレッドが毎回表示するのを防ぐ）
+        // 表示頻度を調整: メッシュ数の1%ごと、または最低でも100回に1回
+        int display_interval = std::max(totalIterations / 100, 1);
+        if (completed_count % display_interval == 0 ||
+            completed_count == totalIterations) {
+          double current_progress =
+              static_cast<double>(completed_count) / totalIterations;
+          displayProgressBarThreadSafe(current_progress);
+        }
       }
-      double jacobiii = calc_jacobi_integral(ref_state.current_state(), kMU);
-#ifdef SALI_only_XY
-      std::array<double, 7> SALI_data1{static_cast<double>(mesh_num),
-                                       time,
-                                       point.x,
-                                       point.y,
-                                       point.z,
-                                       jacobiii,
-                                       SALI};
-#endif
-#ifndef SALI_only_XY
-      // 最小値
-      double SALI = std::min({SALIxy, SALIyz, SALIzx});
-      std::array<double, 10> SALI_data1{static_cast<double>(mesh_num),
-                                        time,
-                                        point.x,
-                                        point.y,
-                                        point.z,
-                                        jacobiii,
-                                        SALIxy,
-                                        SALIyz,
-                                        SALIzx,
-                                        SALI};
-#endif
-      SALI_data.emplace_back(SALI_data1);
-      // 進捗を計算
-      progress = (mesh_num + 1.0) / totalIterations;
+    } // end of parallel region
 
-      // プログレスバーを表示
-      displayProgressBar(progress);
+    // 最終的な進捗バー表示
+    displayProgressBarThreadSafe(1.0);
+    std::cout << std::endl;
 
-      mesh_num++;
-    }
+    // mesh_numでソート
+    std::sort(SALI_data.begin(), SALI_data.end(),
+              [](const auto &a, const auto &b) { return a[0] < b[0]; });
 
-    //  日付と時刻をファイル名にしてファイル出力
-    // CMakeから渡されたOUTPUT_DIRマクロを使用
+    // ファイル出力（以降は変更なし）
     std::string output_base_path = OUTPUT_DIR;
     std::string filename =
         output_base_path + "/SALI/3DSALI_" + getcurrent_date() + ".dat";
     std::ofstream ofs1(filename);
     if (!ofs1) {
-      // ファイルが開けなかった場合、ディレクトリが存在しない可能性があるため作成を試みる
       std::filesystem::path filepath(filename);
       std::filesystem::path dir = filepath.parent_path();
       if (!std::filesystem::exists(dir)) {
         std::filesystem::create_directories(dir);
       }
-      // 再度ファイルを開く
       ofs1.open(filename);
       if (!ofs1) {
         std::cerr << "Failed to open file even after creating directory: "
@@ -456,7 +500,7 @@ int main() {
         return -1;
       }
     }
-    // 計算のコンフィグレーションをファイルに書き込む
+
     ofs1 << "MESH SIZE=" << MESH_SIZE << std::endl;
     ofs1 << "CALCULATION TIMESTEP=" << CALC_TIMESTEP << std::endl;
     ofs1 << "SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
@@ -464,10 +508,9 @@ int main() {
     ofs1 << "FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
     ofs1 << "INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
     ofs1 << "INCLINATION AGAINST XY PLANE="
-         << inclination / std::acos(-1) * 180. << std::endl; // rad to deg
+         << inclination / std::acos(-1) * 180. << std::endl;
     ofs1 << "LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180.
-         << std::endl; // rad to
-                       // deg
+         << std::endl;
     ofs1 << "DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180.
          << std::endl;
 #ifdef SALI_only_XY
@@ -494,20 +537,16 @@ int main() {
 #endif
     }
     ofs1.close();
-    auto end = std::chrono::system_clock::now();
 
-    // 実行時間の計算
+    auto end = std::chrono::system_clock::now();
     auto duration =
         std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    // 時、分、秒、ミリ秒に分解
     auto msec = duration.count() % 1000;
     auto sec = duration.count() / 1000 % 60;
     auto min = duration.count() / 1000 / 60 % 60;
     auto hour = duration.count() / 1000 / 60 / 60;
 
-    displayProgressBar(1.0);
-    std::cout << std::endl;
     if (mode2 == '1') {
       break;
     }
