@@ -2,42 +2,41 @@
 #define VECTOR3D_HPP_
 
 #include <cmath>
-#include <iostream>
 #include <stdexcept>
 
+template <typename T>
 class Vector3d {
-private:
-  double x_;
-  double y_;
-  double z_;
+ private:
+  T x_;
+  T y_;
+  T z_;
 
-public:
+ public:
   Vector3d() : x_(0), y_(0), z_(0) {}
 
-  Vector3d(double x, double y, double z) : x_(x), y_(y), z_(z) {}
+  Vector3d(T x, T y, T z) : x_(x), y_(y), z_(z) {}
 
-  Vector3d(const Vector3d &other) : x_(other.x_), y_(other.y_), z_(other.z_) {}
+  Vector3d(const Vector3d& other) : x_(other.x_), y_(other.y_), z_(other.z_) {}
 
   // getter
-  double x() const { return x_; }
-  double y() const { return y_; }
-  double z() const { return z_; }
+  T x() const { return x_; }
+  T y() const { return y_; }
+  T z() const { return z_; }
 
-  Vector3d &operator=(const Vector3d &other) {
+  Vector3d& operator=(const Vector3d& other) {
     x_ = other.x_;
     y_ = other.y_;
     z_ = other.z_;
     return *this;
   }
 
-  Vector3d(Vector3d &&other) noexcept
-      : x_(other.x_), y_(other.y_), z_(other.z_) {
+  Vector3d(Vector3d&& other) noexcept : x_(other.x_), y_(other.y_), z_(other.z_) {
     other.x_ = 0;
     other.y_ = 0;
     other.z_ = 0;
   }
 
-  Vector3d &operator=(Vector3d &&other) noexcept {
+  Vector3d& operator=(Vector3d&& other) noexcept {
     x_ = other.x_;
     y_ = other.y_;
     z_ = other.z_;
@@ -48,16 +47,16 @@ public:
   }
 
   double magnitude() const {
-    double x = x_;
-    double y = y_;
-    double z = z_;
-    double norm = std::sqrt(x * x + y * y + z * z);
+    T x = x_;
+    T y = y_;
+    T z = z_;
+    T norm = std::sqrt(x * x + y * y + z * z);
     return norm;
   }
 
   Vector3d normalise() const {
     Vector3d result_buf(x_, y_, z_);
-    double norm = result_buf.magnitude();
+    T norm = result_buf.magnitude();
     if (norm == 0) {
       throw std::runtime_error("normalized: zero magnitude");
     }
@@ -65,29 +64,26 @@ public:
     return result;
   }
 
-  Vector3d gaiseki(const Vector3d &other) const {
-    return Vector3d(y_ * other.z_ - z_ * other.y_,
-                    z_ * other.x_ - x_ * other.z_,
+  Vector3d gaiseki(const Vector3d& other) const {
+    return Vector3d(y_ * other.z_ - z_ * other.y_, z_ * other.x_ - x_ * other.z_,
                     x_ * other.y_ - y_ * other.x_);
   }
 
-  double naiseki(const Vector3d &other) const {
+  double naiseki(const Vector3d& other) const {
     return x_ * other.x_ + y_ * other.y_ + z_ * other.z_;
   }
 
-  Vector3d operator+(const Vector3d &other) const {
+  Vector3d operator+(const Vector3d& other) const {
     return Vector3d(x_ + other.x_, y_ + other.y_, z_ + other.z_);
   }
 
-  Vector3d operator-(const Vector3d &other) const {
+  Vector3d operator-(const Vector3d& other) const {
     return Vector3d(x_ - other.x_, y_ - other.y_, z_ - other.z_);
   }
 
-  Vector3d operator*(double scalar) const {
-    return Vector3d(x_ * scalar, y_ * scalar, z_ * scalar);
-  }
+  Vector3d operator*(T scalar) const { return Vector3d(x_ * scalar, y_ * scalar, z_ * scalar); }
 
-  Vector3d operator/(double scalar) const {
+  Vector3d operator/(T scalar) const {
     if (scalar == 0) {
       throw std::runtime_error("operator/: division by zero");
     }
@@ -95,4 +91,4 @@ public:
   }
 };
 
-#endif // VECTOR3D_HPP_
+#endif  // VECTOR3D_HPP_

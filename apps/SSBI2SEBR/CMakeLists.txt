@@ -1,7 +1,7 @@
 add_executable(SSBI2SEBR main.cpp)
 
 target_link_libraries(SSBI2SEBR PRIVATE
-    mylib
+  my_lib
 )
 
 target_compile_definitions(SSBI2SEBR PRIVATE

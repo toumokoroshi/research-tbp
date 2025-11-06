@@ -1,36 +1,21 @@
-# 共有ライブラリのソースファイル
-set(LIB_SOURCES
-    src/crtbp.cpp
-    # src/solver
-    # src/io_utils.cpp
-)
+# C++の標準規格を指定
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-# 共有ライブラリの作成
-add_library(mylib STATIC ${LIB_SOURCES})
-
-# インクルードディレクトリの設定
-target_include_directories(mylib
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
-
-# C++標準の設定(一応全体で統一してみる)
-# target_compile_features(mylib PUBLIC cxx_std_17)
-set_property(TARGET mylib PROPERTY CXX_STANDARD 17)
-set_property(TARGET mylib PROPERTY CXX_STANDARD_REQUIRED ON)
-
-# # 外部ライブラリとのリンク（例: OpenMP）
 find_package(Boost REQUIRED)
-target_link_libraries(mylib PUBLIC Boost::boost)
-# find_package(OpenMP)
-# if(OpenMP_CXX_FOUND)
-#     target_link_libraries(mylib PUBLIC OpenMP::OpenMP_CXX)
-# endif()
 
-# # mylibをインストールする設定（オプション）
-# # これにより、ビルドしたライブラリとヘッダーをシステムにインストールできる
-# install(TARGETS mylib DESTINATION lib)
-# install(DIRECTORY include/mylib DESTINATION include)
+# ヘッダオンリーライブラリを INTERFACE ターゲットとして定義する
+add_library(my_lib INTERFACE)
+
+# my_header_lib にインクルードパスを設定する
+target_include_directories(my_lib
+    INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<INSTALL_INTERFACE:include>
+)
+
+#my_header_lib にBoostへの依存関係を設定する
+target_link_libraries(my_lib
+    INTERFACE
+        Boost::headers
+)

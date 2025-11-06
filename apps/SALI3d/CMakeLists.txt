@@ -1,8 +1,8 @@
 add_executable(SALI3d main.cpp)
 
 target_link_libraries(SALI3d PRIVATE
-    mylib
     # Eigen3::Eigen
+    my_lib
     Boost::boost
 )
 
@@ -10,7 +10,7 @@ target_link_libraries(SALI3d PRIVATE
 if(OpenMP_CXX_FOUND)
     # コンパイル時にのみOpenMPフラグを追加
     target_compile_options(SALI3d PRIVATE ${OpenMP_CXX_FLAGS})
-    
+
     # リンク時はライブラリのみを追加（フラグは追加しない）
     if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
         # Intel OpenMPライブラリを直接リンク

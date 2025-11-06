@@ -14,17 +14,18 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <crtbp.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
-#include <vector>
-
-#include <crtbp.hpp>
 #include <utils.hpp>
 #include <vector3d.hpp>
+#include <vector>
+
+#include "rtbp.hpp"
 
 #define _DEBUG
 // #define SALI_only_XY
@@ -34,62 +35,53 @@
 #define TOSTRING(x) STRINGIFY(x)
 
 // 任意の2組の軌道要素からSALIを計算する関数
-double calc_SALI(const std::array<double, 6> &ref_state,
-                 const std::array<double, 6> &perturbed_state1,
-                 const std::array<double, 6> &perturbed_state2, int mode = 6);
-double calc_r1(const Point3D &point, const double mu);
+double calc_SALI(const std::array<double, 6>& ref_state,
+                 const std::array<double, 6>& perturbed_state1,
+                 const std::array<double, 6>& perturbed_state2, int mode = 6);
+double calc_r1(const my_type::Coord3D<double>& point, const double mu);
 
-double calc_r2(const Point3D &point, const double mu);
+double calc_r2(const my_type::Coord3D<double>& point, const double mu);
 
-double calc_v_abs(const Point3D &point, const double mu,
+double calc_v_abs(const my_type::Coord3D<double>& point, const double mu,
                   const double JACOBI_INTEGRAL);
 
-double calc_jacobi_integral(const std::array<double, 6> &state,
-                            const double mu);
+double calc_jacobi_integral(const std::array<double, 6>& state, const double mu);
 
-Vector3d calc_velocity(const Point3D &point, const double v_abs,
-                       const double mu, const double inclination,
-                       const double OMEGA, const double theta = 0.0);
+Vector3d<double> calc_velocity(const my_type::Coord3D<double>& point, const double v_abs,
+                               const double mu, const double inclination, const double OMEGA,
+                               const double theta = 0.0);
 
-std::vector<std::streampos> indexFile(const std::string &filename);
+std::vector<std::streampos> indexFile(const std::string& filename);
 
-std::string readSpecificLine(const std::string &filename,
-                             const std::vector<std::streampos> &linePositions,
-                             int targetLine);
+std::string readSpecificLine(const std::string& filename,
+                             const std::vector<std::streampos>& linePositions, int targetLine);
 
 int main() {
+  using namespace param;
+  using namespace utils;
   // CMakeから渡されたCONFIG_DIRマクロを使用
   std::string config_base_path = CONFIG_DIR;
-  std::string astro_param_file =
-      config_base_path + "/astro_param/astro_param.txt";
-  AstroConstants astro_params = loadConstants(astro_param_file);
-  const double kAU = astro_params.au; // astronomical unit in meters
-  const double kGMSUN =
-      astro_params.gm_sun; // heliocentric gravitational constant m3 s-2
-  const double kGMEARTH =
-      astro_params.gm_earth; // geocentric gravitational constant m3 s-2
-  const double kMU = astro_params.mu; // mu parameter of Earth-Sun
+  std::string astro_param_file = config_base_path + "/astro_param/astro_param.txt";
+  AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
+  const double kAU = astro_params.au;             // astronomical unit in meters
+  const double kGMSUN = astro_params.gm_sun;      // heliocentric gravitational constant m3 s-2
+  const double kGMEARTH = astro_params.gm_earth;  // geocentric gravitational constant m3 s-2
+  const double kMU = astro_params.mu;             // mu parameter of Earth-Sun
 
   constexpr double HEADER_SIZE = 9;
-  Point3D MeshCenter(1.0 - kMU, 0, 0);
+  my_type::Coord3D<double> MeshCenter{1.0 - kMU, 0, 0};
   double ROI_length = 0;
 
-  std::cout
-      << "<>----------------------------------------------------------------"
-      << std::endl;
-  std::cout << "<>            CRTBP 3dSALI Calculation based on Jacobi Integral"
-            << std::endl;
+  std::cout << "<>----------------------------------------------------------------" << std::endl;
+  std::cout << "<>            CRTBP 3dSALI Calculation based on Jacobi Integral" << std::endl;
   std::cout << "<>-------------------------------------------------------------"
                "---\n\n"
             << std::endl;
   // #ifndef _DEBUG
-  std::cout
-      << "<>****************************************************************"
-      << std::endl;
+  std::cout << "<>****************************************************************" << std::endl;
   std::cout << "<>  [mode selection] : " << std::endl;
   std::cout << "<>        1. New simulation" << std::endl;
-  std::cout << "<>        2. Detailed simulation for existing data"
-            << std::endl;
+  std::cout << "<>        2. Detailed simulation for existing data" << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
   std::cout << "<>   enter number " << std::endl;
   std::cout << "<> >>>";
@@ -99,8 +91,7 @@ int main() {
   if (mode == '1') {
     std::cout << "<> > selected mode : New simulation\n" << std::endl;
   } else if (mode == '2') {
-    std::cout << "<> > selected mode : Detailed simulation for existing data\n"
-              << std::endl;
+    std::cout << "<> > selected mode : Detailed simulation for existing data\n" << std::endl;
   } else {
     std::cout << "<> > selected mode : Exit\n" << std::endl;
     return 0;
@@ -133,10 +124,8 @@ int main() {
     std::vector<std::streampos> linePositions = indexFile(filename_interested);
 
     // 指定した行を読み込む
-    int targetLine =
-        std::stoi(mesh_num_of_interest) + HEADER_SIZE; // 読み込みたい行番号
-    std::string line =
-        readSpecificLine(filename_interested, linePositions, targetLine);
+    int targetLine = std::stoi(mesh_num_of_interest) + HEADER_SIZE;  // 読み込みたい行番号
+    std::string line = readSpecificLine(filename_interested, linePositions, targetLine);
     std::cout << "<>        interested line : " << line << std::endl;
     std::stringstream ss(line);
     std::array<double, 7> data;
@@ -144,14 +133,13 @@ int main() {
       ss >> data[i];
     }
 
-    MeshCenter.x = data[2];
-    MeshCenter.y = data[3];
-    MeshCenter.z = data[4];
+    MeshCenter[0] = data[2];
+    MeshCenter[1] = data[3];
+    MeshCenter[2] = data[4];
   }
   // #endif
   char mode2;
-  std::cout << "<>  [single simulation or continuous simulation] : "
-            << std::endl;
+  std::cout << "<>  [single simulation or continuous simulation] : " << std::endl;
   std::cout << "<>        1. single simulation" << std::endl;
   std::cout << "<>        2. continuous simulation" << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
@@ -203,22 +191,18 @@ int main() {
   int OMP_Fmax{};
   std::cout << "<>  [OpenMP preparation]" << std::endl;
   std::cout << "<> On your PC, " << Core_Max
-            << " threads can be used for parallel computing employing OMP."
-            << std::endl;
+            << " threads can be used for parallel computing employing OMP." << std::endl;
   std::cout << "<> >  " << std::endl;
   std::cout << "<>   * How many threads do you want use for simulation? "
             << "(input an integer)" << std::endl;
-  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが"
-            << std::endl;
-  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> "
-            << std::endl;
+  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
+  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
   std::cout << "<> >>> ";
   int getcore = 0;
   std::cin >> getcore;
   if (getcore <= Core_Max) {
     OMP_Fmax = getcore;
-    std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax
-              << std::endl;
+    std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
   } else {
     OMP_Fmax = Core_Max;
     std::cout << "  <>     >> Your input is INVALID. OMP threads is "
@@ -245,34 +229,28 @@ int main() {
         std::cout << "<>        CALC TIMESTEP : " << CALC_TIMESTEP << std::endl;
       } else if (str.find("SALI CALCTIME THRESHOLD") != std::string::npos) {
         SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        SALI CALCTIME THRESHOLD : "
-                  << SALI_CALCTIME_THRESHOLD << std::endl;
+        std::cout << "<>        SALI CALCTIME THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
       } else if (str.find("RADIUS OF SOI") != std::string::npos) {
         SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
         std::cout << "<>        SOI RADIUS : " << SOI_RADIUS << std::endl;
       } else if (str.find("RADIUS OF FOREBIDDEN AREA") != std::string::npos) {
         FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        RADIUS OF FOREBIDDEN AREA : "
-                  << FOREBIDDEN_AREA_RADIUS << std::endl;
+        std::cout << "<>        RADIUS OF FOREBIDDEN AREA : " << FOREBIDDEN_AREA_RADIUS
+                  << std::endl;
       } else if (str.find("JACOBI INTEGRAL") != std::string::npos) {
         JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        JACOBI INTEGRAL : " << JACOBI_INTEGRAL
-                  << std::endl;
-      } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") !=
-                 std::string::npos) {
+        std::cout << "<>        JACOBI INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
+      } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") != std::string::npos) {
         inclination = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        INCLINATION(deg) : " << inclination
-                  << std::endl;
+        std::cout << "<>        INCLINATION(deg) : " << inclination << std::endl;
         inclination = inclination * std::acos(-1) / 180.;
-      } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") !=
-                 std::string::npos) {
+      } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") != std::string::npos) {
         OMEGA = std::stod(str.substr(str.find("=") + 1));
         std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
         OMEGA = OMEGA * std::acos(-1) / 180.;
       } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
         THETA = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA
-                  << std::endl;
+        std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA << std::endl;
         THETA = THETA * std::acos(-1) / 180.;
       }
     }
@@ -290,7 +268,7 @@ int main() {
     std::cout << std::endl;
 
     std::cout << "<>        Generating mesh ";
-    std::vector<Point3D> meshPoints;
+    std::vector<my_type::Coord3D<double>> meshPoints;
     if (mode == '1') {
       std::cout << "based on SOI radius" << std::endl;
       meshPoints = createSphereMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
@@ -302,8 +280,7 @@ int main() {
     int countt = meshPoints.size();
 
     std::cout << std::endl;
-    std::cout << "<>        " << countt << " mesh generated successfully"
-              << std::endl;
+    std::cout << "<>        " << countt << " mesh generated successfully" << std::endl;
     std::cout << std::endl;
     std::cout << std::endl;
 
@@ -322,12 +299,11 @@ int main() {
     int completed_count = 0;
 
     // OpenMP並列化ループ
-#pragma omp parallel shared(SALI_data, meshPoints, completed_count,            \
-                                totalIterations, progress)
+#pragma omp parallel shared(SALI_data, meshPoints, completed_count, totalIterations, progress)
     {
 #pragma omp for schedule(dynamic)
       for (int idx = 0; idx < static_cast<int>(meshPoints.size()); ++idx) {
-        const auto &point = meshPoints[idx];
+        const auto& point = meshPoints[idx];
 
         int mesh_num = idx + 1;
 
@@ -343,8 +319,7 @@ int main() {
         double vx = 0.0, vy = 0.0, vz = 0.0;
 
         if (v_abs > 0) {
-          Vector3d velocity =
-              calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
+          Vector3d<double> velocity = calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
           vx = velocity.x();
           vy = velocity.y();
           vz = velocity.z();
@@ -353,19 +328,18 @@ int main() {
           velo_err = 1;
         }
 
-        CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, kMU,
-                        CALC_TIMESTEP);
-        CRTBP perturbed_state1(point.x + perturbation, point.y, point.z, vx, vy,
-                               vz, kMU, CALC_TIMESTEP);
-        CRTBP perturbed_state2(point.x, point.y + perturbation, point.z, vx, vy,
-                               vz, kMU, CALC_TIMESTEP);
+        CRTBP ref_state(point[0], point[1], point[2], vx, vy, vz, kMU, CALC_TIMESTEP);
+        CRTBP perturbed_state1(point[0] + perturbation, point[1], point[2], vx, vy, vz, kMU,
+                               CALC_TIMESTEP);
+        CRTBP perturbed_state2(point[0], point[1] + perturbation, point[2], vx, vy, vz, kMU,
+                               CALC_TIMESTEP);
 
 #ifndef SALI_only_XY
-        CRTBP perturbed_state3(point.x, point.y, point.z + perturbation, vx, vy,
-                               vz, kMU, CALC_TIMESTEP);
+        CRTBP perturbed_state3(point[0], point[1], point[2] + perturbation, vx, vy, vz, kMU,
+                               CALC_TIMESTEP);
 #endif
-        CRTBP perturbed_state4(point.x, point.y, point.z, vx, vy,
-                               vz + perturbation, kMU, CALC_TIMESTEP);
+        CRTBP perturbed_state4(point[0], point[1], point[2], vx, vy, vz + perturbation, kMU,
+                               CALC_TIMESTEP);
 
         double time = 0.0;
 #ifndef SALI_only_XY
@@ -382,8 +356,7 @@ int main() {
               calc_traj = 0;
               continue;
             }
-            if (ref_state.calc_r2() > SOI ||
-                ref_state.calc_r2() < FOREBIDDEN_AREA_RADIUS) {
+            if (ref_state.calc_r2() > SOI || ref_state.calc_r2() < FOREBIDDEN_AREA_RADIUS) {
               abort_calc = 1;
               calc_traj = 0;
               continue;
@@ -398,19 +371,15 @@ int main() {
           }
           if (!abort_calc) {
 #ifdef SALI_only_XY
-            SALI = calc_SALI(ref_state.current_state(),
-                             perturbed_state1.current_state(),
+            SALI = calc_SALI(ref_state.current_state(), perturbed_state1.current_state(),
                              perturbed_state2.current_state());
 #endif
 #ifndef SALI_only_XY
-            SALIxy = calc_SALI(ref_state.current_state(),
-                               perturbed_state1.current_state(),
+            SALIxy = calc_SALI(ref_state.current_state(), perturbed_state1.current_state(),
                                perturbed_state2.current_state());
-            SALIyz = calc_SALI(ref_state.current_state(),
-                               perturbed_state2.current_state(),
+            SALIyz = calc_SALI(ref_state.current_state(), perturbed_state2.current_state(),
                                perturbed_state3.current_state());
-            SALIzx = calc_SALI(ref_state.current_state(),
-                               perturbed_state1.current_state(),
+            SALIzx = calc_SALI(ref_state.current_state(), perturbed_state1.current_state(),
                                perturbed_state3.current_state());
 #endif
           }
@@ -427,22 +396,17 @@ int main() {
         double jacobiii = calc_jacobi_integral(ref_state.current_state(), kMU);
 
 #ifdef SALI_only_XY
-        SALI_data[idx] = {static_cast<double>(mesh_num),
-                          time,
-                          point.x,
-                          point.y,
-                          point.z,
-                          jacobiii,
-                          SALI};
+        SALI_data[idx] = {
+            static_cast<double>(mesh_num), time, point[0], point[1], point[2], jacobiii, SALI};
 #endif
 #ifndef SALI_only_XY
         // 最小値
         double SALI = std::min({SALIxy, SALIyz, SALIzx});
         SALI_data[idx] = {static_cast<double>(mesh_num),
                           time,
-                          point.x,
-                          point.y,
-                          point.z,
+                          point[0],
+                          point[1],
+                          point[2],
                           jacobiii,
                           SALIxy,
                           SALIyz,
@@ -456,14 +420,12 @@ int main() {
 
         // 進捗表示（定期的に更新、全スレッドが毎回表示するのを防ぐ）
         int display_interval = std::max(totalIterations / 100, 1);
-        if (completed_count % display_interval == 0 ||
-            completed_count == totalIterations) {
-          double current_progress =
-              static_cast<double>(completed_count) / totalIterations;
+        if (completed_count % display_interval == 0 || completed_count == totalIterations) {
+          double current_progress = static_cast<double>(completed_count) / totalIterations;
           displayProgressBarThreadSafe(current_progress);
         }
       }
-    } // end of parallel region
+    }  // end of parallel region
 
     // 最終的な進捗バー表示
     displayProgressBarThreadSafe(1.0);
@@ -471,14 +433,13 @@ int main() {
 
     // mesh_numでソート
     std::sort(SALI_data.begin(), SALI_data.end(),
-              [](const auto &a, const auto &b) { return a[0] < b[0]; });
+              [](const auto& a, const auto& b) { return a[0] < b[0]; });
 
     // ファイル出力
     std::string output_base_path = OUTPUT_DIR;
     // シミュレーション終了時刻が同じでもファイル名が被らないようにする
-    std::string filename =
-        output_base_path + "/3D_crtbp_SALI/3DSALI_result_configdata_" +
-        std::to_string(configdata_num) + getcurrent_date() + ".txt";
+    std::string filename = output_base_path + "/3D_crtbp_SALI/3DSALI_result_configdata_" +
+                           std::to_string(configdata_num) + getcurrent_date() + ".txt";
     std::ofstream ofs1(filename);
     if (!ofs1) {
       std::filesystem::path filepath(filename);
@@ -488,8 +449,7 @@ int main() {
       }
       ofs1.open(filename);
       if (!ofs1) {
-        std::cerr << "Failed to open file even after creating directory: "
-                  << filename << std::endl;
+        std::cerr << "Failed to open file even after creating directory: " << filename << std::endl;
         return -1;
       }
     }
@@ -500,40 +460,33 @@ int main() {
     ofs1 << "RADIUSofSOI=" << SOI_RADIUS << std::endl;
     ofs1 << "FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
     ofs1 << "INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
-    ofs1 << "INCLINATION AGAINST XY PLANE="
-         << inclination / std::acos(-1) * 180. << std::endl;
-    ofs1 << "LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180.
-         << std::endl;
-    ofs1 << "DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180.
-         << std::endl;
+    ofs1 << "INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
+    ofs1 << "LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
+    ofs1 << "DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
 #ifdef SALI_only_XY
     ofs1 << "mesh_num, time, x, y, z, jacobi constant, SALI" << std::endl;
 #endif
 #ifndef SALI_only_XY
-    ofs1 << "mesh_num, time, x, y, z, jacobi constant, SALIxy,SALIyz,SALIxz,"
-         << std::endl;
+    ofs1 << "mesh_num, time, x, y, z, jacobi constant, SALIxy,SALIyz,SALIxz," << std::endl;
 #endif
 
-    for (const auto &data : SALI_data) {
+    for (const auto& data : SALI_data) {
 #ifdef SALI_only_XY
-      ofs1 << std::setprecision(0) << std::fixed << data[0] << " "
-           << std::setprecision(4) << data[1] << " " << std::setprecision(15)
-           << std::fixed << data[2] << " " << data[3] << " " << data[4] << " "
-           << data[5] << " " << data[6] << " " << std::endl;
+      ofs1 << std::setprecision(0) << std::fixed << data[0] << " " << std::setprecision(4)
+           << data[1] << " " << std::setprecision(15) << std::fixed << data[2] << " " << data[3]
+           << " " << data[4] << " " << data[5] << " " << data[6] << " " << std::endl;
 #endif
 #ifndef SALI_only_XY
-      ofs1 << std::setprecision(0) << std::fixed << data[0] << " "
-           << std::setprecision(4) << data[1] << " " << std::setprecision(15)
-           << std::fixed << data[2] << " " << data[3] << " " << data[4] << " "
-           << data[5] << " " << data[6] << " " << data[7] << " " << data[8]
+      ofs1 << std::setprecision(0) << std::fixed << data[0] << " " << std::setprecision(4)
+           << data[1] << " " << std::setprecision(15) << std::fixed << data[2] << " " << data[3]
+           << " " << data[4] << " " << data[5] << " " << data[6] << " " << data[7] << " " << data[8]
            << " " << data[9] << std::endl;
 #endif
     }
     ofs1.close();
 
     auto end = std::chrono::system_clock::now();
-    auto duration =
-        std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
     auto msec = duration.count() % 1000;
     auto sec = duration.count() / 1000 % 60;
@@ -543,13 +496,12 @@ int main() {
     if (mode2 == '1') {
       break;
     }
-    std::cout << "<>        elapsed time : " << hour << "h " << min << "m "
-              << sec << "s " << msec << "ms" << std::endl;
-    std::cout << "<>        Simulation for " << configfilename << " finished"
-              << std::endl;
+    std::cout << "<>        elapsed time : " << hour << "h " << min << "m " << sec << "s " << msec
+              << "ms" << std::endl;
+    std::cout << "<>        Simulation for " << configfilename << " finished" << std::endl;
     configdata_num++;
-    configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" +
-                     std::to_string(configdata_num) + ".txt";
+    configfilename =
+        config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" + std::to_string(configdata_num) + ".txt";
     std::cout << "<>        Next config file : " << configfilename << std::endl;
     ifs.open(configfilename);
   }
@@ -558,8 +510,7 @@ int main() {
   auto end = std::chrono::system_clock::now();
 
   // 実行時間の計算
-  auto duration =
-      std::chrono::duration_cast<std::chrono::milliseconds>(end - start_ofall);
+  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_ofall);
 
   // 時、分、秒、ミリ秒に分解
   auto msec = duration.count() % 1000;
@@ -570,15 +521,15 @@ int main() {
   std::cout << std::endl;
   std::cout << std::endl;
   std::cout << "<>        Calculation finished" << std::endl;
-  std::cout << "<>        Total elapsed time : " << hour << "h " << min << "m "
-            << sec << "s " << msec << "ms" << std::endl;
+  std::cout << "<>        Total elapsed time : " << hour << "h " << min << "m " << sec << "s "
+            << msec << "ms" << std::endl;
 
   return 0;
 }
 
-double calc_SALI(const std::array<double, 6> &ref_state,
-                 const std::array<double, 6> &perturbed_state1,
-                 const std::array<double, 6> &perturbed_state2, int mode) {
+double calc_SALI(const std::array<double, 6>& ref_state,
+                 const std::array<double, 6>& perturbed_state1,
+                 const std::array<double, 6>& perturbed_state2, int mode) {
   double SALI = 5.0;
   if (mode == 3) {
     std::array<double, 3> q_ref{ref_state[0], ref_state[1], ref_state[2]};
@@ -586,25 +537,25 @@ double calc_SALI(const std::array<double, 6> &ref_state,
                                       perturbed_state1[2]};
     std::array<double, 3> q_pertubed2{perturbed_state2[0], perturbed_state2[1],
                                       perturbed_state2[2]};
-    std::array<double, 3> p_ref{ref_state[3] - ref_state[0],
-                                ref_state[4] + ref_state[1], ref_state[5]};
+    std::array<double, 3> p_ref{ref_state[3] - ref_state[0], ref_state[4] + ref_state[1],
+                                ref_state[5]};
     std::array<double, 3> p_pertubed1{perturbed_state1[3] - perturbed_state1[0],
                                       perturbed_state1[4] + perturbed_state1[1],
                                       perturbed_state1[5]};
     std::array<double, 3> p_pertubed2{perturbed_state2[3] - perturbed_state2[0],
                                       perturbed_state2[4] + perturbed_state2[1],
                                       perturbed_state2[5]};
-    Vector3d deviation_vec1{perturbed_state1[0] - ref_state[0],
-                            perturbed_state1[1] - ref_state[1],
-                            perturbed_state1[2] - ref_state[2]};
-    Vector3d deviation_vec2{perturbed_state2[0] - ref_state[0],
-                            perturbed_state2[1] - ref_state[1],
-                            perturbed_state2[2] - ref_state[2]};
+    Vector3d<double> deviation_vec1{perturbed_state1[0] - ref_state[0],
+                                    perturbed_state1[1] - ref_state[1],
+                                    perturbed_state1[2] - ref_state[2]};
+    Vector3d<double> deviation_vec2{perturbed_state2[0] - ref_state[0],
+                                    perturbed_state2[1] - ref_state[1],
+                                    perturbed_state2[2] - ref_state[2]};
 
-    Vector3d normalized_dev_vec1 = deviation_vec1.normalise();
-    Vector3d normalized_dev_vec2 = deviation_vec2.normalise();
-    Vector3d sa = normalized_dev_vec1 - normalized_dev_vec2;
-    Vector3d wa = normalized_dev_vec1 + normalized_dev_vec2;
+    Vector3d<double> normalized_dev_vec1 = deviation_vec1.normalise();
+    Vector3d<double> normalized_dev_vec2 = deviation_vec2.normalise();
+    Vector3d<double> sa = normalized_dev_vec1 - normalized_dev_vec2;
+    Vector3d<double> wa = normalized_dev_vec1 + normalized_dev_vec2;
 
     double sa_norm = sa.magnitude();
     double wa_norm = wa.magnitude();
@@ -621,44 +572,35 @@ double calc_SALI(const std::array<double, 6> &ref_state,
         perturbed_state2[2] - ref_state[2], perturbed_state2[3] - ref_state[3],
         perturbed_state2[4] - ref_state[4], perturbed_state2[5] - ref_state[5]};
     // 差分ベクトルを正規化
-    double norm1 = std::sqrt(diff1[0] * diff1[0] + diff1[1] * diff1[1] +
-                             diff1[2] * diff1[2] + diff1[3] * diff1[3] +
-                             diff1[4] * diff1[4] + diff1[5] * diff1[5]);
-    double norm2 = std::sqrt(diff2[0] * diff2[0] + diff2[1] * diff2[1] +
-                             diff2[2] * diff2[2] + diff2[3] * diff2[3] +
-                             diff2[4] * diff2[4] + diff2[5] * diff2[5]);
+    double norm1 = std::sqrt(diff1[0] * diff1[0] + diff1[1] * diff1[1] + diff1[2] * diff1[2] +
+                             diff1[3] * diff1[3] + diff1[4] * diff1[4] + diff1[5] * diff1[5]);
+    double norm2 = std::sqrt(diff2[0] * diff2[0] + diff2[1] * diff2[1] + diff2[2] * diff2[2] +
+                             diff2[3] * diff2[3] + diff2[4] * diff2[4] + diff2[5] * diff2[5]);
     if (norm1 == 0 || norm2 == 0) {
       // 差分ベクトルがゼロの場合、SALIは定義できない
       return -1.0;
     }
-    std::array<double, 6> normalized_diff1{diff1[0] / norm1, diff1[1] / norm1,
-                                           diff1[2] / norm1, diff1[3] / norm1,
-                                           diff1[4] / norm1, diff1[5] / norm1};
-    std::array<double, 6> normalized_diff2{diff2[0] / norm2, diff2[1] / norm2,
-                                           diff2[2] / norm2, diff2[3] / norm2,
-                                           diff2[4] / norm2, diff2[5] / norm2};
+    std::array<double, 6> normalized_diff1{diff1[0] / norm1, diff1[1] / norm1, diff1[2] / norm1,
+                                           diff1[3] / norm1, diff1[4] / norm1, diff1[5] / norm1};
+    std::array<double, 6> normalized_diff2{diff2[0] / norm2, diff2[1] / norm2, diff2[2] / norm2,
+                                           diff2[3] / norm2, diff2[4] / norm2, diff2[5] / norm2};
 
-    std::array<double, 6> d_plus{normalized_diff1[0] + normalized_diff2[0],
-                                 normalized_diff1[1] + normalized_diff2[1],
-                                 normalized_diff1[2] + normalized_diff2[2],
-                                 normalized_diff1[3] + normalized_diff2[3],
-                                 normalized_diff1[4] + normalized_diff2[4],
-                                 normalized_diff1[5] + normalized_diff2[5]};
-    std::array<double, 6> d_minus{normalized_diff1[0] - normalized_diff2[0],
-                                  normalized_diff1[1] - normalized_diff2[1],
-                                  normalized_diff1[2] - normalized_diff2[2],
-                                  normalized_diff1[3] - normalized_diff2[3],
-                                  normalized_diff1[4] - normalized_diff2[4],
-                                  normalized_diff1[5] - normalized_diff2[5]};
+    std::array<double, 6> d_plus{
+        normalized_diff1[0] + normalized_diff2[0], normalized_diff1[1] + normalized_diff2[1],
+        normalized_diff1[2] + normalized_diff2[2], normalized_diff1[3] + normalized_diff2[3],
+        normalized_diff1[4] + normalized_diff2[4], normalized_diff1[5] + normalized_diff2[5]};
+    std::array<double, 6> d_minus{
+        normalized_diff1[0] - normalized_diff2[0], normalized_diff1[1] - normalized_diff2[1],
+        normalized_diff1[2] - normalized_diff2[2], normalized_diff1[3] - normalized_diff2[3],
+        normalized_diff1[4] - normalized_diff2[4], normalized_diff1[5] - normalized_diff2[5]};
 
     // d_plusとd_minusのノルムを計算
-    double d_plus_norm = std::sqrt(
-        d_plus[0] * d_plus[0] + d_plus[1] * d_plus[1] + d_plus[2] * d_plus[2] +
-        d_plus[3] * d_plus[3] + d_plus[4] * d_plus[4] + d_plus[5] * d_plus[5]);
+    double d_plus_norm =
+        std::sqrt(d_plus[0] * d_plus[0] + d_plus[1] * d_plus[1] + d_plus[2] * d_plus[2] +
+                  d_plus[3] * d_plus[3] + d_plus[4] * d_plus[4] + d_plus[5] * d_plus[5]);
     double d_minus_norm =
-        std::sqrt(d_minus[0] * d_minus[0] + d_minus[1] * d_minus[1] +
-                  d_minus[2] * d_minus[2] + d_minus[3] * d_minus[3] +
-                  d_minus[4] * d_minus[4] + d_minus[5] * d_minus[5]);
+        std::sqrt(d_minus[0] * d_minus[0] + d_minus[1] * d_minus[1] + d_minus[2] * d_minus[2] +
+                  d_minus[3] * d_minus[3] + d_minus[4] * d_minus[4] + d_minus[5] * d_minus[5]);
     // d_plusとd_minusのノルムを比較して最小値を返す
     // SALIの計算
     SALI = std::min(d_plus_norm, d_minus_norm);
@@ -666,30 +608,28 @@ double calc_SALI(const std::array<double, 6> &ref_state,
   return SALI;
 }
 
-double calc_r1(const Point3D &point, const double mu) {
-  return std::sqrt(std::pow(point.x + mu, 2.) + std::pow(point.y, 2.) +
-                   std::pow(point.z, 2.));
+double calc_r1(const my_type::Coord3D<double>& point, const double mu) {
+  return std::sqrt(std::pow(point[0] + mu, 2.) + std::pow(point[1], 2.) + std::pow(point[2], 2.));
 }
 
-double calc_r2(const Point3D &point, const double mu) {
-  return std::sqrt(std::pow(point.x - 1. + mu, 2.) + std::pow(point.y, 2.) +
-                   std::pow(point.z, 2.));
+double calc_r2(const my_type::Coord3D<double>& point, const double mu) {
+  return std::sqrt(std::pow(point[0] - 1. + mu, 2.) + std::pow(point[1], 2.) +
+                   std::pow(point[2], 2.));
 }
 
-double calc_v_abs(const Point3D &point, const double mu,
+double calc_v_abs(const my_type::Coord3D<double>& point, const double mu,
                   const double JACOBI_INTEGRAL) {
   double r1 = calc_r1(point, mu);
   double r2 = calc_r2(point, mu);
-  // std::cout << "uiuoij" <<point.x * point.x + point.y * point.y + 2. * (1. -
+  // std::cout << "uiuoij" <<point[0] * point[0] + point[1] * point[1] + 2. * (1. -
   // mu) / r1 + 2.
   // * mu / r2 +
   //                  mu * (1 - mu) - JACOBI_INTEGRAL << std::endl;
-  return std::sqrt(point.x * point.x + point.y * point.y + 2. * (1. - mu) / r1 +
-                   2. * mu / r2 + mu * (1. - mu) - JACOBI_INTEGRAL);
+  return std::sqrt(point[0] * point[0] + point[1] * point[1] + 2. * (1. - mu) / r1 + 2. * mu / r2 +
+                   mu * (1. - mu) - JACOBI_INTEGRAL);
 }
 
-double calc_jacobi_integral(const std::array<double, 6> &state,
-                            const double mu) {
+double calc_jacobi_integral(const std::array<double, 6>& state, const double mu) {
   const double x = state[0];
   const double y = state[1];
   const double z = state[2];
@@ -704,17 +644,16 @@ double calc_jacobi_integral(const std::array<double, 6> &state,
   const double r2 = std::sqrt(std::pow(x - 1. + mu, 2) + y * y + z * z);
 
   // ヤコビ積分の計算
-  return x * x + y * y - (vx * vx + vy * vy + vz * vz) + 2. * (1. - mu) / r1 +
-         2. * mu / r2 + mu * (1. - mu);
+  return x * x + y * y - (vx * vx + vy * vy + vz * vz) + 2. * (1. - mu) / r1 + 2. * mu / r2 +
+         mu * (1. - mu);
 }
 
-Vector3d calc_velocity(const Point3D &point, const double v_abs,
-                       const double mu, const double inclination,
-                       const double OMEGA, const double theta) {
+Vector3d<double> calc_velocity(const my_type::Coord3D<double>& point, const double v_abs,
+                               const double mu, const double inclination, const double OMEGA,
+                               const double theta) {
   // 回転軸と回転角からクオータニオン経由で回転行列を生成
-  auto create_rot_matrix =
-      [](const Vector3d &unit_n,
-         double theta_) -> std::array<std::array<double, 3>, 3> {
+  auto create_rot_matrix = [](const Vector3d<double>& unit_n,
+                              double theta_) -> std::array<std::array<double, 3>, 3> {
     double half_theta = theta_ / 2.0;
     double q0 = std::cos(half_theta);
     double sin_half_theta = std::sin(half_theta);
@@ -736,31 +675,27 @@ Vector3d calc_velocity(const Point3D &point, const double v_abs,
     std::array<std::array<double, 3>, 3> rot_matrix = {
         {{q0q0 + q1q1 - q2q2 - q3q3, 2.0 * (q1q2 - q0q3), 2.0 * (q1q3 + q0q2)},
          {2.0 * (q1q2 + q0q3), q0q0 - q1q1 + q2q2 - q3q3, 2.0 * (q2q3 - q0q1)},
-         {2.0 * (q1q3 - q0q2), 2.0 * (q2q3 + q0q1),
-          q0q0 - q1q1 - q2q2 + q3q3}}};
+         {2.0 * (q1q3 - q0q2), 2.0 * (q2q3 + q0q1), q0q0 - q1q1 - q2q2 + q3q3}}};
     return rot_matrix;
   };
 
   // 入力されたベクトルを入力された行列で変換
   auto convert = [](std::array<std::array<double, 3>, 3> convert_matrix,
-                    const Vector3d &v) -> Vector3d {
-    return {convert_matrix[0][0] * v.x() + convert_matrix[0][1] * v.y() +
-                convert_matrix[0][2] * v.z(),
-            convert_matrix[1][0] * v.x() + convert_matrix[1][1] * v.y() +
-                convert_matrix[1][2] * v.z(),
-            convert_matrix[2][0] * v.x() + convert_matrix[2][1] * v.y() +
-                convert_matrix[2][2] * v.z()};
+                    const Vector3d<double>& v) -> Vector3d<double> {
+    return {
+        convert_matrix[0][0] * v.x() + convert_matrix[0][1] * v.y() + convert_matrix[0][2] * v.z(),
+        convert_matrix[1][0] * v.x() + convert_matrix[1][1] * v.y() + convert_matrix[1][2] * v.z(),
+        convert_matrix[2][0] * v.x() + convert_matrix[2][1] * v.y() + convert_matrix[2][2] * v.z()};
   };
   double vx_, vy_, vz_ = 0;
 
   // inclinationとOMEGAを用いて軌道面の法線ベクトルを計算
   Vector3d normal_vector{std::sin(inclination) * std::cos(OMEGA),
-                         std::sin(inclination) * std::sin(OMEGA),
-                         std::cos(inclination)};
+                         std::sin(inclination) * std::sin(OMEGA), std::cos(inclination)};
   // 法線ベクトルと位置ベクトルの外積を計算
-  Vector3d r2_vector{point.x - 1. + mu, point.y, point.z};
+  Vector3d r2_vector{point[0] - 1. + mu, point[1], point[2]};
   Vector3d h_vector = r2_vector.gaiseki(normal_vector);
-  Vector3d normalized_h_vector = h_vector.normalise(); // theta = 0は逆行回転
+  Vector3d normalized_h_vector = h_vector.normalise();  // theta = 0は逆行回転
 
   // 速度ベクトルを計算
   vx_ = v_abs * normalized_h_vector.x();
@@ -771,8 +706,7 @@ Vector3d calc_velocity(const Point3D &point, const double v_abs,
     return Vector3d(vx_, vy_, vz_);
   else {
     // クオータニオンを用いて速度ベクトルをnormal_vector周りにthetaだけ回転させる
-    std::array<std::array<double, 3>, 3> rot_matrix =
-        create_rot_matrix(normal_vector, theta);
+    std::array<std::array<double, 3>, 3> rot_matrix = create_rot_matrix(normal_vector, theta);
     Vector3d velocity{vx_, vy_, vz_};
     Vector3d rotated_velocity = convert(rot_matrix, velocity);
 
@@ -780,7 +714,7 @@ Vector3d calc_velocity(const Point3D &point, const double v_abs,
   }
 }
 
-std::vector<std::streampos> indexFile(const std::string &filename) {
+std::vector<std::streampos> indexFile(const std::string& filename) {
   std::ifstream file(filename, std::ios::binary);
   if (!file.is_open()) {
     throw std::runtime_error("ファイルを開けませんでした: " + filename);
@@ -800,12 +734,10 @@ std::vector<std::streampos> indexFile(const std::string &filename) {
   return linePositions;
 }
 
-std::string readSpecificLine(const std::string &filename,
-                             const std::vector<std::streampos> &linePositions,
-                             int targetLine) {
+std::string readSpecificLine(const std::string& filename,
+                             const std::vector<std::streampos>& linePositions, int targetLine) {
   if (targetLine < 1 || targetLine >= static_cast<int>(linePositions.size())) {
-    throw std::out_of_range("指定した行が範囲外です: " +
-                            std::to_string(targetLine));
+    throw std::out_of_range("指定した行が範囲外です: " + std::to_string(targetLine));
   }
 
   std::ifstream file(filename);
