@@ -221,50 +221,51 @@ template <typename T> double calc_r2(const T &r, AstroConstants &astro_params) {
 }
 
 // ポテンシャルエネルギーの計算
-template <typename T>
-double calc_potential_energy(const T &r, const AstroConstants &astro_params) {
-  double x = get_x(r);
-  double y = get_y(r);
-  double r1 = calc_r1(r);
-  double r2 = calc_r2(r);
+// template <typename T>
+// double calc_potential_energy(const T &r, const AstroConstants &astro_params)
+// {
+//   double x = get_x(r);
+//   double y = get_y(r);
+//   double r1 = calc_r1(r, astro_params);
+//   double r2 = calc_r2(r, astro_params);
 
-  if (r1 <= 0 || r2 <= 0) {
-    throw std::domain_error("Invalid distance calculated");
-  }
+//   if (r1 <= 0 || r2 <= 0) {
+//     throw std::domain_error("Invalid distance calculated");
+//   }
 
-  return 0.5 * (x * x + y * y) + (1 - astro_params.mu) / r1 +
-         astro_params.mu / r2;
-}
+//   return 0.5 * (x * x + y * y) + (1 - astro_params.mu) / r1 +
+//          astro_params.mu / r2;
+// }
 
-template <typename T, std::size_t N>
-double calc_jacobi_integral(const std::array<T, N> &x,
-                            const AstroConstants &astro_params) {
-  double x_, y_, z_, vx_, vy_, vz_;
-  if constexpr (std::is_same_v<T, double> && N == 6) {
-    x_ = x[0];
-    y_ = x[1];
-    z_ = x[2];
-    vx_ = x[3];
-    vy_ = x[4];
-    vz_ = x[5];
-  } else if constexpr (std::is_same_v<T, Vector3d> && N == 2) {
-    x_ = x[0].x();
-    y_ = x[0].y();
-    z_ = x[0].z();
-    vx_ = x[1].x();
-    vy_ = x[1].y();
-    vz_ = x[1].z();
-  }
+// template <typename T, std::size_t N>
+// double calc_jacobi_integral(const std::array<T, N> &x,
+//                             const AstroConstants &astro_params) {
+//   double x_, y_, z_, vx_, vy_, vz_;
+//   if constexpr (std::is_same_v<T, double> && N == 6) {
+//     x_ = x[0];
+//     y_ = x[1];
+//     z_ = x[2];
+//     vx_ = x[3];
+//     vy_ = x[4];
+//     vz_ = x[5];
+//   } else if constexpr (std::is_same_v<T, Vector3d> && N == 2) {
+//     x_ = x[0].x();
+//     y_ = x[0].y();
+//     z_ = x[0].z();
+//     vx_ = x[1].x();
+//     vy_ = x[1].y();
+//     vz_ = x[1].z();
+//   }
 
-  double r1 = std::sqrt((x_ + astro_params.mu) * (x_ + astro_params.mu) +
-                        y_ * y_ + z_ * z_);
-  double r2 =
-      std::sqrt((x_ - 1 + astro_params.mu) * (x_ - 1 + astro_params.mu) +
-                y_ * y_ + z_ * z_);
+//   double r1 = std::sqrt((x_ + astro_params.mu) * (x_ + astro_params.mu) +
+//                         y_ * y_ + z_ * z_);
+//   double r2 =
+//       std::sqrt((x_ - 1 + astro_params.mu) * (x_ - 1 + astro_params.mu) +
+//                 y_ * y_ + z_ * z_);
 
-  return -(vx_ * vx_ + vy_ * vy_ + vz_ * vz_) +
-         2. * calc_potential_energy(x, astro_params);
-}
+//   return -(vx_ * vx_ + vy_ * vy_ + vz_ * vz_) +
+//          2. * calc_potential_energy(x, astro_params);
+// }
 
 template <typename T>
 double calc_v_abs(const T &r, const double JACOBI_INTEGRAL,
@@ -365,9 +366,9 @@ Vector3d calc_velocity(const T &point, const double v_abs,
 
 template <typename T, std::size_t N>
 const std::array<T, N>
-frame_transformation(const std::array<T, N> &ast_state,
-                     const std::array<T, N> &p2_state,
-                     const AstroConstants &astro_params) {
+ConvertInertial2Rotating(const std::array<T, N> &ast_state,
+                         const std::array<T, N> &p2_state,
+                         const AstroConstants &astro_params) {
   // std::array<double, 6>かstd::array<Vector3d, 2>のみ受け付ける
   static_assert((std::is_same_v<T, double> && N == 6) ||
                     (std::is_same_v<T, Vector3d> && N == 2),
@@ -427,8 +428,8 @@ frame_transformation(const std::array<T, N> &ast_state,
   Vector3d epos_R1 = apply_matrix(convert_G_to_R1, init_p2_state_G[0]);
   Vector3d ast_pos_R2 = apply_matrix(convert_R1_to_R2, ast_pos_R1);
   Vector3d epos_R2 = apply_matrix(convert_R1_to_R2, epos_R1);
-  Vector3d ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - mu, ast_pos_R2.y(),
-                     ast_pos_R2.z()};
+  Vector3d ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - astro_params.mu,
+                     ast_pos_R2.y(), ast_pos_R2.z()};
 
   /* calc the velocity of rotating frame */
   //  変換行列convert_G_to_R1の微分を計算
@@ -558,81 +559,289 @@ frame_transformation(const std::array<T, N> &ast_state,
 
 // CRTBPの運動方程式
 // EquationOfMotionを継承
-class EquationOfMotion : public rtbp::EquationOfMotion {
-private:
-  AstroConstants astro_params_;
+// class EquationOfMotion : public rtbp::EquationOfMotion {
+// private:
+//   AstroConstants astro_params_;
 
-public:
-  explicit EquationOfMotion(const AstroConstants &astro_params)
-      : astro_params_(astro_params) {}
+// public:
+//   explicit EquationOfMotion(const AstroConstants &astro_params)
+//       : astro_params_(astro_params) {}
 
-  void operator()(const state &x, state &dxdt, const double /* t */) const {
-    const double x_ = x[0], y_ = x[1], z_ = x[2];
-    const double vx_ = x[3], vy_ = x[4], vz_ = x[5];
+//   void operator()(const state &x, state &dxdt, const double /* t */) const {
+//     const double x_ = x[0], y_ = x[1], z_ = x[2];
+//     const double vx_ = x[3], vy_ = x[4], vz_ = x[5];
 
-    const double r1 = calc_r1(x, astro_params_);
-    const double r2 = calc_r2(x, astro_params_);
+//     const double r1 = calc_r1(x, astro_params_);
+//     const double r2 = calc_r2(x, astro_params_);
 
-    dxdt[0] = vx_;
-    dxdt[1] = vy_;
-    dxdt[2] = vz_;
-    dxdt[3] =
-        2. * vy_ + x_ -
-        (1. - astro_params_.mu) * (x_ + astro_params_.mu) / (r1 * r1 * r1) -
-        astro_params_.mu * (x_ - 1. + astro_params_.mu) / (r2 * r2 * r2);
-    dxdt[4] = -2. * vx_ + y_ - (1. - astro_params_.mu) * y_ / (r1 * r1 * r1) -
-              astro_params_.mu * y_ / (r2 * r2 * r2);
-    dxdt[5] = -(1. - astro_params_.mu) * z_ / (r1 * r1 * r1) -
-              astro_params_.mu * z_ / (r2 * r2 * r2);
+//     dxdt[0] = vx_;
+//     dxdt[1] = vy_;
+//     dxdt[2] = vz_;
+//     dxdt[3] =
+//         2. * vy_ + x_ -
+//         (1. - astro_params_.mu) * (x_ + astro_params_.mu) / (r1 * r1 * r1) -
+//         astro_params_.mu * (x_ - 1. + astro_params_.mu) / (r2 * r2 * r2);
+//     dxdt[4] = -2. * vx_ + y_ - (1. - astro_params_.mu) * y_ / (r1 * r1 * r1)
+//     -
+//               astro_params_.mu * y_ / (r2 * r2 * r2);
+//     dxdt[5] = -(1. - astro_params_.mu) * z_ / (r1 * r1 * r1) -
+//               astro_params_.mu * z_ / (r2 * r2 * r2);
+//   }
+// };
+// class observer {
+// private:
+//   double init_jacobi_;
+//   AstroConstants astro_params_;
+
+// public:
+//   std::vector<std::array<double, 8>> &m_out;
+//   explicit observer(double init_jacobi, const AstroConstants &astro_params,
+//                     std::vector<std::array<double, 8>> &out)
+//       : init_jacobi_(init_jacobi), astro_params_(astro_params), m_out(out) {}
+
+//   void operator()(const state &x, double t) const {
+//     double jacobi_integral = calc_jacobi_integral(x, astro_params_);
+//     m_out.push_back({t, x[0], x[1], x[2], x[3], x[4], x[5],
+//                      init_jacobi_ - jacobi_integral});
+//   }
+// };
+
+// class Trajectory {
+// private:
+//   double jacobi_integral_;
+//   AstroConstants astro_params_;
+
+// public:
+//   std::vector<std::array<double, 8>> trajectory_;
+
+//   Trajectory(double jacobi_integral, const AstroConstants &astro_params)
+//       : jacobi_integral_(jacobi_integral), astro_params_(astro_params) {}
+
+//   std::vector<std::array<double, 8>> integrate(const state &x0, double t0,
+//                                                double tf, double dt) {
+//     state init_state = x0;
+//     trajectory_.clear();
+//     trajectory_.reserve(static_cast<size_t>((tf - t0) / dt) + 1);
+
+//     auto eom = EquationOfMotion(astro_params_);
+//     auto obs = observer(jacobi_integral_, astro_params_, trajectory_);
+//     boost::numeric::odeint::controlled_runge_kutta<
+//         boost::numeric::odeint::runge_kutta_fehlberg78<state>>
+//         stepper;
+
+//     boost::numeric::odeint::integrate_const(stepper, eom, init_state, t0, tf,
+//                                             dt, obs);
+
+//     return trajectory_;
+//   }
+// };
+
+#include <array>
+#include <cmath>
+#include <iostream>
+#include <stdexcept>
+#include <type_traits>
+
+// (ユーザー提供の Vector3d クラス定義がここにあると仮定)
+// (ユーザー提供の AstroConstants 構造体定義がここにあると仮定)
+// AstroConstants には .au, .gm_sun, .gm_earth が [m] と [m^3/s^2] で
+// 正しく設定されている必要がある。
+
+namespace {
+
+// 3x3 Matrix type alias
+using Matrix3x3 = std::array<std::array<double, 3>, 3>;
+
+// State vector type aliases
+using StateVector6 = std::array<double, 6>;
+using StateVectorPair = std::array<Vector3d, 2>;
+
+// 物理定数
+constexpr double kSecondsPerDay = 86400.0;
+
+/**
+ * @brief 3x3回転行列を3Dベクトルに適用します。
+ */
+Vector3d ApplyMatrix(const Matrix3x3 &matrix, const Vector3d &vector) {
+  return Vector3d(matrix[0][0] * vector.x() + matrix[0][1] * vector.y() +
+                      matrix[0][2] * vector.z(),
+                  matrix[1][0] * vector.x() + matrix[1][1] * vector.y() +
+                      matrix[1][2] * vector.z(),
+                  matrix[2][0] * vector.x() + matrix[2][1] * vector.y() +
+                      matrix[2][2] * vector.z());
+}
+
+/**
+ * @brief 6要素の状態配列 [x, y, z, vx, vy, vz] を
+ * [pos, vel] の Vector3d ペアに変換します。
+ */
+StateVectorPair ConvertStateToPair(const StateVector6 &state) {
+  return {Vector3d(state[0], state[1], state[2]),
+          Vector3d(state[3], state[4], state[5])};
+}
+
+/**
+ * @brief [pos, vel] の Vector3d ペアを 6要素の状態配列
+ * [x, y, z, vx, vy, vz] に変換します。
+ */
+StateVector6 ConvertPairToState(const StateVectorPair &state_pair) {
+  return {state_pair[0].x(), state_pair[0].y(), state_pair[0].z(),
+          state_pair[1].x(), state_pair[1].y(), state_pair[1].z()};
+}
+
+} // namespace
+
+/**
+ * @brief J2000慣性系（太陽中心, AU, AU/day）の状態ベクトルを、
+ * 太陽-P2回転座標系（共通重心中心, 無次元）に変換します。
+ *
+ * この関数は、P2（例：地球）の一般的な（傾斜した）軌道を扱います。
+ * 回転座標系 (R) は以下のように定義されます：
+ * - 原点: 太陽-P2 共通重心
+ * - x軸: 太陽からP2を指す方向
+ * - z軸: P2の軌道角運動量ベクトル (h = r_p2 x v_p2) に平行
+ * - y軸: 右手系を完成させる (y = z x x)
+ *
+ * 出力は、長さ単位(LU)=r_p2、時間単位(TU)=1/n で無次元化されます。
+ *
+ * @tparam T std::arrayの要素型 (double または Vector3d)。
+ * @tparam N std::arrayのサイズ (6 または 2)。
+ * @param ast_state J2000慣性系（太陽中心）における小惑星の状態ベクトル
+ * [pos(AU), vel(AU/day)]。
+ * @param p2_state J2000慣性系（太陽中心）におけるP2（地球）の状態ベクトル
+ * [pos(AU), vel(AU/day)]。
+ * @param astro_params 天文定数（au(m), gm_sun(m^3/s^2), gm_earth(m^3/s^2)）。
+ * @return 回転座標系（無次元）における小惑星の状態ベクトル [pos_nd, vel_nd]。
+ */
+template <typename T, std::size_t N>
+const std::array<T, N> FrameTransformation(const std::array<T, N> &ast_state,
+                                           const std::array<T, N> &p2_state,
+                                           const AstroConstants &astro_params) {
+  // 正しいテンプレート引数か静的に検証
+  static_assert(
+      (std::is_same_v<T, double> && N == 6) ||
+          (std::is_same_v<T, Vector3d> && N == 2),
+      "Input must be std::array<double, 6> or std::array<Vector3d, 2>");
+
+  // 0. 単位換算 (m^3/s^2 -> AU^3/day^2)
+  if (astro_params.au == 0) {
+    throw std::runtime_error("AstroConstants::au cannot be zero.");
   }
-};
-class observer {
-private:
-  double init_jacobi_;
-  AstroConstants astro_params_;
+  const double kM3s2_to_AU3day2 =
+      (kSecondsPerDay * kSecondsPerDay) /
+      (astro_params.au * astro_params.au * astro_params.au);
+  const double gm_sun_AD = astro_params.gm_sun * kM3s2_to_AU3day2;
+  const double gm_earth_AD = astro_params.gm_earth * kM3s2_to_AU3day2;
+  const double gm_total_AD = gm_sun_AD + gm_earth_AD;
 
-public:
-  std::vector<std::array<double, 8>> &m_out;
-  explicit observer(double init_jacobi, const AstroConstants &astro_params,
-                    std::vector<std::array<double, 8>> &out)
-      : init_jacobi_(init_jacobi), astro_params_(astro_params), m_out(out) {}
-
-  void operator()(const state &x, double t) const {
-    double jacobi_integral = calc_jacobi_integral(x, astro_params_);
-    m_out.push_back({t, x[0], x[1], x[2], x[3], x[4], x[5],
-                     init_jacobi_ - jacobi_integral});
+  // 1. 入力を {pos, vel} の Vector3d ペアに統一
+  //    (G = J2000 Inertial Frame, 単位: AU, AU/day)
+  StateVectorPair ast_state_G;
+  StateVectorPair p2_state_G;
+  if constexpr (std::is_same_v<T, double> && N == 6) {
+    ast_state_G = ConvertStateToPair(ast_state);
+    p2_state_G = ConvertStateToPair(p2_state);
+  } else if constexpr (std::is_same_v<T, Vector3d> && N == 2) {
+    ast_state_G = {ast_state[0], ast_state[1]};
+    p2_state_G = {p2_state[0], p2_state[1]};
   }
-};
 
-class Trajectory {
-private:
-  double jacobi_integral_;
-  AstroConstants astro_params_;
+  const Vector3d r_ast_G = ast_state_G[0];
+  const Vector3d v_ast_G = ast_state_G[1];
+  const Vector3d r_p2_G = p2_state_G[0];
+  const Vector3d v_p2_G = p2_state_G[1];
 
-public:
-  std::vector<std::array<double, 8>> trajectory_;
+  // 2. 質量比と共通重心 (Barycenter, B) の状態を計算
+  // 質量比は単位系に依存しない
+  const double mu =
+      astro_params.gm_earth / (astro_params.gm_sun + astro_params.gm_earth);
 
-  Trajectory(double jacobi_integral, const AstroConstants &astro_params)
-      : jacobi_integral_(jacobi_integral), astro_params_(astro_params) {}
+  // 太陽（G系の原点）から見た共通重心の状態 (AU, AU/day)
+  const Vector3d r_B_G = r_p2_G * mu;
+  const Vector3d v_B_G = v_p2_G * mu;
 
-  std::vector<std::array<double, 8>> integrate(const state &x0, double t0,
-                                               double tf, double dt) {
-    state init_state = x0;
-    trajectory_.clear();
-    trajectory_.reserve(static_cast<size_t>((tf - t0) / dt) + 1);
-
-    auto eom = EquationOfMotion(astro_params_);
-    auto obs = observer(jacobi_integral_, astro_params_, trajectory_);
-    boost::numeric::odeint::controlled_runge_kutta<
-        boost::numeric::odeint::runge_kutta_fehlberg78<state>>
-        stepper;
-
-    boost::numeric::odeint::integrate_const(stepper, eom, init_state, t0, tf,
-                                            dt, obs);
-
-    return trajectory_;
+  // 3. G系における回転座標系 (R) の基底ベクトルを定義
+  const double r_p2_mag = r_p2_G.magnitude(); // これが LU (AU)
+  if (r_p2_mag == 0) {
+    throw std::runtime_error("P2 position magnitude is zero.");
   }
-};
+  const Vector3d i_R_G = r_p2_G / r_p2_mag; // x軸 (太陽 -> P2)
+
+  const Vector3d h_G = r_p2_G.gaiseki(v_p2_G); // P2の軌道角運動量 (AU^2/day)
+  const double h_mag = h_G.magnitude();
+  if (h_mag == 0) {
+    throw std::runtime_error(
+        "P2 angular momentum magnitude is zero (e.g., linear motion).");
+  }
+  const Vector3d k_R_G = h_G / h_mag; // z軸 (h の方向)
+
+  const Vector3d j_R_G = k_R_G.gaiseki(i_R_G); // y軸 (右手系を完成)
+
+  // 4. 回転行列 C (G系 -> R系) を作成
+  const Matrix3x3 C_G2R = {{{i_R_G.x(), i_R_G.y(), i_R_G.z()},
+                            {j_R_G.x(), j_R_G.y(), j_R_G.z()},
+                            {k_R_G.x(), k_R_G.y(), k_R_G.z()}}};
+
+  // 5. 位置ベクトルの変換 (単位: AU)
+  const Vector3d r_ast_rel_B_G = r_ast_G - r_B_G;
+  const Vector3d ast_pos_R = ApplyMatrix(C_G2R, r_ast_rel_B_G); // (AU)
+
+  // 6. 回転系の角速度ベクトル (omega_R) を計算 (単位: rad/day)
+  // P2の加速度 (AU/day^2)
+  const Vector3d a_p2_G =
+      r_p2_G * (-gm_sun_AD / (r_p2_mag * r_p2_mag * r_p2_mag));
+
+  const double dot_r_p2_mag = r_p2_G.naiseki(v_p2_G) / r_p2_mag; // (AU/day)
+  const Vector3d dot_i_R_G =
+      (v_p2_G / r_p2_mag) -
+      (r_p2_G * (dot_r_p2_mag / (r_p2_mag * r_p2_mag))); // (1/day)
+
+  const Vector3d dot_h_G = r_p2_G.gaiseki(a_p2_G);       // (AU^2/day^2)
+  const double dot_h_mag = h_G.naiseki(dot_h_G) / h_mag; // (AU^2/day^2)
+  const Vector3d dot_k_R_G =
+      (dot_h_G / h_mag) - (h_G * (dot_h_mag / (h_mag * h_mag))); // (1/day)
+
+  const Vector3d dot_j_R_G =
+      dot_k_R_G.gaiseki(i_R_G) + k_R_G.gaiseki(dot_i_R_G); // (1/day)
+
+  const double omega_x_R = dot_j_R_G.naiseki(k_R_G); // (rad/day)
+  const double omega_y_R = dot_k_R_G.naiseki(i_R_G); // (rad/day)
+  const double omega_z_R = dot_i_R_G.naiseki(j_R_G); // (rad/day)
+
+  const Vector3d omega_R(omega_x_R, omega_y_R, omega_z_R); // (rad/day)
+
+  // 7. 速度ベクトルの変換 (単位: AU/day)
+  const Vector3d v_ast_rel_B_G = v_ast_G - v_B_G;                   // (AU/day)
+  const Vector3d v_R_transport = ApplyMatrix(C_G2R, v_ast_rel_B_G); // (AU/day)
+  const Vector3d v_R_coriolis = omega_R.gaiseki(ast_pos_R); // (rad/day * AU)
+  const Vector3d ast_vel_R = v_R_transport - v_R_coriolis;  // (AU/day)
+
+  // 8. 無次元化
+  // 長さの単位 (LU)
+  const double lu = r_p2_mag; // (AU)
+
+  // 時間の単位 (TU)
+  // n = sqrt( (GM_sun + GM_earth) / LU^3 )  (rad/day)
+  const double mean_motion_AD = std::sqrt(gm_total_AD / (lu * lu * lu));
+  if (mean_motion_AD == 0) {
+    throw std::runtime_error("Mean motion is zero, cannot non-dimensionalize.");
+  }
+  const double tu = 1.0 / mean_motion_AD; // (day)
+
+  // 速度の単位 (VU)
+  const double vu = lu / tu; // (AU/day)
+
+  // 無次元化の実行
+  const Vector3d ast_pos_R_nd = ast_pos_R / lu;
+  const Vector3d ast_vel_R_nd = ast_vel_R / vu;
+
+  // 9. 出力のフォーマットを整える
+  if constexpr (std::is_same_v<T, double> && N == 6) {
+    return ConvertPairToState({ast_pos_R_nd, ast_vel_R_nd});
+  } else if constexpr (std::is_same_v<T, Vector3d> && N == 2) {
+    return {ast_pos_R_nd, ast_vel_R_nd};
+  }
+}
 
 } // namespace crtbp
 } // namespace rtbp

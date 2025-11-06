@@ -1,7 +1,7 @@
 # 共有ライブラリのソースファイル
 set(LIB_SOURCES
     src/crtbp.cpp
-    # src/solver.cpp
+    # src/solver
     # src/io_utils.cpp
 )
 
@@ -23,6 +23,8 @@ set_property(TARGET mylib PROPERTY CXX_STANDARD 17)
 set_property(TARGET mylib PROPERTY CXX_STANDARD_REQUIRED ON)
 
 # # 外部ライブラリとのリンク（例: OpenMP）
+find_package(Boost REQUIRED)
+target_link_libraries(mylib PUBLIC Boost::boost)
 # find_package(OpenMP)
 # if(OpenMP_CXX_FOUND)
 #     target_link_libraries(mylib PUBLIC OpenMP::OpenMP_CXX)

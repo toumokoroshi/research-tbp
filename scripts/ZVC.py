@@ -48,5 +48,5 @@ mu = 0  # 質量比
 # C_values = np.arange(3.0009, 3.001, 0.00001)  # ヤコビ定数の値
 # C_values = 3.0
 
-C_values = -3e-0
-zero_velocity_curves(mu, C_values)
+C_values = 4
+zero_velocity_curves(mu_sun_earth, C_values)

@@ -37,7 +37,7 @@ def plot_zero_velocity_curves(mu=0.01, jacobi_constants=None):
     U = effective_potential(X, Y, mu)
 
     # ズーム領域用のグリッド（天体2周辺）
-    zoom_range = 0.05  # ズーム範囲
+    zoom_range = 0.01  # ズーム範囲
     x_zoom = np.linspace(1 - mu - zoom_range, 1 - mu + zoom_range, 300)
     y_zoom = np.linspace(-zoom_range, zoom_range, 300)
     X_zoom, Y_zoom = np.meshgrid(x_zoom, y_zoom)
@@ -215,5 +215,6 @@ gm_sun = 1.32712440041279419e20  # // heliocentric gravitational parameter (m3 s
 gm_earth = 3.98600435507e14  # // geocentric gravitational parameter (m3 s-2)
 mu_sun_earth = gm_earth / (gm_sun + gm_earth)
 # 様々なヤコビ定数でプロット
-jacobi_values = [3.0, 3.0002, 3.0004, 3.0006, 3.0008, 3.001]
+# jacobi_values = [0.00089, 4, 5, 8, 10, 12]
+jacobi_values = [3.0011292385, 3.00118437218498]
 plot_zero_velocity_curves(mu=mu_sun_earth, jacobi_constants=jacobi_values)

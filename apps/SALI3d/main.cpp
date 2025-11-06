@@ -475,8 +475,10 @@ int main() {
 
     // ファイル出力
     std::string output_base_path = OUTPUT_DIR;
+    // シミュレーション終了時刻が同じでもファイル名が被らないようにする
     std::string filename =
-        output_base_path + "/SALI/3DSALI_" + getcurrent_date() + ".dat";
+        output_base_path + "/3D_crtbp_SALI/3DSALI_result_configdata_" +
+        std::to_string(configdata_num) + getcurrent_date() + ".txt";
     std::ofstream ofs1(filename);
     if (!ofs1) {
       std::filesystem::path filepath(filename);
