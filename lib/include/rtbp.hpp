@@ -502,7 +502,6 @@ template <typename ElementType, typename ScalarType, std::size_t Dim>
 const std::array<ElementType, Dim> ConvertInertial2Rotating(
     const std::array<ElementType, Dim>& ast_state, const std::array<ElementType, Dim>& p2_state,
     const AstroConstants<ScalarType>& astro_params) {
-  // std::array<ScalarType, 6>かstd::array<Vector3d<ScalarType>, 2>のみ受け付ける
   static_assert((std::is_same_v<ElementType, ScalarType> && Dim == 6) ||
                     (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2),
                 "Array must be either std::array<ScalarType, 6> or "
@@ -692,16 +691,10 @@ const std::array<ElementType, Dim> ConvertInertial2Rotating(
  * @param astro_params 天文定数（au(m), gm_sun(m^3/s^2), gm_earth(m^3/s^2)）。
  * @return 回転座標系（無次元）における小惑星の状態ベクトル [pos_nd, vel_nd]。
  */
-template <typename ElementType, typename ScalarType, std::size_t Dim>
-const std::array<ElementType, Dim> ConvertInertial2RotatingV2(
-    const std::array<ElementType, Dim>& ast_state, const std::array<ElementType, Dim>& p2_state,
-    const AstroConstants<ScalarType>& astro_params) {
-  // 正しいテンプレート引数か静的に検証
-  static_assert((std::is_same_v<ElementType, ScalarType> && Dim == 6) ||
-                    (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2),
-                "Input must be std::array<ScalarType, 6> or std::array<Vector3d<ScalarType>, 2>");
-
-  // 0. 単位換算 (m^3/s^2 -> AU^3/day^2)
+template <typename ScalarType>
+const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_state,
+                                                   const State<ScalarType>& p2_state,
+                                                   const AstroConstants<ScalarType>& astro_params) {
   if (astro_params.au == 0) {
     throw std::runtime_error("AstroConstants::au cannot be zero.");
   }
@@ -713,20 +706,17 @@ const std::array<ElementType, Dim> ConvertInertial2RotatingV2(
 
   // 1. 入力を {pos, vel} の Vector3d<ScalarType> ペアに統一
   //   (G = J2000 Inertial Frame, 単位: AU, AU/day)
-  StateVectorPair<ScalarType> ast_state_G;
-  StateVectorPair<ScalarType> p2_state_G;
-  if constexpr (std::is_same_v<ElementType, ScalarType> && Dim == 6) {
-    ast_state_G = ConvertStateToPair(ast_state);
-    p2_state_G = ConvertStateToPair(p2_state);
-  } else if constexpr (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2) {
-    ast_state_G = {ast_state[0], ast_state[1]};
-    p2_state_G = {p2_state[0], p2_state[1]};
-  }
+  State<ScalarType> ast_state_G = ast_state;
+  State<ScalarType> p2_state_G = p2_state;
 
-  const Vector3d<ScalarType> r_ast_G = ast_state_G[0];
-  const Vector3d<ScalarType> v_ast_G = ast_state_G[1];
-  const Vector3d<ScalarType> r_p2_G = p2_state_G[0];
-  const Vector3d<ScalarType> v_p2_G = p2_state_G[1];
+  const Vector3d<ScalarType> r_ast_G = ast_state_G.r;
+  const Vector3d<ScalarType> v_ast_G = ast_state_G.v;
+  const Vector3d<ScalarType> r_p2_G = p2_state_G.r;
+  const Vector3d<ScalarType> v_p2_G = p2_state_G.v;
+  // const Vector3d<ScalarType> r_ast_G = ast_state_G[0];
+  // const Vector3d<ScalarType> v_ast_G = ast_state_G[1];
+  // const Vector3d<ScalarType> r_p2_G = p2_state_G[0];
+  // const Vector3d<ScalarType> v_p2_G = p2_state_G[1];
 
   // 2. 質量比と共通重心 (Barycenter, B) の状態を計算
   // 質量比は単位系に依存しない
@@ -808,12 +798,7 @@ const std::array<ElementType, Dim> ConvertInertial2RotatingV2(
   const Vector3d<ScalarType> ast_pos_R_nd = ast_pos_R / lu;
   const Vector3d<ScalarType> ast_vel_R_nd = ast_vel_R / vu;
 
-  // 9. 出力のフォーマットを整える
-  if constexpr (std::is_same_v<ElementType, ScalarType> && Dim == 6) {
-    return ConvertPairToState({ast_pos_R_nd, ast_vel_R_nd});
-  } else if constexpr (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2) {
-    return {ast_pos_R_nd, ast_vel_R_nd};
-  }
+  return {ast_pos_R_nd, ast_vel_R_nd};
 }
 
 // CRTBPの運動方程式
