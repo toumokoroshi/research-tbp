@@ -18,10 +18,12 @@ class Vector3d {
 
   Vector3d(const Vector3d& other) : x_(other.x_), y_(other.y_), z_(other.z_) {}
 
-  // getter
-  T x() const { return x_; }
-  T y() const { return y_; }
-  T z() const { return z_; }
+  const T x() const { return x_; }
+  const T y() const { return y_; }
+  const T z() const { return z_; }
+  T x() { return x_; }
+  T y() { return y_; }
+  T z() { return z_; }
 
   Vector3d& operator=(const Vector3d& other) {
     x_ = other.x_;

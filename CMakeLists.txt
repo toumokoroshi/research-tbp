@@ -25,14 +25,14 @@ endif()
 # WindowsでIntel LLVMコンパイラを使用する場合の設定
 if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
     message(STATUS "Configuring for Intel LLVM compiler on Windows (MSVC-compatible mode)")
-    
+
     # MSVC互換モードのフラグを使用
     set(CMAKE_CXX_FLAGS_RELEASE "/O3 /Qipo /DNDEBUG")
     set(CMAKE_CXX_FLAGS_DEBUG "/Od /Zi /Wall")
-    
+
     # ランタイムライブラリの設定
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
-    
+
 else()
     # Unix系またはGNU/Clangモードの場合
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
@@ -58,15 +58,15 @@ find_package(Boost 1.71 REQUIRED)
 # Intel oneAPI OpenMP設定
 if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
     set(ONEAPI_ROOT "C:/Program Files (x86)/Intel/oneAPI")
-    
+
     if(EXISTS "${ONEAPI_ROOT}/compiler/latest")
         set(INTEL_COMPILER_DIR "${ONEAPI_ROOT}/compiler/latest")
-        
+
         # OpenMPフラグとライブラリを設定 (MSVC互換形式)
         set(OpenMP_CXX_FLAGS "/Qopenmp")
         set(OpenMP_CXX_LIB_NAMES "iomp5md")
         set(OpenMP_iomp5md_LIBRARY "${INTEL_COMPILER_DIR}/lib/libiomp5md.lib")
-        
+
         # ライブラリの存在確認
         if(EXISTS "${OpenMP_iomp5md_LIBRARY}")
             message(STATUS "Found Intel OpenMP library: ${OpenMP_iomp5md_LIBRARY}")
@@ -77,7 +77,7 @@ if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
 endif()
 
 find_package(OpenMP REQUIRED)
- 
+
 # -------------------------------------------------------------
 # サブディレクトリの追加
 # -------------------------------------------------------------

@@ -36,13 +36,13 @@ inline void WaitForKey(const std::string& message) {
 inline void WaitForEnter(const std::string& message = "<> Press Enter to continue...") {
   std::cout << message << std::endl;
   while (std::cin.get() != '\n') continue;
-  while (std::cin.get() != '\n') continue;
 }
 
-template <typename T, typename ScalarType>
-inline std::vector<T> createSphereMesh(const ScalarType ROI_radius, const int divisions,
-                                       const T& center) {
-  std::vector<T> meshPoints;
+template <typename ScalarType>
+inline std::vector<State3d<double>> createSphereMesh(const ScalarType ROI_radius,
+                                                     const int divisions,
+                                                     const State3d<double>& center) {
+  std::vector<State3d<double>> meshPoints;
   if (divisions <= 0) return meshPoints;
 
   ScalarType step = (2.0 * ROI_radius) / (divisions - 1);
@@ -53,9 +53,9 @@ inline std::vector<T> createSphereMesh(const ScalarType ROI_radius, const int di
       for (int k = 0; k < divisions; ++k) {
         double cx, cy, cz;
 
-        cx = center[0];
-        cy = center[1];
-        cz = center[2];
+        cx = center.x;
+        cy = center.y;
+        cz = center.z;
         ScalarType x = cx - ROI_radius + i * step;
         ScalarType y = cy - ROI_radius + j * step;
         ScalarType z = cz - ROI_radius + k * step;
@@ -73,71 +73,48 @@ inline std::vector<T> createSphereMesh(const ScalarType ROI_radius, const int di
     }
   }
 
-  std::sort(meshPoints.begin(), meshPoints.end(), [](const T& a, const T& b) {
-    if (a[2] != b[2]) return a[2] < b[2];
-    if (a[1] != b[1]) return a[1] < b[1];
-    return a[0] < b[0];
-  });
-
-  return meshPoints;
-}
-
-template <typename T, typename ScalarType>
-inline std::vector<T> create_cube_mesh(const ScalarType ROI_length, const int divisions,
-                                       const T& center) {
-  std::vector<T> meshPoints;
-  if (divisions <= 0) return meshPoints;
-
-  double step = (ROI_length) / (divisions - 1);
-
-  for (int i = 0; i < divisions; ++i) {
-    for (int j = 0; j < divisions; ++j) {
-      for (int k = 0; k < divisions; ++k) {
-        ScalarType x = center[0] - ROI_length + i * step;
-        ScalarType y = center[1] - ROI_length + j * step;
-        ScalarType z = center[2] - ROI_length + k * step;
-        meshPoints.push_back({x, y, z});
-      }
-    }
-  }
-
-  std::sort(meshPoints.begin(), meshPoints.end(), [](const T& a, const T& b) {
-    if (a[2] != b[2]) return a[2] < b[2];
-    if (a[1] != b[1]) return a[1] < b[1];
-    return a[0] < b[0];
-  });
-
-  return meshPoints;
-}
-template <typename ScalarType>
-inline std::vector<Coord3D<ScalarType>> create_square_mesh(
-    const ScalarType ROI_length, const int divisions,
-    const Coord3D<ScalarType>& center = Coord3D<ScalarType>(0, 0, 0), const double z = 0) {
-  std::vector<Coord3D<ScalarType>> meshPoints;
-  if (divisions <= 0) return meshPoints;
-
-  double step = (2 * ROI_length) / (divisions - 1);
-
-  for (int i = 0; i < divisions; ++i) {
-    for (int j = 0; j < divisions; ++j) {
-      for (int k = 0; k < divisions; ++k) {
-        ScalarType x = center[0] - ROI_length + i * step;
-        ScalarType y = center[1] - ROI_length + j * step;
-        ScalarType z = center[2] - ROI_length + j * step;
-        meshPoints.push_back({x, y, z});
-      }
-    }
-  }
-
   std::sort(meshPoints.begin(), meshPoints.end(),
-            [](const Coord3D<ScalarType>& a, const Coord3D<ScalarType>& b) {
-              if (a[2] != b[2]) return a[2] < b[2];
-              if (a[1] != b[1]) return a[1] < b[1];
-              return a[0] < b[0];
+            [](const State3d<double>& a, const State3d<double>& b) {
+              if (a.z != b.z) return a.z < b.z;
+              if (a.y != b.y) return a.y < b.y;
+              return a.x < b.x;
             });
 
   return meshPoints;
 }
+
+// template <typename T, typename ScalarType>
+// inline std::vector<T> create_cube_mesh(const ScalarType ROI_length, const int divisions,
+// }
+// template <typename ScalarType>
+// inline std::vector<Coord3D<ScalarType>> create_square_mesh(
+//     const ScalarType ROI_length, const int divisions,
+//     const Coord3D<ScalarType>& center = Coord3D<ScalarType>(0, 0, 0), const double z = 0) {
+//   std::vector<Coord3D<ScalarType>> meshPoints;
+//   if (divisions <= 0) return meshPoints;
+
+//   double step = (2 * ROI_length) / (divisions - 1);
+
+//   for (int i = 0; i < divisions; ++i) {
+//     for (int j = 0; j < divisions; ++j) {
+//       for (int k = 0; k < divisions; ++k) {
+//         ScalarType x = center[0] - ROI_length + i * step;
+//         ScalarType y = center[1] - ROI_length + j * step;
+//         ScalarType z = center[2] - ROI_length + j * step;
+//         meshPoints.push_back({x, y, z});
+//       }
+//     }
+//   }
+
+//   std::sort(meshPoints.begin(), meshPoints.end(),
+//             [](const Coord3D<ScalarType>& a, const Coord3D<ScalarType>& b) {
+//               if (a[2] != b[2]) return a[2] < b[2];
+//               if (a[1] != b[1]) return a[1] < b[1];
+//               return a[0] < b[0];
+//             });
+
+//   return meshPoints;
+// }
 
 inline void displayProgressBar(double progress, int barWidth = 40) {
   std::cout << "[";
@@ -253,10 +230,7 @@ inline param::AstroConstants<ScalarType> loadConstants(const std::string& filena
   astroConstants.gm_sun = constants.at("gm_sun");
   astroConstants.gm_earth = constants.at("gm_earth");
   astroConstants.G = constants.at("G");
-  astroConstants.mu =
-      astroConstants.gm_earth /
-      (astroConstants.gm_sun + astroConstants.gm_earth);  // mu parameter of Earth-Sun
-  return astroConstants;                                  // 読み込んだ構造体を返す
+  return astroConstants;  // 読み込んだ構造体を返す
 }
 }  // namespace utils
 #endif  // UTILS_HPP

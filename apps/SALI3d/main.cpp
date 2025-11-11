@@ -38,16 +38,16 @@
 double calc_SALI(const std::array<double, 6>& ref_state,
                  const std::array<double, 6>& perturbed_state1,
                  const std::array<double, 6>& perturbed_state2, int mode = 6);
-double calc_r1(const my_type::Coord3D<double>& point, const double mu);
+double calc_r1(const my_type::State3d<double>& point, const double mu);
 
-double calc_r2(const my_type::Coord3D<double>& point, const double mu);
+double calc_r2(const my_type::State3d<double>& point, const double mu);
 
-double calc_v_abs(const my_type::Coord3D<double>& point, const double mu,
+double calc_v_abs(const my_type::State3d<double>& point, const double mu,
                   const double JACOBI_INTEGRAL);
 
 double calc_jacobi_integral(const std::array<double, 6>& state, const double mu);
 
-Vector3d<double> calc_velocity(const my_type::Coord3D<double>& point, const double v_abs,
+Vector3d<double> calc_velocity(const my_type::State3d<double>& point, const double v_abs,
                                const double mu, const double inclination, const double OMEGA,
                                const double theta = 0.0);
 
@@ -63,13 +63,13 @@ int main() {
   std::string config_base_path = CONFIG_DIR;
   std::string astro_param_file = config_base_path + "/astro_param/astro_param.txt";
   AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
-  const double kAU = astro_params.au;             // astronomical unit in meters
-  const double kGMSUN = astro_params.gm_sun;      // heliocentric gravitational constant m3 s-2
-  const double kGMEARTH = astro_params.gm_earth;  // geocentric gravitational constant m3 s-2
-  const double kMU = astro_params.mu;             // mu parameter of Earth-Sun
+  const double kAU = astro_params.au;                 // astronomical unit in meters
+  const double kGMSUN = astro_params.gm_sun;          // heliocentric gravitational constant m3 s-2
+  const double kGMEARTH = astro_params.gm_earth;      // geocentric gravitational constant m3 s-2
+  const double kMU = kGMEARTH / (kGMEARTH + kGMSUN);  // mu parameter of Earth-Sun
 
   constexpr double HEADER_SIZE = 9;
-  my_type::Coord3D<double> MeshCenter{1.0 - kMU, 0, 0};
+  my_type::State3d<double> MeshCenter{1.0 - kMU, 0, 0};
   double ROI_length = 0;
 
   std::cout << "<>----------------------------------------------------------------" << std::endl;
@@ -133,9 +133,9 @@ int main() {
       ss >> data[i];
     }
 
-    MeshCenter[0] = data[2];
-    MeshCenter[1] = data[3];
-    MeshCenter[2] = data[4];
+    MeshCenter.x = data[2];
+    MeshCenter.y = data[3];
+    MeshCenter.z = data[4];
   }
   // #endif
   char mode2;
@@ -268,13 +268,13 @@ int main() {
     std::cout << std::endl;
 
     std::cout << "<>        Generating mesh ";
-    std::vector<my_type::Coord3D<double>> meshPoints;
+    std::vector<my_type::State3d<double>> meshPoints;
     if (mode == '1') {
       std::cout << "based on SOI radius" << std::endl;
       meshPoints = createSphereMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
     } else if (mode == '2') {
-      std::cout << "based on the specified point" << std::endl;
-      meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
+      // std::cout << "based on the specified point" << std::endl;
+      // meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
     }
 
     int countt = meshPoints.size();
@@ -328,17 +328,17 @@ int main() {
           velo_err = 1;
         }
 
-        CRTBP ref_state(point[0], point[1], point[2], vx, vy, vz, kMU, CALC_TIMESTEP);
-        CRTBP perturbed_state1(point[0] + perturbation, point[1], point[2], vx, vy, vz, kMU,
+        CRTBP ref_state(point.x, point.y, point.z, vx, vy, vz, kMU, CALC_TIMESTEP);
+        CRTBP perturbed_state1(point.x + perturbation, point.y, point.z, vx, vy, vz, kMU,
                                CALC_TIMESTEP);
-        CRTBP perturbed_state2(point[0], point[1] + perturbation, point[2], vx, vy, vz, kMU,
+        CRTBP perturbed_state2(point.x, point.y + perturbation, point.z, vx, vy, vz, kMU,
                                CALC_TIMESTEP);
 
 #ifndef SALI_only_XY
-        CRTBP perturbed_state3(point[0], point[1], point[2] + perturbation, vx, vy, vz, kMU,
+        CRTBP perturbed_state3(point.x, point.y, point.z + perturbation, vx, vy, vz, kMU,
                                CALC_TIMESTEP);
 #endif
-        CRTBP perturbed_state4(point[0], point[1], point[2], vx, vy, vz + perturbation, kMU,
+        CRTBP perturbed_state4(point.x, point.y, point.z, vx, vy, vz + perturbation, kMU,
                                CALC_TIMESTEP);
 
         double time = 0.0;
@@ -397,16 +397,16 @@ int main() {
 
 #ifdef SALI_only_XY
         SALI_data[idx] = {
-            static_cast<double>(mesh_num), time, point[0], point[1], point[2], jacobiii, SALI};
+            static_cast<double>(mesh_num), time, point.x, point.y, point.z, jacobiii, SALI};
 #endif
 #ifndef SALI_only_XY
         // 最小値
         double SALI = std::min({SALIxy, SALIyz, SALIzx});
         SALI_data[idx] = {static_cast<double>(mesh_num),
                           time,
-                          point[0],
-                          point[1],
-                          point[2],
+                          point.x,
+                          point.y,
+                          point.z,
                           jacobiii,
                           SALIxy,
                           SALIyz,
@@ -608,24 +608,23 @@ double calc_SALI(const std::array<double, 6>& ref_state,
   return SALI;
 }
 
-double calc_r1(const my_type::Coord3D<double>& point, const double mu) {
-  return std::sqrt(std::pow(point[0] + mu, 2.) + std::pow(point[1], 2.) + std::pow(point[2], 2.));
+double calc_r1(const my_type::State3d<double>& point, const double mu) {
+  return std::sqrt(std::pow(point.x + mu, 2.) + std::pow(point.y, 2.) + std::pow(point.z, 2.));
 }
 
-double calc_r2(const my_type::Coord3D<double>& point, const double mu) {
-  return std::sqrt(std::pow(point[0] - 1. + mu, 2.) + std::pow(point[1], 2.) +
-                   std::pow(point[2], 2.));
+double calc_r2(const my_type::State3d<double>& point, const double mu) {
+  return std::sqrt(std::pow(point.x - 1. + mu, 2.) + std::pow(point.y, 2.) + std::pow(point.z, 2.));
 }
 
-double calc_v_abs(const my_type::Coord3D<double>& point, const double mu,
+double calc_v_abs(const my_type::State3d<double>& point, const double mu,
                   const double JACOBI_INTEGRAL) {
   double r1 = calc_r1(point, mu);
   double r2 = calc_r2(point, mu);
-  // std::cout << "uiuoij" <<point[0] * point[0] + point[1] * point[1] + 2. * (1. -
+  // std::cout << "uiuoij" <<point.x * point.x + point.y * point.y + 2. * (1. -
   // mu) / r1 + 2.
   // * mu / r2 +
   //                  mu * (1 - mu) - JACOBI_INTEGRAL << std::endl;
-  return std::sqrt(point[0] * point[0] + point[1] * point[1] + 2. * (1. - mu) / r1 + 2. * mu / r2 +
+  return std::sqrt(point.x * point.x + point.y * point.y + 2. * (1. - mu) / r1 + 2. * mu / r2 +
                    mu * (1. - mu) - JACOBI_INTEGRAL);
 }
 
@@ -648,7 +647,7 @@ double calc_jacobi_integral(const std::array<double, 6>& state, const double mu)
          mu * (1. - mu);
 }
 
-Vector3d<double> calc_velocity(const my_type::Coord3D<double>& point, const double v_abs,
+Vector3d<double> calc_velocity(const my_type::State3d<double>& point, const double v_abs,
                                const double mu, const double inclination, const double OMEGA,
                                const double theta) {
   // 回転軸と回転角からクオータニオン経由で回転行列を生成
@@ -693,7 +692,7 @@ Vector3d<double> calc_velocity(const my_type::Coord3D<double>& point, const doub
   Vector3d normal_vector{std::sin(inclination) * std::cos(OMEGA),
                          std::sin(inclination) * std::sin(OMEGA), std::cos(inclination)};
   // 法線ベクトルと位置ベクトルの外積を計算
-  Vector3d r2_vector{point[0] - 1. + mu, point[1], point[2]};
+  Vector3d r2_vector{point.x - 1. + mu, point.y, point.z};
   Vector3d h_vector = r2_vector.gaiseki(normal_vector);
   Vector3d normalized_h_vector = h_vector.normalise();  // theta = 0は逆行回転
 

@@ -14,7 +14,9 @@
 #define CRTBP_H_
 
 #include <array>
+#include <chrono>
 #include <cmath>
+#include <thread>
 #include <vector>
 
 #include "vector3d.hpp"
@@ -97,7 +99,7 @@ CRTBP<T>::CRTBP(T init_x, T init_y, T init_z, T init_vx, T init_vy, T init_vz, T
       init_q_{init_x, init_y, init_z},
       init_p_{init_vx - init_y, init_vy + init_x, init_vz},
       q_{init_x, init_y, init_z},
-      mu_(3.003e-6),
+      mu_(mu),
       timestep_(timestep) {}
 
 template <typename T>
@@ -125,7 +127,7 @@ CRTBP<T>::CRTBP(std::array<T, 6> init_state, T mu, T timestep)
       init_p_{init_state[3] - init_state[0], init_state[4] + init_state[1], init_state[5]},
       q_{init_state[0], init_state[1], init_state[2]},
       p_{init_state[3] - init_state[0], init_state[4] + init_state[1], init_state[5]},
-      mu_(3.003e-6),
+      mu_(mu),
       timestep_(timestep) {}
 
 template <typename T>
@@ -177,7 +179,8 @@ template <typename T>
 void CRTBP<T>::RK4_step_noncanonical() {
   std::array<T, 6> k1, k2, k3, k4;
   std::array<T, 3> y1, y2, y3;
-
+  // std::cout << std::setprecision(15) << "posi_: " << posi_[0] << ", " << posi_[1] << ", "
+  //           << posi_[2] << ", " << v_[0] << ", " << v_[1] << ", " << v_[2] << std::endl;
   // k1を計算
   k1[0] = v_[0];
   k1[1] = v_[1];
@@ -188,12 +191,24 @@ void CRTBP<T>::RK4_step_noncanonical() {
   T r2_3 = std::pow(
       ((posi_[0] - 1. + mu_) * (posi_[0] - 1. + mu_) + posi_[1] * posi_[1] + posi_[2] * posi_[2]),
       3. / 2.);
+  // (修正) r1_sq (2乗) を計算
+  T r1_sq = (posi_[0] + mu_) * (posi_[0] + mu_) + posi_[1] * posi_[1] + posi_[2] * posi_[2];
+  T r2_sq =
+      (posi_[0] - 1. + mu_) * (posi_[0] - 1. + mu_) + posi_[1] * posi_[1] + posi_[2] * posi_[2];
+  // (修正) r1_inv3 (逆3乗) を計算
+  T r1_inv3 = 1.0 / (r1_sq * std::sqrt(r1_sq));
+  T r2_inv3 = 1.0 / (r2_sq * std::sqrt(r2_sq));
   //clang-format off
   k1[3] = 2 * v_[1] + posi_[0] - (1 - mu_) * (posi_[0] + mu_) / r1_3 -
           mu_ * (posi_[0] - 1 + mu_) / r2_3;
   k1[4] = -2 * v_[0] + posi_[1] - (1 - mu_) * posi_[1] / r1_3 - mu_ * posi_[1] / r2_3;
   k1[5] = -(1 - mu_) * posi_[2] / r1_3 - mu_ * posi_[2] / r2_3;
-  //clang-format on
+  // std::cout << std::setprecision(15)
+  //           << "2 * vy, x, -(1-mu)*(x+mu)/r1^3, -mu*(x-1+mu)/r2^3: " << 2 * v_[1] << ", "
+  //           << posi_[0] << ", " << -(mu_) << ", " << -mu_ * (posi_[0] - 1 + mu_) * r2_inv3
+  //           << std::endl;
+  // std::cout << std::setprecision(15) << "k1: " << k1[0] << ", " << k1[1] << ", " << k1[2] << ", "
+  //           << k1[3] << ", " << k1[4] << ", " << k1[5] << std::endl;
   // y1を計算
   for (int i = 0; i < 3; i++) {
     y1[i] = posi_[i] + k1[i] * timestep_ / 2;
@@ -210,6 +225,9 @@ void CRTBP<T>::RK4_step_noncanonical() {
   k2[3] = 2 * k2[1] + y1[0] - (1 - mu_) * (y1[0] + mu_) / r1_3 - mu_ * (y1[0] - 1 + mu_) / r2_3;
   k2[4] = -2 * k2[0] + y1[1] - (1 - mu_) * y1[1] / r1_3 - mu_ * y1[1] / r2_3;
   k2[5] = -(1 - mu_) * y1[2] / r1_3 - mu_ * y1[2] / r2_3;
+
+  // std::cout << std::setprecision(15) << "k2: " << k2[0] << ", " << k2[1] << ", " << k2[2] << ", "
+  // << k2[3] << ", " << k2[4] << ", " << k2[5] << std::endl;
 
   // y2を計算
   for (int i = 0; i < 3; i++) {
@@ -228,6 +246,9 @@ void CRTBP<T>::RK4_step_noncanonical() {
   k3[4] = -2 * k3[0] + y2[1] - (1 - mu_) * y2[1] / r1_3 - mu_ * y2[1] / r2_3;
   k3[5] = -(1 - mu_) * y2[2] / r1_3 - mu_ * y2[2] / r2_3;
 
+  // std::cout << std::setprecision(15) << "k3: " << k3[0] << ", " << k3[1] << ", " << k3[2] << ", "
+  // << k3[3] << ", " << k3[4] << ", " << k3[5] << std::endl;
+
   // y3を計算
   for (int i = 0; i < 3; i++) {
     y3[i] = posi_[i] + k3[i] * timestep_;
@@ -245,6 +266,8 @@ void CRTBP<T>::RK4_step_noncanonical() {
   k4[4] = -2 * k4[0] + y3[1] - (1 - mu_) * y3[1] / r1_3 - mu_ * y3[1] / r2_3;
   k4[5] = -(1 - mu_) * y3[2] / r1_3 - mu_ * y3[2] / r2_3;
 
+  // std::cout << std::setprecision(15) << "k4: " << k4[0] << ", " << k4[1] << ", " << k4[2] << ", "
+  //           << k4[3] << ", " << k4[4] << ", " << k4[5] << std::endl;
   // 位置と速度を更新
   for (int i = 0; i < 3; i++) {
     posi_[i] += timestep_ / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]);
