@@ -43,12 +43,13 @@ int main() {
   double ROI_length = 0;
 
   std::cout << "<>----------------------------------------------------------------" << std::endl;
-  std::cout << "<>            CRTBP 3dSALI Calculation based on Jacobi Integral" << std::endl;
+  std::cout << "<>            CRTBP 3dSALI  Calculation ver2.0" << std::endl;
   std::cout << "<>-------------------------------------------------------------"
                "---\n\n"
             << std::endl;
   std::cout << "<>****************************************************************" << std::endl;
   std::cout << "<>  [mode selection] : " << std::endl;
+  std::cout << "<> " << std::endl;
   std::cout << "<>        1. New simulation" << std::endl;
   std::cout << "<>        2. Detailed simulation for existing data" << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
@@ -56,15 +57,16 @@ int main() {
   std::cout << "<> >>>";
   char mode;
   std::cin >> mode;
-  std::cout << std::endl;
+  std::cout << "<> " << std::endl;
   if (mode == '1') {
-    std::cout << "<> > selected mode : New simulation\n" << std::endl;
+    std::cout << "<> > selected mode : New simulation" << std::endl;
   } else if (mode == '2') {
     std::cout << "<> > selected mode : Detailed simulation for existing data\n" << std::endl;
   } else {
     std::cout << "<> > selected mode : Exit\n" << std::endl;
     return 0;
   }
+  std::cout << "<> " << std::endl;
 
   if (mode == '2') {
     // ファイルを読み込んで、ターゲットのメッシュ番号を指定
@@ -109,17 +111,19 @@ int main() {
   // #endif
   char mode2;
   std::cout << "<>  [single simulation or continuous simulation] : " << std::endl;
+  std::cout << "<> " << std::endl;
   std::cout << "<>        1. single simulation" << std::endl;
   std::cout << "<>        2. continuous simulation" << std::endl;
   std::cout << "<>        else. Exit" << std::endl;
   std::cout << "<>      enter number " << std::endl;
   std::cout << "<> >>> ";
   std::cin >> mode2;
-  std::cout << std::endl;
+  std::cout << "<> " << std::endl;
 
   double is_continuous = 0;
   if (mode2 == '1') {
-    std::cout << "<>    selected mode : single simulation\n" << std::endl;
+    std::cout << "<> >  selected mode : single simulation" << std::endl;
+
     is_continuous = 0;
   } else if (mode2 == '2') {
     std::cout << "<>    selected mode : continuous simulation\n" << std::endl;
@@ -128,6 +132,36 @@ int main() {
     std::cout << "selected mode : Exit\n" << std::endl;
     return 0;
   }
+  std::cout << "<> " << std::endl;
+  std::cout << "<>----------------------------------------------------------------" << std::endl;
+
+  int Core_Max = omp_get_max_threads();
+  int OMP_Fmax{};
+  std::cout << "<>  [OpenMP preparation]" << std::endl;
+  std::cout << "<> " << std::endl;
+  std::cout << "<> On your PC, " << Core_Max
+            << " threads can be used for parallel computing employing OMP." << std::endl;
+  std::cout << "<> >  " << std::endl;
+  std::cout << "<>   * How many threads do you want use for simulation? "
+            << "(input an integer)" << std::endl;
+  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
+  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
+  std::cout << "<> >>> ";
+  int getcore = 0;
+  std::cin >> getcore;
+  if (getcore <= Core_Max) {
+    OMP_Fmax = getcore;
+    std::cout << "<>" << std::endl;
+    std::cout << "<>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
+    std::cout << "<>" << std::endl;
+  } else {
+    OMP_Fmax = Core_Max;
+    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
+              << "automatically determined as " << OMP_Fmax << std::endl;
+  }
+  WaitForEnter();
+  omp_set_num_threads(OMP_Fmax);
+  std::cout << "<>----------------------------------------------------------------" << std::endl;
 
   constexpr double SOI = 0.03;
   // 設定ファイル読み込み
@@ -150,36 +184,15 @@ int main() {
     configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig_1.txt";
   }
 
-  std::cout << "<>        config file : " << configfilename << std::endl;
+  std::cout << "<>    " << std::endl;
+  std::cout << "<>    loaded config file : " << configfilename << std::endl;
   ifs.open(configfilename);
 
   if (!ifs) {
     std::cerr << "Failed to open file." << std::endl;
     return -1;
   }
-  int Core_Max = omp_get_max_threads();
-  int OMP_Fmax{};
-  std::cout << "<>  [OpenMP preparation]" << std::endl;
-  std::cout << "<> On your PC, " << Core_Max
-            << " threads can be used for parallel computing employing OMP." << std::endl;
-  std::cout << "<> >  " << std::endl;
-  std::cout << "<>   * How many threads do you want use for simulation? "
-            << "(input an integer)" << std::endl;
-  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
-  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
-  std::cout << "<> >>> ";
-  int getcore = 0;
-  std::cin >> getcore;
-  if (getcore <= Core_Max) {
-    OMP_Fmax = getcore;
-    std::cout << "  <>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
-  } else {
-    OMP_Fmax = Core_Max;
-    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
-              << "automatically determined as " << OMP_Fmax << std::endl;
-  }
-  WaitForEnter();
-  omp_set_num_threads(OMP_Fmax);
+
   // 積分器
   auto integrator = [&](SaliState<double>* state_ptr, double h) {
     SymplecticStep4thOrderSALI(kMU, state_ptr, h);
@@ -194,6 +207,7 @@ int main() {
     auto start = std::chrono::system_clock::now();
     std::string str;
     std::cout << std::setprecision(10);
+    std::cout << "<>    loaded config >>>" << std::endl;
 
     //--------- 設定ファイル読み込み部分---------
     while (std::getline(ifs, str)) {
@@ -235,13 +249,10 @@ int main() {
     if (is_continuous == 0) {
       std::cout << "<>  [read config validation]" << std::endl;
       WaitForEnter();
-      std::cout << std::endl;
     }
 
     std::cout << std::endl;
     std::cout << "<>    Start SALI caluculation --" << std::endl;
-    std::cout << std::endl;
-    std::cout << std::endl;
 
     std::cout << "<>        Generating mesh ";
     std::vector<State3d<double>> meshPoints;
@@ -253,9 +264,7 @@ int main() {
       // meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
     }
     int countt = meshPoints.size();
-    std::cout << std::endl;
     std::cout << "<>        " << countt << " mesh generated successfully" << std::endl;
-    std::cout << std::endl;
     std::cout << "<>        Start calclation" << std::endl;
 
     // ---------出力ファイル設定---------
@@ -303,13 +312,12 @@ int main() {
 #pragma omp for schedule(dynamic)
       for (int idx = 0; idx < static_cast<int>(meshPoints.size()); ++idx) {
         const auto& point = meshPoints[idx];
-
         int mesh_num = idx + 1;
         bool velo_err = 0;
-
-        // non-biased velocity
-        double v_abs = calc_v_abs(point, JACOBI_INTEGRAL, kMU);
+        double final_sali = -1;
         double vx = 0.0, vy = 0.0, vz = 0.0;
+
+        double v_abs = calc_v_abs(point, JACOBI_INTEGRAL, kMU);
 
         if (v_abs > 0) {
           State3d<double> velocity = calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
@@ -332,15 +340,24 @@ int main() {
         sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
         // 積分ループ (オブザーバー無し)
         for (int step = 0; step < num_step; ++step) {
-          // 1. 積分
+          // 1. 積分s
           integrator(&sali_state, CALC_TIMESTEP);
           // 2. 正規化
           sali_state.w1.Normalize();
           sali_state.w2.Normalize();
         }
-        const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-        const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-        const double final_sali = std::min(norm_plus, norm_minus);
+
+        State<double> final_state = ConvertToPhysical(sali_state.state);
+        if (mesh_num == 9246) {
+          std::cout << "r2" << calc_r2(final_state.x, final_state.y, final_state.z, kMU)
+                    << std::endl;
+        }
+        if (calc_r2(final_state.x, final_state.y, final_state.z, kMU) < SOI_RADIUS &&
+            calc_r2(final_state.x, final_state.y, final_state.z, kMU) > FOREBIDDEN_AREA_RADIUS) {
+          const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
+          const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
+          final_sali = std::min(norm_plus, norm_minus);
+        }
         local_output_buffer << mesh_num << "," << final_sali << "," << point.x << "," << point.y
                             << "," << point.z << "," << vx << "," << vy << "," << vz << "\n";
         // 一定件数ごとにバッファをファイルに書き込む (排他制御)
@@ -372,7 +389,7 @@ int main() {
     std::cout << std::endl;
 
     ofs1.close();
-
+    std::cout << "<>    Output File:" << filename << std::endl;
     auto end = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
@@ -406,8 +423,7 @@ int main() {
   auto min = duration.count() / 1000 / 60 % 60;
   auto hour = duration.count() / 1000 / 60 / 60;
 
-  std::cout << std::endl;
-  std::cout << std::endl;
+  std::cout << "<>" << std::endl;
   std::cout << "<>        Calculation finished" << std::endl;
   std::cout << "<>        Total elapsed time : " << hour << "h " << min << "m " << sec << "s "
             << msec << "ms" << std::endl;

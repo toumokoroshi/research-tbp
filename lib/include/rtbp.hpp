@@ -108,6 +108,10 @@ struct CanonicalState {
   ScalarType Norm() const {
     return std::sqrt(qx * qx + qy * qy + qz * qz + px * px + py * py + pz * pz);
   }
+  ScalarType Dot(const CanonicalState<ScalarType> other) const {
+    return (qx * other.qx + qy * other.qy + qz * other.qz + px * other.px + py * other.py +
+            pz * other.pz);
+  }
 
   // 正規化 (偏差ベクトルの長さを1に戻す)
   void Normalize() {
@@ -801,12 +805,12 @@ void CalculateGradientU(const ScalarType mu, ScalarType x, ScalarType y, ScalarT
 /**
  * @brief 有効ポテンシャルU(q)の勾配とヘッセ行列を計算
  *
- * @details U(q) = (1-mu)/r1 + mu/r2
+ * @details U(q) = -(1-mu)/r1 - mu/r2
  *          grad_U = dU/dq
  *          H_U = d^2U/(dq_i dq_j)
  *
- *          主軌道: p_dot = -grad_U
- *          偏差: dp_dot = -H_U * dq
+ *          主軌道: p_dot = -dH_A/dq = -dU/dq = -grad_U
+ *          偏差: dp_dot = H_U * dq
  *
  * @param mu 質量比
  * @param x, y, z 主軌道の位置
@@ -834,44 +838,44 @@ void CalculateGradientAndHessianU(const ScalarType mu, ScalarType x, ScalarType 
   const ScalarType r2_inv5 = r2_inv3 / r2_sq;
 
   // 1. 勾配 grad_U = dU/dq
-  grad_U[0] = -mu1 * x1 * r1_inv3 - mu * x2 * r2_inv3;
-  grad_U[1] = -mu1 * y * r1_inv3 - mu * y * r2_inv3;
-  grad_U[2] = -mu1 * z * r1_inv3 - mu * z * r2_inv3;
+  grad_U[0] = -mu1 * (-x1 * r1_inv3) - mu * (-x2 * r2_inv3);
+  grad_U[1] = -mu1 * (-y * r1_inv3) - mu * (-y * r2_inv3);
+  grad_U[2] = -mu1 * (-z * r1_inv3) - mu * (-z * r2_inv3);
 
   // 2. ヘッセ行列 H_U = d^2U/(dq_i dq_j)
-  // d/dx(grad_U[0]) = d/dx(-(1-mu)*x1/r1^3 - mu*x2/r2^3)
-  //                 = -(1-mu)*(1/r1^3 - 3*x1^2/r1^5) - mu*(1/r2^3 - 3*x2^2/r2^5)
-  //                 = (1-mu)*(3*x1^2/r1^5 - 1/r1^3) + mu*(3*x2^2/r2^5 - 1/r2^3)
+  // d/dx(grad_U[0]) = d/dx((1-mu)*x1/r1^3 + mu*x2/r2^3)
+  //                 = (1-mu)*(1/r1^3 - 3*x1^2/r1^5) + mu*(1/r2^3 - 3*x2^2/r2^5)
   ScalarType term1, term2;
 
   // Hxx
-  term1 = mu1 * (3.0 * x1 * x1 * r1_inv5 - r1_inv3);
-  term2 = mu * (3.0 * x2 * x2 * r2_inv5 - r2_inv3);
+  term1 = mu1 * (r1_inv3 - 3.0 * x1 * x1 * r1_inv5);
+  term2 = mu * (r2_inv3 - 3.0 * x2 * x2 * r2_inv5);
   hessian_U->hxx = term1 + term2;
 
   // Hyy
-  term1 = mu1 * (3.0 * y * y * r1_inv5 - r1_inv3);
-  term2 = mu * (3.0 * y * y * r2_inv5 - r2_inv3);
+  term1 = mu1 * (r1_inv3 - 3.0 * y * y * r1_inv5);
+  term2 = mu * (r2_inv3 - 3.0 * y * y * r2_inv5);
   hessian_U->hyy = term1 + term2;
 
   // Hzz
-  term1 = mu1 * (3.0 * z * z * r1_inv5 - r1_inv3);
-  term2 = mu * (3.0 * z * z * r2_inv5 - r2_inv3);
+  term1 = mu1 * (r1_inv3 - 3.0 * z * z * r1_inv5);
+  term2 = mu * (r2_inv3 - 3.0 * z * z * r2_inv5);
   hessian_U->hzz = term1 + term2;
 
   // Hxy (対称なのでHyx = Hxy)
-  term1 = mu1 * (3.0 * x1 * y * r1_inv5);
-  term2 = mu * (3.0 * x2 * y * r2_inv5);
+  // d/dy(grad_U[0]) = (1-mu)*(-3*x1*y/r1^5) + mu*(-3*x2*y/r2^5)
+  term1 = mu1 * (-3.0 * x1 * y * r1_inv5);
+  term2 = mu * (-3.0 * x2 * y * r2_inv5);
   hessian_U->hxy = term1 + term2;
 
   // Hxz
-  term1 = mu1 * (3.0 * x1 * z * r1_inv5);
-  term2 = mu * (3.0 * x2 * z * r2_inv5);
+  term1 = mu1 * (-3.0 * x1 * z * r1_inv5);
+  term2 = mu * (-3.0 * x2 * z * r2_inv5);
   hessian_U->hxz = term1 + term2;
 
   // Hyz
-  term1 = mu1 * (3.0 * y * z * r1_inv5);
-  term2 = mu * (3.0 * y * z * r2_inv5);
+  term1 = mu1 * (-3.0 * y * z * r1_inv5);
+  term2 = mu * (-3.0 * y * z * r2_inv5);
   hessian_U->hyz = term1 + term2;
 }
 
@@ -1007,7 +1011,7 @@ void ApplyDriftSALI(SaliState<ScalarType>* state, ScalarType dt) {
  * @details 主軌道の位置でポテンシャルの勾配とヘッセ行列を計算し、
  *          主軌道と偏差ベクトルの両方を更新
  *
- *          主軌道: p_dot = -grad_U
+ *          主軌道: p_dot = -dH_A/dq = -dU/dq = -grad_U
  *          偏差: dp_dot = -H_U * dq
  *
  * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
@@ -1024,10 +1028,10 @@ template <typename ScalarType>
 void ApplyKickSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType dt) {
   ScalarType grad_U[3];
   HessianMatrix<ScalarType> hessian_U;
-  　　
-      // 主軌道の位置でポテンシャルの勾配とヘッセ行列を計算
-      CalculateGradientAndHessianU(mu, state->state.qx, state->state.qy, state->state.qz, grad_U,
-                                   &hessian_U);
+
+  // 主軌道の位置でポテンシャルの勾配とヘッセ行列を計算
+  CalculateGradientAndHessianU(mu, state->state.qx, state->state.qy, state->state.qz, grad_U,
+                               &hessian_U);
 
   // 1. 主軌道の運動量更新
   // p_dot = -grad_U  =>  p -= dt * grad_U
@@ -1200,7 +1204,6 @@ State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& s
 
   // 1. B(h/2) - 回転
   ApplyRotation(&canonical_state, h / 2.0);
-
   // 2. A(h) = Kick(h/2) * Drift(h) * Kick(h/2)
   // qを先に更新　　更新したqを使って最終的なp,qを出す
   ApplyDrift(&canonical_state, h / 2.0);
@@ -1209,7 +1212,6 @@ State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& s
 
   // 3. B(h/2) - 回転
   ApplyRotation(&canonical_state, h / 2.0);
-
   return ConvertToPhysical(canonical_state);
 }
 
@@ -1272,6 +1274,7 @@ void SymplecticStepSALI(const ScalarType mu, SaliState<ScalarType>* state, Scala
   ApplyDriftSALI(state, h / 2.0);
   ApplyKickSALI(mu, state, h);
   ApplyDriftSALI(state, h / 2.0);
+
   ApplyRotationSALI(state, h / 2.0);
 }
 
