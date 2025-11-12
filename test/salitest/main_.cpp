@@ -288,11 +288,16 @@ int main() {
     ofs1 << "DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
     ofs1 << "Time,SALI,x,y,z,px,py,pz\n";
 
+    // 積分クラスに渡すためのファイル出力用オブザーバー
+    SaliFileObserver<double> observer(ofs1);
     // 計算のステップ数
     int num_step = static_cast<int>(SALI_CALCTIME_THRESHOLD / CALC_TIMESTEP);
     int totalIterations = meshPoints.size();
     // 進捗カウンタ
     int completed_count = 0;
+    std::vector<std::array<double, 8>> ref_state;
+    std::vector<std::array<double, 8>> pertubed_state1;
+    std::vector<std::array<double, 8>> pertubed_state2;
 
 // OpenMP並列化ループ
 #pragma omp parallel shared(meshPoints, completed_count, totalIterations, progress, ofs1)
@@ -343,7 +348,8 @@ int main() {
         const double final_sali = std::min(norm_plus, norm_minus);
         local_output_buffer << mesh_num << "," << final_sali << "," << point.x << "," << point.y
                             << "," << point.z << "," << vx << "," << vy << "," << vz << "\n";
-        // 一定件数ごとにバッファをファイルに書き込む (排他制御)
+        // 5. 一定件数ごとにバッファをファイルに書き込む (排他制御)
+        // (またはループ終了後にまとめて書き込む)
         if (idx % 100 == 0 || idx == totalIterations - 1) {
 #pragma omp critical
           {

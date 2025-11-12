@@ -1,14 +1,14 @@
 /**
  * @file rtbp.hpp
- * @author tabata (modified by Gemini)
- * @brief 制限三体問題の関数をまとめたライブラリ (SALI対応)
+ * @author tabata
+ * @brief 円制限三体問題の関数をまとめたライブラリ
  * @version 2.0 (SALI対応シンプレクティック積分器 修正版)
  * @date 2025-11-10
- * @note C++17
+ * @note C++20
+ * (conceptを使っているからc++20より昔のバージョンを指定してコンパイルするとエラーになる)
  * @par history
  * - 2025-01-24 tabata version 1.0
- * - 2025-11-06 refactored template parameter names
- * - 2025-11-10 Gemini - Logic corrections, struct refactoring
+ * - 2025-11-06 refactored template parameter names　and modified SALI calc method
  */
 #ifndef RTBP_HPP
 #define RTBP_HPP
@@ -21,12 +21,14 @@
 #include <iostream>
 // #include <numeric>
 #include <chrono>
+#include <concepts>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector3d.hpp>
 #include <vector>
+
 namespace my_type {
 // 3D座標を表す型のエイリアス
 template <typename ScalarType>
@@ -121,8 +123,9 @@ struct CanonicalState {
   }
 };
 /**
- * @brief ポテンシャル V(q) のヘッセ行列 (2階微分)
- * H_ij = d^2 V / (d_qi d_qj)
+ * @brief ポテンシャルのヘッセ行列 (2階微分)
+ * @details H_ij = d^2 U / (dq_i dq_j)
+ *          対称行列なので独立成分のみ保持
  */
 template <typename ScalarType>
 struct HessianMatrix {
@@ -135,6 +138,8 @@ struct HessianMatrix {
 
 /**
  * @brief SALI計算に必要な全ての状態を保持する構造体
+  * @details 主軌道と2つの偏差ベクトルを含む
+
  */
 template <typename ScalarType>
 struct SaliState {
@@ -143,9 +148,21 @@ struct SaliState {
   CanonicalState<ScalarType> w2;     // 偏差ベクトル2 (dq2, dp2)
 };
 };  // namespace my_type
+
+namespace param {
 /**
- * @brief スタティックな関数
+ * @brief 構造体の概要説明
+ *
+ * 詳細説明
  */
+template <typename ScalarType>
+struct AstroConstants {
+  ScalarType au;        ///< 天文単位 (m)
+  ScalarType gm_sun;    ///< 太陽の重力定数 (m^3/s^2)
+  ScalarType gm_earth;  ///< 地球の重力定数 (m^3/s^2)
+  ScalarType G;         ///< 万有引力定数 (kg^-1 m^3 s^-2)
+};
+}  // namespace param
 namespace {
 
 constexpr double kMinDistanceSq = 1e-16;
@@ -263,21 +280,6 @@ Vector3d<ScalarType> ApplyMatrix(const Matrix3x3<ScalarType> rot_matrix,
 
 }  // namespace
 
-namespace param {
-/**
- * @brief 構造体の概要説明
- *
- * 詳細説明
- */
-template <typename ScalarType>
-struct AstroConstants {
-  ScalarType au;        ///< 天文単位 (m)
-  ScalarType gm_sun;    ///< 太陽の重力定数 (m^3/s^2)
-  ScalarType gm_earth;  ///< 地球の重力定数 (m^3/s^2)
-  ScalarType G;         ///< 万有引力定数 (kg^-1 m^3 s^-2)
-};
-}  // namespace param
-
 /**
  * @brief 円制限三体問題の関数をまとめた名前空間
  *
@@ -287,8 +289,8 @@ using namespace param;
 using namespace my_type;
 /**
  * @brief 円制限三体問題の系で物理状態 (q, q_dot) を正準状態 (q, p) に変換
- * p_x = vx + y
- * p_y = vy - x
+ * p_x = vx - y
+ * p_y = vy + x
  * p_z = vz
  */
 template <typename ScalarType>
@@ -297,16 +299,16 @@ CanonicalState<ScalarType> ConvertToCanonical(const State<ScalarType>& state) {
       state.x,
       state.y,
       state.z,
-      state.vx + state.y,  // px = vx + y
-      state.vy - state.x,  // py = vy - x
+      state.vx - state.y,  // px = vx - y
+      state.vy + state.x,  // py = vy + x
       state.vz             // pz = vz
   };
 }
 
 /**
  * @brief 円制限三体問題の系で正準状態 (q, p) を物理状態 (q, q_dot) に変換
- * vx = p_x - y
- * vy = p_y + x
+ * vx = p_x + y
+ * vy = p_y - x
  * vz = p_z
  */
 template <typename ScalarType>
@@ -315,24 +317,33 @@ State<ScalarType> ConvertToPhysical(const CanonicalState<ScalarType>& canonical_
       canonical_state.qx,
       canonical_state.qy,
       canonical_state.qz,
-      canonical_state.px - canonical_state.qy,  // vx = px - y
-      canonical_state.py + canonical_state.qx,  // vy = py + x
+      canonical_state.px + canonical_state.qy,  // vx = px + y
+      canonical_state.py - canonical_state.qx,  // vy = py - x
       canonical_state.pz                        // vz = pz
   };
 }
-
-// 距離r1 (第三体から m1 への距離) を計算
+/**
+ * @brief 第三体から主天体m1への距離r1を計算
+ * @param x, y, z 第三体の位置
+ * @param mu 質量比 mu = m2/(m1+m2)
+ * @return r1 = ||r - r1||
+ */
 template <typename ScalarType>
 inline ScalarType calc_r1(ScalarType x, ScalarType y, ScalarType z, ScalarType mu) {
   const ScalarType x1 = x + mu;
-  return std::sqrt(std::pow(x1, 2.) + std::pow(y, 2.) + std::pow(z, 2.));
+  return std::sqrt(x1 * x1 + y * y + z * z);
 }
 
-// 距離r2 (第三体から m2 への距離) を計算
+/**
+ * @brief 第三体から主天体m2への距離r2を計算
+ * @param x, y, z 第三体の位置
+ * @param mu 質量比 mu = m2/(m1+m2)
+ * @return r2 = ||r - r2||
+ */
 template <typename ScalarType>
 inline ScalarType calc_r2(ScalarType x, ScalarType y, ScalarType z, ScalarType mu) {
   const ScalarType x2 = x - (1.0 - mu);
-  return std::sqrt(std::pow(x - 1. + mu, 2) + y * y + z * z);
+  return std::sqrt(x2 * x2 + y * y + z * z);
 }
 /**
  * @brief 有効ポテンシャル U* を計算
@@ -747,39 +758,24 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
 namespace {
 
 /**
- * @brief 有効ポテンシャル V(q) の勾配 grad_V を計算
+ * @brief 有効ポテンシャルU(q)の勾配を計算
  *
  * @details
- * この関数はCR3BPのハミルトニアン
- *    H_A = T(p) + V(q)
- * のうち有効ポテンシャル項 V(q) の勾配 (偏導関数ベクトル) を計算
+ *          U(q) = -(1-mu)/r1 - mu/r2
+ *          grad_U = dU/dq
  *
- * ここで定義される有効ポテンシャル V(q) は
- *    V(q) = (1-mu)/r1 + mu/r2
- * (注意: これはCR3BPのヤコビ積分 C_J = 2*U - (vx^2+vy^2+vz^2) の
- * U = (1/2)(x^2+y^2) + V(q) とは異なる、シンプレクティック積分用に
- * 分離されたハミルトニアンの項である。)
- *
- * r1 と r2 は、それぞれ第三体 (x,y,z) から主天体 m1 (-mu, 0, 0) と
- * m2 (1-mu, 0, 0) までの距離
- *    r1 = sqrt( (x+mu)^2 + y^2 + z^2 )
- *    r2 = sqrt( (x-(1-mu))^2 + y^2 + z^2 )
- *
- * 計算される勾配 grad_V = (dV/dx, dV/dy, dV/dz) は
+ *          ハミルトニアンは H_A = T(p) + U(q) の形なので
+ *          dH_A/dq = dU/dq = grad_U
+ * 計算される勾配 grad_V  は
  * ApplyKick ステップで運動量を更新するために使用される
  *
- *
- * @param[in]  params   AstroConstants構造体 (gm_sun, gm_earth から mu を計算)
- * @param[in]  x        第三体の x 座標。
- * @param[in]  y        第三体の y 座標。
- * @param[in]  z        第三体の z 座標。
- * @param[out] grad_V   計算された勾配ベクトル (dV/dx, dV/dy, dV/dz) を格納する配列
- *
- * @cite Szebehely1967 "Theory of Orbits" (Chapter 9, The Potential U)
+ * @param[in] mu 質量比
+ * @param[in] x, y, z 第三体の位置
+ * @param[out] grad_U 出力: 勾配ベクトル [dU/dx, dU/dy, dU/dz]
  */
 template <typename ScalarType>
-void CalculateGradientP(const ScalarType mu, ScalarType x, ScalarType y, ScalarType z,
-                        ScalarType* grad_P) {
+void CalculateGradientU(const ScalarType mu, ScalarType x, ScalarType y, ScalarType z,
+                        ScalarType* grad_U) {
   const ScalarType mu1 = 1.0 - mu;
 
   const ScalarType x1 = x + mu;
@@ -789,44 +785,37 @@ void CalculateGradientP(const ScalarType mu, ScalarType x, ScalarType y, ScalarT
   const ScalarType r2_sq = x2 * x2 + y * y + z * z;
 
   if (r1_sq < kMinDistanceSq || r2_sq < kMinDistanceSq) {
-    throw std::runtime_error("Position too close to primary in CalculateGradientP.");
+    throw std::runtime_error("Position too close to primary in CalculateGradientU.");
   }
 
   const ScalarType r1_inv3 = 1.0 / (r1_sq * std::sqrt(r1_sq));
   const ScalarType r2_inv3 = 1.0 / (r2_sq * std::sqrt(r2_sq));
 
-  // grad_P = dP/dq = d/dq ((1-mu)/r1 + mu/r2)
-  grad_P[0] = -mu1 * x1 * r1_inv3 - mu * x2 * r2_inv3;
-  grad_P[1] = -mu1 * y * r1_inv3 - mu * y * r2_inv3;
-  grad_P[2] = -mu1 * z * r1_inv3 - mu * z * r2_inv3;
+  // grad_U = dU/dq = d/dq ((1-mu)/r1 + mu/r2)
+  // dU/dx = (1-mu)*x1/r1^3 + mu*x2/r2^3
+  grad_U[0] = -mu1 * (-x1 * r1_inv3) - mu * (-x2 * r2_inv3);
+  grad_U[1] = -mu1 * (-y * r1_inv3) - mu * (-y * r2_inv3);
+  grad_U[2] = -mu1 * (-z * r1_inv3) - mu * (-z * r2_inv3);
 }
 
 /**
- * @brief ポテンシャル V(q) の勾配 grad_V とヘッセ行列 H_V を計算
+ * @brief 有効ポテンシャルU(q)の勾配とヘッセ行列を計算
  *
- * @details
- * H_A = T(p) + V(q)
- * V(q) = -(1-mu)/r1 - mu/r2
- * * Kick (主軌道): p_dot = -grad_V(q)
- * Kick (偏差): dp_dot = -(H_V(q)) * dq
+ * @details U(q) = (1-mu)/r1 + mu/r2
+ *          grad_U = dU/dq
+ *          H_U = d^2U/(dq_i dq_j)
  *
- * この関数は grad_V = dV/dq と H_V = d^2 V / (dq_i dq_j) を計算する
- * (注: 以前の CalculateGradientV は grad(-V) を計算していた)
+ *          主軌道: p_dot = -grad_U
+ *          偏差: dp_dot = -H_U * dq
  *
- * @param[in]  params   AstroConstants構造体
- * @param[in]  x, y, z  主軌道の位置
- * @param[out] grad_V   計算された勾配ベクトル (dV/dx, dV/dy, dV/dz)
- * @param[out] hessian_V 計算されたヘッセ行列 (3x3)
- */
-/**
- * @brief P(q) = (1-mu)/r1 + mu/r2 の勾配 grad_P とヘッセ行列 H_P を計算
- * @note V(q) = -P(q)
- * p_dot = +grad_P(q)
- * dp_dot = +H_P(q) * dq
+ * @param mu 質量比
+ * @param x, y, z 主軌道の位置
+ * @param grad_U 出力: 勾配ベクトル
+ * @param hessian_U 出力: ヘッセ行列
  */
 template <typename ScalarType>
-void CalculateGradientAndHessianP(const ScalarType mu, ScalarType x, ScalarType y, ScalarType z,
-                                  ScalarType* grad_P, HessianMatrix<ScalarType>* hessian_P) {
+void CalculateGradientAndHessianU(const ScalarType mu, ScalarType x, ScalarType y, ScalarType z,
+                                  ScalarType* grad_U, HessianMatrix<ScalarType>* hessian_U) {
   const ScalarType mu1 = 1.0 - mu;
 
   const ScalarType x1 = x + mu;
@@ -836,7 +825,7 @@ void CalculateGradientAndHessianP(const ScalarType mu, ScalarType x, ScalarType 
   const ScalarType r2_sq = x2 * x2 + y * y + z * z;
 
   if (r1_sq < kMinDistanceSq || r2_sq < kMinDistanceSq) {
-    throw std::runtime_error("Position too close to primary in CalculateGradientAndHessianP.");
+    throw std::runtime_error("Position too close to primary in CalculateGradientAndHessianU.");
   }
 
   const ScalarType r1_inv3 = 1.0 / (r1_sq * std::sqrt(r1_sq));
@@ -844,45 +833,46 @@ void CalculateGradientAndHessianP(const ScalarType mu, ScalarType x, ScalarType 
   const ScalarType r1_inv5 = r1_inv3 / r1_sq;
   const ScalarType r2_inv5 = r2_inv3 / r2_sq;
 
-  // 1. 勾配 grad_P = dP/dq
-  grad_P[0] = -mu1 * x1 * r1_inv3 - mu * x2 * r2_inv3;
-  grad_P[1] = -mu1 * y * r1_inv3 - mu * y * r2_inv3;
-  grad_P[2] = -mu1 * z * r1_inv3 - mu * z * r2_inv3;
+  // 1. 勾配 grad_U = dU/dq
+  grad_U[0] = -mu1 * x1 * r1_inv3 - mu * x2 * r2_inv3;
+  grad_U[1] = -mu1 * y * r1_inv3 - mu * y * r2_inv3;
+  grad_U[2] = -mu1 * z * r1_inv3 - mu * z * r2_inv3;
 
-  // 2. ヘッセ行列 H_P = d^2 P / (dq_i dq_j)
-  // d/dx(-x1/r1^3) = -(r1^2 - 3*x1^2) / r1^5 = (3x1^2 - r1^2) / r1^5
-  // (重大な符号エラーを修正: (r1_inv3 - ...) -> (3*... - r1_inv3))
+  // 2. ヘッセ行列 H_U = d^2U/(dq_i dq_j)
+  // d/dx(grad_U[0]) = d/dx(-(1-mu)*x1/r1^3 - mu*x2/r2^3)
+  //                 = -(1-mu)*(1/r1^3 - 3*x1^2/r1^5) - mu*(1/r2^3 - 3*x2^2/r2^5)
+  //                 = (1-mu)*(3*x1^2/r1^5 - 1/r1^3) + mu*(3*x2^2/r2^5 - 1/r2^3)
   ScalarType term1, term2;
 
-  // Hxx = d/dx(grad_P[0])
+  // Hxx
   term1 = mu1 * (3.0 * x1 * x1 * r1_inv5 - r1_inv3);
   term2 = mu * (3.0 * x2 * x2 * r2_inv5 - r2_inv3);
-  hessian_P->hxx = term1 + term2;
+  hessian_U->hxx = term1 + term2;
 
-  // Hyy = d/dy(grad_P[1])
+  // Hyy
   term1 = mu1 * (3.0 * y * y * r1_inv5 - r1_inv3);
   term2 = mu * (3.0 * y * y * r2_inv5 - r2_inv3);
-  hessian_P->hyy = term1 + term2;
+  hessian_U->hyy = term1 + term2;
 
-  // Hzz = d/dz(grad_P[2])
+  // Hzz
   term1 = mu1 * (3.0 * z * z * r1_inv5 - r1_inv3);
   term2 = mu * (3.0 * z * z * r2_inv5 - r2_inv3);
-  hessian_P->hzz = term1 + term2;
+  hessian_U->hzz = term1 + term2;
 
-  // Hxy = d/dy(grad_P[0])
+  // Hxy (対称なのでHyx = Hxy)
   term1 = mu1 * (3.0 * x1 * y * r1_inv5);
   term2 = mu * (3.0 * x2 * y * r2_inv5);
-  hessian_P->hxy = term1 + term2;
+  hessian_U->hxy = term1 + term2;
 
-  // Hxz = d/dz(grad_P[0])
+  // Hxz
   term1 = mu1 * (3.0 * x1 * z * r1_inv5);
   term2 = mu * (3.0 * x2 * z * r2_inv5);
-  hessian_P->hxz = term1 + term2;
+  hessian_U->hxz = term1 + term2;
 
-  // Hyz = d/dz(grad_P[1])
+  // Hyz
   term1 = mu1 * (3.0 * y * z * r1_inv5);
   term2 = mu * (3.0 * y * z * r2_inv5);
-  hessian_P->hyz = term1 + term2;
+  hessian_U->hyz = term1 + term2;
 }
 
 /**
@@ -890,26 +880,25 @@ void CalculateGradientAndHessianP(const ScalarType mu, ScalarType x, ScalarType 
  *
  * @details
  * 円制限三体問題 (CR3BP) のハミルトニアン
- *    H =  (1/2)(px^2 + py^2 + pz^2) -(1-mu)/r1 - mu/r2 - (p_x * y - p_y * x)
+ *    H =  (1/2)(px^2 + py^2 + pz^2) -(1-mu)/r1 - mu/r2 + (p_x * y - p_y * x)
  * は
  *　   T(p) = (1/2)(px^2 + py^2 + pz^2)
- *    V(q) = (1-mu)/r1 + mu/r2
+ *    V(q) = -(1-mu)/r1 - mu/r2
  *    H_A = T(p) + V(q)
- *    H_B = - (p_x * y - p_y * x)
+ *    H_B = (p_x * y - p_y * x)
  * として
  *    H = H_A + H_B に分離できる
- * H_Bは、コリオリ項に由来するジャイロ項
+ *
  * この H_B のみから導出されるハミルトン方程式は以下
- *    q_dot = dH_B/dp  => (x_dot, y_dot) = (-y, x)
- *    p_dot = -dH_B/dq => (px_dot, py_dot) = (-py, px)
+ *    q_dot = dH_B/dp  => (x_dot, y_dot) = (y, -x)
+ *    p_dot = -dH_B/dq => (px_dot, py_dot) = (py, -px)
  * (z と pz は変化しない)
  *
- * これらの方程式の解は、(x, y) 平面と (px, py) 平面における、
- * 角速度 n=1 の単純な反時計回りの剛体回転運動みたいなかんじ
- *
- * したがって、H_B の流れを時間 `angle` だけ積分する操作は、
- * (x, y) と (px, py) のペアを `angle` ラジアンだけ回転させる
- * 解析解（回転行列の適用）と等価
+ * ここでたとえば
+ *    x_dot　= y, y_dot = -x
+ * からは
+ *    x(t) = Acos(t)+Bsin(t), y(t) = Ccos(t)+Dsin(t),
+ * という厳密解を求められるため、ここではシンプレクティック法関係なく厳密解を計算する
  *
  * @param[in,out] state 更新対象の正準状態 (q, p)。
  * @param[in]     angle 回転角 (ラジアン)。
@@ -927,70 +916,59 @@ void ApplyRotation(CanonicalState<ScalarType>* state, ScalarType angle) {
   const ScalarType px_old = state->px;
   const ScalarType py_old = state->py;
 
-  state->qx = qx_old * c - qy_old * s;
-  state->qy = qx_old * s + qy_old * c;
+  state->qx = qx_old * c + qy_old * s;
+  state->qy = -qx_old * s + qy_old * c;
 
-  state->px = px_old * c - py_old * s;
-  state->py = px_old * s + py_old * c;
+  state->px = px_old * c + py_old * s;
+  state->py = -px_old * s + py_old * c;
 }
 
 /**
- * @brief H_A の Kick (運動量更新) ステップを適用
+ * @brief H_AのKick（運動量更新）ステップを適用
  *
- * @details
- * これはシンプレクティック積分 (Strangスプリッティング) における
- * リープフロッグ法の「Kick」ステップ
- * ハミルトニアン H_A = T(p) + V(q) ののうち
- * ポテンシャル V(q) による正準運動量 p の変化を計算
+ * @details シンプレクティック積分におけるKickステップ
+ *          H_A = T(p) + U(q) のポテンシャル項による運動量変化
  *
- * ハミルトン方程式 p_dot = -dH_A/dq = -grad_V(q) に基づき、
- * 時間 `dt` だけ運動量を更新
- *    p(t + dt) = p(t) + dt * p_dot(t)
- *              = p(t) - dt * grad_V(q(t))
- *
- * この関数は `CalculateGradientV` で計算された勾配 `grad_V` を
- * 減算することでこの力積を適用
+ *          dH_A/dq = dU/dq = grad_U
+ *          p(t+dt) = p(t) - dt * dH_A/dq = p(t) - dt * grad_U
  *
  * @param[in]  params 質量比 mu
  * @param[in,out] state 更新対象の正準状態 (q, p)
- * @param[in]  dt     時間ステップ幅
+ * @param[in]  dt     時間ステップ幅とシンプレクティック法の係数の積
  *
- * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.3, Leapfrog)
+ * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
+ * @cite Hairer2006 "Geometric Numerical Integration" (p.150 V.3.1 Symmetric Composition of First
+ * Order Methods)
+ * @cite 吉田 春男, 「ハミルトニアン力学系のためのシンプレクティック数値積分法」,
+ * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  */
 template <typename ScalarType>
 void ApplyKick(const ScalarType mu, CanonicalState<ScalarType>* state, ScalarType dt) {
-  ScalarType grad_P[3];
-  CalculateGradientP(mu, state->qx, state->qy, state->qz, grad_P);
+  ScalarType grad_U[3];
+  CalculateGradientU(mu, state->qx, state->qy, state->qz, grad_U);
 
-  // p_dot = +grad_P  =>  p += dt * grad_P
-  state->px += dt * grad_P[0];
-  state->py += dt * grad_P[1];
-  state->pz += dt * grad_P[2];
+  state->px -= dt * grad_U[0];
+  state->py -= dt * grad_U[1];
+  state->pz -= dt * grad_U[2];
 }
 
 /**
- * @brief H_A の Drift (位置更新) ステップを適用
+ * @brief H_AのDrift（位置更新）ステップを適用
  *
- * @details
- * これはシンプレクティック積分 (Strangスプリッティング) における
- * リープフロッグ法の「Drift」ステップ
- * ハミルトニアン H_A = T(p) + V(q) の流れのうち
- * 運動エネルギー T(p) = (1/2)(px^2 + py^2 + pz^2) による
- * 正準座標 q の変化を計算
+ * @details シンプレクティック積分におけるDriftステップ
+ *          H_A = T(p) + U(q) の運動エネルギー項の寄与を計算
  *
- * ハミルトン方程式 q_dot = dH_A/dp = dT/dp = p に基づき
- * 時間 `dt` だけ位置を更新
- *    q(t + dt) = q(t) + dt * q_dot(t)
- *              = q(t) + dt * p(t)
- *
- * @note
- * このステップでの `q_dot = p` は、あくまで H_A の流れにおける関係式であり
- * 物理的な速度 `v = q_dot_phys` は `v_x = p_x - y` とは違う
+ *          dH_A/dp = dT/dp = p
+ *          q(t+dt) = q(t) + dt * dH_A/dp = q(t) + dt * p
  *
  * @param[in,out] state 更新対象の正準状態 (q, p)
- * @param[in]  dt     時間ステップ幅
+ * @param[in]  dt     時間ステップ幅とシンプレクティック法の係数の積
  *
- * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.3, Leapfrog)
+ * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
+ * @cite Hairer2006 "Geometric Numerical Integration" (p.150 V.3.1 Symmetric Composition of First
+ * Order Methods)
+ * @cite 吉田 春男, 「ハミルトニアン力学系のためのシンプレクティック数値積分法」,
+ * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  */
 template <typename ScalarType>
 void ApplyDrift(CanonicalState<ScalarType>* state, ScalarType dt) {
@@ -998,8 +976,11 @@ void ApplyDrift(CanonicalState<ScalarType>* state, ScalarType dt) {
   state->qy += dt * state->py;
   state->qz += dt * state->pz;
 }
+
 /**
- * @brief H_B (コリオリ項) の流れを SaliState 全体に適用
+ * @brief H_B（コリオリ項）の流れをSaliState全体に適用
+ * @param[in,out] state SALI計算用の状態
+ * @param[in] angle 回転角（ラジアン）
  */
 template <typename ScalarType>
 void ApplyRotationSALI(SaliState<ScalarType>* state, ScalarType angle) {
@@ -1009,7 +990,9 @@ void ApplyRotationSALI(SaliState<ScalarType>* state, ScalarType angle) {
 }
 
 /**
- * @brief H_A (Drift) の流れを SaliState 全体に適用
+ * @brief H_A（Drift）の流れをSaliState全体に適用
+ * @param[in,out] state SALI計算用の状態
+ * @param[in] dt 時間ステップ幅
  */
 template <typename ScalarType>
 void ApplyDriftSALI(SaliState<ScalarType>* state, ScalarType dt) {
@@ -1017,38 +1000,90 @@ void ApplyDriftSALI(SaliState<ScalarType>* state, ScalarType dt) {
   ApplyDrift(&(state->w1), dt);
   ApplyDrift(&(state->w2), dt);
 }
+
 /**
- * @brief H_A (Kick) の流れを SaliState 全体に適用
+ * @brief H_A（Kick）の流れをSaliState全体に適用
+ *
+ * @details 主軌道の位置でポテンシャルの勾配とヘッセ行列を計算し、
+ *          主軌道と偏差ベクトルの両方を更新
+ *
+ *          主軌道: p_dot = -grad_U
+ *          偏差: dp_dot = -H_U * dq
+ *
+ * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
+ * @cite Hairer2006 "Geometric Numerical Integration" (p.150 V.3.1 Symmetric Composition of First
+ * Order Methods)
+ * @cite 吉田 春男, 「ハミルトニアン力学系のためのシンプレクティック数値積分法」,
+ * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
+ *
+ * @param mu 質量比
+ * @param state SALI計算用の状態
+ * @param dt 時間ステップ幅
  */
 template <typename ScalarType>
 void ApplyKickSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType dt) {
-  ScalarType grad_P[3];
-  HessianMatrix<ScalarType> hessian_P;
+  ScalarType grad_U[3];
+  HessianMatrix<ScalarType> hessian_U;
+  　　
+      // 主軌道の位置でポテンシャルの勾配とヘッセ行列を計算
+      CalculateGradientAndHessianU(mu, state->state.qx, state->state.qy, state->state.qz, grad_U,
+                                   &hessian_U);
 
-  // 主軌道の位置 (q) で 勾配とヘッセ行列を計算
-  CalculateGradientAndHessianP(mu, state->state.qx, state->state.qy, state->state.qz, grad_P,
-                               &hessian_P);
+  // 1. 主軌道の運動量更新
+  // p_dot = -grad_U  =>  p -= dt * grad_U
+  state->state.px -= dt * grad_U[0];
+  state->state.py -= dt * grad_U[1];
+  state->state.pz -= dt * grad_U[2];
 
-  // 1. 主軌道 p の更新
-  // p_dot = +grad_P  =>  p += dt * grad_P
-  state->state.px += dt * grad_P[0];
-  state->state.py += dt * grad_P[1];
-  state->state.pz += dt * grad_P[2];
+  // 2. 偏差ベクトルの運動量更新
+  // dp_dot = -H_U * dq  =>  dp -= dt * (H_U * dq)
 
-  // 2. 偏差ベクトル dp の更新
-  // dp_dot = +H_P * dq  =>  dp += dt * (H_P * dq)
-  // (ロジックの符号を修正)
-  const ScalarType dq1x = state->w1.qx, dq1y = state->w1.qy, dq1z = state->w1.qz;
-  state->w1.px += dt * (hessian_P.hxx * dq1x + hessian_P.hxy * dq1y + hessian_P.hxz * dq1z);
-  state->w1.py += dt * (hessian_P.hxy * dq1x + hessian_P.hyy * dq1y + hessian_P.hyz * dq1z);
-  state->w1.pz += dt * (hessian_P.hxz * dq1x + hessian_P.hyz * dq1y + hessian_P.hzz * dq1z);
+  // 偏差ベクトル1
+  const ScalarType dq1x = state->w1.qx;
+  const ScalarType dq1y = state->w1.qy;
+  const ScalarType dq1z = state->w1.qz;
 
-  const ScalarType dq2x = state->w2.qx, dq2y = state->w2.qy, dq2z = state->w2.qz;
-  state->w2.px += dt * (hessian_P.hxx * dq2x + hessian_P.hxy * dq2y + hessian_P.hxz * dq2z);
-  state->w2.py += dt * (hessian_P.hxy * dq2x + hessian_P.hyy * dq2y + hessian_P.hyz * dq2z);
-  state->w2.pz += dt * (hessian_P.hxz * dq2x + hessian_P.hyz * dq2y + hessian_P.hzz * dq2z);
+  state->w1.px -= dt * (hessian_U.hxx * dq1x + hessian_U.hxy * dq1y + hessian_U.hxz * dq1z);
+  state->w1.py -= dt * (hessian_U.hxy * dq1x + hessian_U.hyy * dq1y + hessian_U.hyz * dq1z);
+  state->w1.pz -= dt * (hessian_U.hxz * dq1x + hessian_U.hyz * dq1y + hessian_U.hzz * dq1z);
+
+  // 偏差ベクトル2
+  const ScalarType dq2x = state->w2.qx;
+  const ScalarType dq2y = state->w2.qy;
+  const ScalarType dq2z = state->w2.qz;
+
+  state->w2.px -= dt * (hessian_U.hxx * dq2x + hessian_U.hxy * dq2y + hessian_U.hxz * dq2z);
+  state->w2.py -= dt * (hessian_U.hxy * dq2x + hessian_U.hyy * dq2y + hessian_U.hyz * dq2z);
+  state->w2.pz -= dt * (hessian_U.hxz * dq2x + hessian_U.hyz * dq2y + hessian_U.hzz * dq2z);
 }
+/**
+ * @brief Gram-Schmidt法で2つの偏差ベクトルを直交化
+ *
+ * @details SALI計算では偏差ベクトルが直交していることが重要
+ *          w1はそのまま、w2からw1成分を除去して直交化
+ *
+ *          w2_orth = w2 - (w2·w1) * w1
+ *
+ * @param state SALI計算用の状態
+ */
+template <typename ScalarType>
+void OrthogonalizeDeviationVectors(SaliState<ScalarType>* state) {
+  // w1はそのまま正規化
+  state->w1.Normalize();
 
+  // w2からw1方向の成分を除去
+  ScalarType projection = state->w2.Dot(state->w1);
+
+  state->w2.qx -= projection * state->w1.qx;
+  state->w2.qy -= projection * state->w1.qy;
+  state->w2.qz -= projection * state->w1.qz;
+  state->w2.px -= projection * state->w1.px;
+  state->w2.py -= projection * state->w1.py;
+  state->w2.pz -= projection * state->w1.pz;
+
+  // w2も正規化
+  state->w2.Normalize();
+}
 }  // namespace
 
 /**
@@ -1129,40 +1164,34 @@ State<ScalarType> RungeKutta4Step(const EomType& eom, const State<ScalarType>& s
 // -----------------------------------------------------------------------------
 
 /**
- * @brief 2次のシンプレクティック積分ステップ (Strangスプリッティング)
+ * @brief 2次のシンプレクティック積分ステップ（Strangスプリッティング）
  *
- * @details
- * この関数は Strang Splitting と呼ばれる手法に基づく
- * 円制限三体問題 (CR3BP) の軌道を1ステップ (時間 h) 積分
- * この手法は O(h^2) の2次精度をもつ
+ * @details H = H_A + H_B に対する2次精度のシンプレクティック積分
  *
- * 計算は
- * 円制限三体問題 (CR3BP) のハミルトニアン
- *    H =  (1/2)(px^2 + py^2 + pz^2) -(1-mu)/r1 - mu/r2 - (p_x * y - p_y * x)
- * が
- *　   T(p) = (1/2)(px^2 + py^2 + pz^2)
- *    V(q) = (1-mu)/r1 + mu/r2
- *    H_A = T(p) + V(q)
- *    H_B = - (p_x * y - p_y * x)
- * として
- *    H = H_A + H_B に分離できることに基づく
+ *          分離方法:
+ *          H_A = T(p) - U(q) = (1/2)(px^2+py^2+pz^2) - ((1-mu)/r1 + mu/r2)
+ *          H_B = -(px*y - py*x) (コリオリ項)
  *
- * 1.B(h/2) - 回転:
- * ハミルトニアンの H_B (コリオリ項) の流れを h/2 時間進めます
- * これは解析的に解ける回転写像として実装
+ *          積分スキーム: B(h/2) * A(h) * B(h/2)
+ *          ここでA(h) = K(h/2) * D(h) * K(h/2) (Leapfrog)
  *
- * 2.A(h) - リープフロッグ (Kick-Drift-Kick)
- * 次に H_A (運動エネルギー + ポテンシャル) の流れを h 時間進める
- * - Kick(h/2): ポテンシャル項 V(q) による運動量の変化 (力積) を h/2 時間適用
- * - Drift(h):  運動エネルギー項 T(p) による位置の変化を h 時間適用
- * - Kick(h/2): 再度 ポテンシャルによる運動量の変化を h/2 時間適用
+ *          完全な手順:
+ *          1. B(h/2) - 回転 h/2
+ *          2. K(h/2) - Kick h/2
+ *          3. D(h)   - Drift h
+ *          4. K(h/2) - Kick h/2
+ *          5. B(h/2) - 回転 h/2
  *
- * 3.B(h/2) - 回転
- * 最後に 再び H_B (コリオリ項) の流れを h/2 時間進める
+ * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
+ * @cite Hairer2006 "Geometric Numerical Integration" (p.150 V.3.1 Symmetric Composition of First
+ * Order Methods)
+ * @cite 吉田 春男, 「ハミルトニアン力学系のためのシンプレクティック数値積分法」,
+ * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  *
+ * @param mu 質量比
  * @param state 積分開始時の物理状態
  * @param h 1ステップの時間幅
- * @return 積分後の物理状態 (t + h)
+ * @return 積分後の物理状態（t+h）
  */
 template <typename ScalarType>
 State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& state,
@@ -1173,9 +1202,10 @@ State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& s
   ApplyRotation(&canonical_state, h / 2.0);
 
   // 2. A(h) = Kick(h/2) * Drift(h) * Kick(h/2)
-  ApplyKick(mu, &canonical_state, h / 2.0);
-  ApplyDrift(&canonical_state, h);
-  ApplyKick(mu, &canonical_state, h / 2.0);
+  // qを先に更新　　更新したqを使って最終的なp,qを出す
+  ApplyDrift(&canonical_state, h / 2.0);
+  ApplyKick(mu, &canonical_state, h);
+  ApplyDrift(&canonical_state, h / 2.0);
 
   // 3. B(h/2) - 回転
   ApplyRotation(&canonical_state, h / 2.0);
@@ -1184,41 +1214,37 @@ State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& s
 }
 
 /**
- * @brief 4次のシンプレクティック積分ステップ (吉田法, 1990)
+ * @brief 4次のシンプレクティック積分ステップ（吉田法、1990）
  *
- * @details
- * この関数は 吉田法 (1990) を用いて積分精度を4次に高める
+ * @details 吉田の4次シンプレクティック積分法を使用
  *
- * 計算は S4(tau) = S2(x1 * tau) * S2(x0 * tau) * S2(x1 * tau) という構成
+ *          S4(tau) = S2(x1*tau) * S2(x0*tau) * S2(x1*tau)
  *
- * 1.
- * 4次精度を達成するために吉田によって導出された
- * 特殊な係数 kX1 と kX0 を定義します
+ *          係数:
+ *          x1 = 1 / (2 - 2^(1/3))
+ *          x0 = -2^(1/3) / (2 - 2^(1/3)) = 1 - 2*x1
  *
- * 2.1回目の積分
- * `SymplecticStep` を使い kX1 * tau 時間だけ進めます
+ *          これにより4次精度（誤差 O(h^5)）を実現
  *
- * 3.2回目の積分
- * 1の結果を初期値として `SymplecticStep` で kX0 * tau 時間進める
+ * @param[in]  mu 質量比
+ * @param[in]  state 積分開始時の物理状態
+ * @param[in]  tau 1ステップの時間幅
+ * @return 積分後の物理状態（t+tau）
  *
- * 4.3回目の積分
- * 2の結果を初期値として `SymplecticStep` で kX1 * tau 時間進める
- *
- * @param params 質量比 mu を含むパラメータ
- * @param state 積分開始時の物理状態
- * @param tau 1ステップの時間幅
- * @return 積分後の物理状態 (t + tau)
+ * @cite Hairer2006 "Geometric Numerical Integration" (Chapter II.5, splitting method)
+ * @cite Hairer2006 "Geometric Numerical Integration" (p.150 V.3.1 Symmetric Composition of First
+ * Order Methods)
+ * @cite 吉田 春男, 「ハミルトニアン力学系のためのシンプレクティック数値積分法」,
+ * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  */
 template <typename ScalarType>
 State<ScalarType> SymplecticStep4thOrder(const ScalarType mu, const State<ScalarType>& state,
                                          ScalarType tau) {
-  // 吉田 (1990) による4次積分のための係数
-  // x0 = -2^(1/3) / (2 - 2^(1/3))
-  // x1 = 1 / (2 - 2^(1/3))
+  // 吉田（1990）による4次積分の係数
   const ScalarType kX1 = 1.0 / (2.0 - std::pow(2.0, 1.0 / 3.0));
-  const ScalarType kX0 = 1.0 - 2.0 * kX1;  // (x0 + 2*x1 = 1 の関係から)
+  const ScalarType kX0 = 1.0 - 2.0 * kX1;
 
-  // S4(tau) = S2(x1 * tau) * S2(x0 * tau) * S2(x1 * tau)
+  // S4(tau) = S2(x1*tau) * S2(x0*tau) * S2(x1*tau)
   State<ScalarType> state1 = SymplecticStep(mu, state, kX1 * tau);
   State<ScalarType> state2 = SymplecticStep(mu, state1, kX0 * tau);
   State<ScalarType> state3 = SymplecticStep(mu, state2, kX1 * tau);
@@ -1231,62 +1257,85 @@ State<ScalarType> SymplecticStep4thOrder(const ScalarType mu, const State<Scalar
 // -----------------------------------------------------------------------------
 
 /**
- * @brief 2次のSALI対応シンプレクティック積分ステップ (Strangスプリッティング)
+ * @brief 2次のSALI対応シンプレクティック積分ステップ
  *
- * @param[in]     params 質量比 mu を含むパラメータ
- * @param[in,out] state  積分対象の SaliState
- * @param[in]     h      1ステップの時間幅
+ * @details 主軌道と2つの偏差ベクトルを同時に積分
+ *          Strangスプリッティング B(h/2)*A(h)*B(h/2) を適用
+ * @param[in] mu 質量比
+ * @param[in,out] state 積分対象のSaliState
+ * @param[in] h 1ステップの時間幅
  */
 template <typename ScalarType>
 void SymplecticStepSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType h) {
   ApplyRotationSALI(state, h / 2.0);
-  ApplyKickSALI(mu, state, h / 2.0);
-  ApplyDriftSALI(state, h);
-  ApplyKickSALI(mu, state, h / 2.0);
+  // 先にqを更新
+  ApplyDriftSALI(state, h / 2.0);
+  ApplyKickSALI(mu, state, h);
+  ApplyDriftSALI(state, h / 2.0);
   ApplyRotationSALI(state, h / 2.0);
 }
 
 /**
- * @brief 4次のSALI対応シンプレクティック積分ステップ (吉田法)
+ * @brief 4次のSALI対応シンプレクティック積分ステップ（吉田法）
  *
- * @param[in]     params 質量比 mu を含むパラメータ
- * @param[in,out] state  積分対象の SaliState
- * @param[in]     tau    1ステップの時間幅
+ * @details 吉田の4次法をSALI計算に適用
+ *          S4(tau) = S2(x1*tau) * S2(x0*tau) * S2(x1*tau)
+ *
+ * @param[in]  mu 質量比
+ * @param[in,out] state 積分対象のSaliState
+ * @param[in]  tau 1ステップの時間幅
  */
 template <typename ScalarType>
 void SymplecticStep4thOrderSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType tau) {
-  // 吉田 (1990) による4次積分のための係数
   const ScalarType kX1 = 1.0 / (2.0 - std::pow(2.0, 1.0 / 3.0));
   const ScalarType kX0 = 1.0 - 2.0 * kX1;
 
-  // S4(tau) = S2(x1 * tau) * S2(x0 * tau) * S2(x1 * tau)
   SymplecticStepSALI(mu, state, kX1 * tau);
   SymplecticStepSALI(mu, state, kX0 * tau);
   SymplecticStepSALI(mu, state, kX1 * tau);
 }
+
 /**
  * @brief 汎用積分ドライバ
  *
- * @tparam StateType 状態ベクトルの型 (例: State<double>)
- * @tparam IntegratorType 1ステップ積分を実行する "Callable" (関数, ラムダ, Functor)
- * シグネチャ: StateType(const StateType&, ScalarType, ScalarType)
- * @tparam ObserverType 各ステップで呼び出される "Callable" (関数, ラムダ, Functor)
- * シグネチャ: void(const StateType&, ScalarType)
+ * @details 指定されたIntegratorとObserverを使用して
+ *          num_stepsステップの積分を実行
+ *
+ * @tparam StateType 状態ベクトルの型（例: State<double>）
+ * @tparam IntegratorType 1ステップ積分を実行する関数オブジェクト
+ *         シグネチャ: StateType(const StateType&, ScalarType, ScalarType)
+ * @tparam ObserverType 各ステップで呼び出される関数オブジェクト
+ *         シグネチャ: void(const StateType&, ScalarType)
+ * @tparam ScalarType スカラー型（通常はdouble）
+ *
+ * @param[in,out] current_state　初期状態
+ * （更新されるため注意！！！計算の各ステップを保存したければobserverを用意すること）
+ * @param[in] integrator 積分関数
+ * @param[in] observer 観測関数
+ * @param[in] start_time 積分開始時刻
+ * @param[in] time_step 時間ステップ幅
+ * @param[in] num_steps ステップ数
  */
+template <typename IntegratorType, typename StateType, typename ScalarType>
+concept Integrator =
+    requires(IntegratorType func, const StateType& state, ScalarType t, ScalarType dt) {
+      { func(state, t, dt) } -> std::convertible_to<StateType>;
+    };
+
+template <typename ObserverType, typename StateType, typename ScalarType>
+concept Observer = requires(ObserverType func, const StateType& state, ScalarType t) {
+  { func(state, t) } -> std::same_as<void>;
+};
+
 template <typename StateType, typename IntegratorType, typename ObserverType, typename ScalarType>
+  requires Integrator<IntegratorType, StateType, ScalarType> &&
+           Observer<ObserverType, StateType, ScalarType>
 void Integrate(StateType& current_state, IntegratorType integrator, ObserverType observer,
                ScalarType start_time, ScalarType time_step, int num_steps) {
   ScalarType current_time = start_time;
   observer(current_state, current_time);
-  for (int i = 0; i < num_steps; i++) {
-    // std::cout << "state before integration: " << current_state.x << ", " << current_state.y << ",
-    // "
-    //           << current_state.z << ", " << current_state.vx << ", " << current_state.vy << ", "
-    //           << current_state.vz << std::endl;
-    // // ちょっとディレイ
-    // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    // std::cout << "integrator = " << &integrator << std::endl;
-    // std::cout << "i = " << i << std::endl;
+
+  for (int i = 0; i < num_steps; ++i) {
     current_state = integrator(current_state, current_time, time_step);
     current_time += time_step;
     observer(current_state, current_time);
@@ -1295,11 +1344,24 @@ void Integrate(StateType& current_state, IntegratorType integrator, ObserverType
 /**
  * @brief SALI計算用の汎用積分ドライバ
  *
- * @details
- * 積分ステップの実行 (Integrator)
- * SALIの計算 (Observer)
- * 偏差ベクトルの正規化 (Renormalization)
- * の3つを管理します
+ * @details 積分ステップの実行、SALIの計算、偏差ベクトルの
+ *          正規化と直交化を管理
+ *
+ *          各ステップ後に:
+ *          1. 偏差ベクトルをGram-Schmidt法で直交化
+ *          2. 両ベクトルを正規化
+ *          3. Observer関数を呼び出してSALIを計算
+ *
+ * @tparam IntegratorType void(*)(SaliState<ScalarType>*, ScalarType)
+ * @tparam ObserverType void(*)(const SaliState<ScalarType>&, ScalarType)
+ * @tparam ScalarType スカラー型（通常はdouble）
+ *
+ * @param[in,out] current_state 初期SALI状態（更新される）
+ * @param[in] integrator 積分関数
+ * @param[in] observer 観測関数（SALI計算を含む）
+ * @param[in] start_time 積分開始時刻
+ * @param[in] time_step 時間ステップ幅
+ * @param[in] num_steps ステップ数
  */
 template <typename IntegratorType, typename ObserverType, typename ScalarType>
 void IntegrateSALI(SaliState<ScalarType>& current_state, IntegratorType integrator,
@@ -1312,17 +1374,16 @@ void IntegrateSALI(SaliState<ScalarType>& current_state, IntegratorType integrat
     integrator(&current_state, time_step);
     current_time += time_step;
 
-    // 偏差ベクトルを正規化
-    current_state.w1.Normalize();
-    current_state.w2.Normalize();
-    // (注: 厳密には Gram-Schmidt法で直交化も推奨
+    // 偏差ベクトルを直交化・正規化
+    // （SALI計算の精度向上のため重要）
+    OrthogonalizeDeviationVectors(&current_state);
 
     observer(current_state, current_time);
   }
 }
 
 /**
- * @brief コンソールに状態を出力するオブザーバー (例)
+ * @brief integrate関数に渡すためのオブザーバー　コンソールに状態を出力する
  */
 template <typename StateType, typename ScalarType>
 class ConsoleObserver {
@@ -1334,33 +1395,41 @@ class ConsoleObserver {
   }
 };
 
+/**
+ * @brief integrate関数に渡すためのオブザーバー　各ステップを指定ファイルに出力する
+ */
 template <typename ScalarType>
 class StateFileObserver {
  private:
-  std::ostream& os_;  // 出力ストリームへの参照
+  std::ostream& os_;
+  // 出力ストリームへの参照
 
  public:
   /**
    * @brief コンストラクタ
    * @param os [in,out] main側で開かれた書き込み先のファイルストリーム
+   * @note 呼び出し側で std::ofstream ofs("filename");って宣言したofsをコンストラクタに渡す
    */
   explicit StateFileObserver(std::ostream& os) : os_(os) {}
 
   /**
-   * @brief 積分ステップごとに呼び出され SALIと状態をストリームに書き込む
+   * @brief integrate関数に渡すためのオブザーバー　各ステップを指定ファイルに出力する
    */
   void operator()(const State<ScalarType>& state, ScalarType t) {
 #pragma omp critical
 
     if (!os_.good()) return;
 
-    // CSV形式で出力 (精度は高めに設定)
     os_ << std::fixed << std::setprecision(15) << t << "," << state.x << "," << state.y << ","
         << state.z << "," << state.vx << "," << state.vy << "," << state.vz << "\n";
   }
 };
-template <typename ScalarType>
 
+/**
+ * @brief
+ * integrate関数に渡すためのオブザーバー　各ステップをバッファにコピーしつつついてにヤコビ積分も計算する
+ */
+template <typename ScalarType>
 class StateBufferObserver {
  private:
   std::vector<std::array<ScalarType, 8>>& history_;

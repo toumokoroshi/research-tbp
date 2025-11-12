@@ -9,8 +9,8 @@ endif()
 # プロジェクト名
 project(MySimulation VERSION 1.0.0 LANGUAGES CXX)
 
-# C++の標準を設定 (C++17を推奨)
-set(CMAKE_CXX_STANDARD 17)
+# C++の標準を設定
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 

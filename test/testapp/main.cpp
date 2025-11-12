@@ -269,12 +269,12 @@ int main() {
 
     // 進捗カウンタ
     int completed_count = 0;
-    auto integrator = [&](my_type::State<double>& state_ptr, double time,
+    auto integrator = [&](const my_type::State<double>& state_ptr, double time,
                           double h) -> my_type::State<double> {
       return crtbp::SymplecticStep4thOrder(kMU, state_ptr, h);
     };
     crtbp::EquationOfMotion<double> eom(astro_params);
-    auto integrator_runge = [&](my_type::State<double>& state_ptr, double time,
+    auto integrator_runge = [&](const my_type::State<double>& state_ptr, double time,
                                 double h) -> my_type::State<double> {
       return crtbp::RungeKutta4Step(eom, state_ptr, time, h);
     };

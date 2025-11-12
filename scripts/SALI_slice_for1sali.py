@@ -7,7 +7,9 @@ import numpy as np
 # ファイル選択ダイアログを開く（Tkinter ウィンドウを非表示）
 root = Tk()
 root.withdraw()
-file_path = filedialog.askopenfilename(filetypes=[("Text Files", "*.csv")])
+file_path = filedialog.askopenfilename(
+    filetypes=[("Text Files", "*.csv, *dat, *txt"), ("All Files", "*.*")]
+)
 
 if not file_path:
     print("No file selected. Exiting.")
