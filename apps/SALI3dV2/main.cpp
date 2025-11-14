@@ -6,11 +6,11 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <crtbp.hpp>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <regex>
 #include <sstream>
 #include <string>
 #include <utils.hpp>
@@ -28,15 +28,19 @@ int main() {
   using namespace param;
   using namespace crtbp;
   using namespace utils;
+  namespace fs = std::filesystem;
   // CMakeから渡されたCONFIG_DIRマクロを使用
-  std::string config_base_path = CONFIG_DIR;
-  std::string astro_param_file = config_base_path + "/astro_param/astro_param.txt";
+  const std::string kConfigFilePath = CONFIG_DIR;
+  const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI/";
+  constexpr std::string kCalcConfigPrefix = "3DSALIconfig_";
+  std::string astro_param_file = kConfigFilePath + "/astro_param/astro_param.txt";
   AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
+
   const double kAU = astro_params.au;                 // astronomical unit in meters
   const double kGMSUN = astro_params.gm_sun;          // heliocentric gravitational constant m3 s-2
   const double kGMEARTH = astro_params.gm_earth;      // geocentric gravitational constant m3 s-2
   const double kMU = kGMEARTH / (kGMEARTH + kGMSUN);  // mu parameter of Earth-Sun
-  constexpr double kPERTUBATION = 1e-10;
+  std::cout << "-" << std::endl;
 
   constexpr double HEADER_SIZE = 9;
   my_type::State3d<double> MeshCenter{1.0 - kMU, 0, 0};
@@ -121,9 +125,11 @@ int main() {
   std::cout << "<> " << std::endl;
 
   double is_continuous = 0;
+  std::string configfilename;
+  std::vector<std::string> config_file_list;
+
   if (mode2 == '1') {
     std::cout << "<> >  selected mode : single simulation" << std::endl;
-
     is_continuous = 0;
   } else if (mode2 == '2') {
     std::cout << "<>    selected mode : continuous simulation\n" << std::endl;
@@ -132,6 +138,34 @@ int main() {
     std::cout << "selected mode : Exit\n" << std::endl;
     return 0;
   }
+  const std::regex pattern("^" + kCalcConfigPrefix + "\\d+\\.txt$");
+  try {
+    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
+      if (entry.is_regular_file()) {
+        std::string filename = entry.path().filename().string();
+        if (std::regex_match(filename, pattern)) {
+          config_file_list.push_back(fs::absolute(entry.path()).string());
+        }
+      }
+    }
+  } catch (fs::filesystem_error& e) {
+    std::cerr << "Error accessing directory: " << e.what() << std::endl;
+  }
+  std::sort(config_file_list.begin(), config_file_list.end(),
+            [](const std::string& a, const std::string& b) {
+              auto getNumber = [](const std::string& path_str) -> int {
+                std::string stem = std::filesystem::path(path_str).stem().string();
+                size_t lastUnderscore = stem.find_last_of('_');
+                return std::stoi(stem.substr(lastUnderscore + 1));
+              };
+              return getNumber(a) < getNumber(b);
+            });
+  std::cout << "<> Loaded config file list:" <<　std::endl;
+  for (const auto& filename : config_file_list) {
+    std::cout << "<>    - " << filename << std::endl;
+  }
+
+  WaitForEnter();
   std::cout << "<> " << std::endl;
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
@@ -163,46 +197,25 @@ int main() {
   omp_set_num_threads(OMP_Fmax);
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
-  constexpr double SOI = 0.03;
-  // 設定ファイル読み込み
-  int MESH_SIZE = 0;
-  double CALC_TIMESTEP = 0;
-  double SALI_CALCTIME_THRESHOLD = 0;
-  double SOI_RADIUS = 0;
-  double FOREBIDDEN_AREA_RADIUS = 0;
-  double JACOBI_INTEGRAL = 0;
-  double inclination = 0;
-  double OMEGA = 0;
-  double THETA = 0;
   std::ifstream ifs;
-  std::string configfilename;
-
-  if (mode2 == '1') {
-    configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig.txt";
-  } else if (mode2 == '2') {
-    // configファイルの数だけ計算する
-    configfilename = config_base_path + "/3D_crtbp_SALI/3DSALIconfig_1.txt";
-  }
-
-  std::cout << "<>    " << std::endl;
-  std::cout << "<>    loaded config file : " << configfilename << std::endl;
-  ifs.open(configfilename);
-
-  if (!ifs) {
-    std::cerr << "Failed to open file." << std::endl;
-    return -1;
-  }
-
   // 積分器
   auto integrator = [&](SaliState<double>* state_ptr, double h) {
     SymplecticStep4thOrderSALI(kMU, state_ptr, h);
   };
-  int configdata_num = 1;
+  int configdata_num = 0;
   //  実行時間の計測
   auto start_ofall = std::chrono::system_clock::now();
 
   // --------  configファイルの数だけSALI計算全体を繰り返す-----------------------
-  while (ifs) {
+  // while (ifs) {
+  for (const auto& configfilepath : config_file_list) {
+    std::cout << "<>        Next config file : " << configfilepath << std::endl;
+    configdata_num++;
+    ifs.open(configfilename);
+    if (!ifs) {
+      std::cerr << "<> !err! config : " << configfilepath << " does NOT EXIST" << std::endl;
+      continue;
+    }
     double progress = 0;
     auto start = std::chrono::system_clock::now();
     std::string str;
@@ -210,6 +223,16 @@ int main() {
     std::cout << "<>    loaded config >>>" << std::endl;
 
     //--------- 設定ファイル読み込み部分---------
+    //   // 設定ファイル読み込み
+    int MESH_SIZE = 0;
+    double CALC_TIMESTEP = 0;
+    double SALI_CALCTIME_THRESHOLD = 0;
+    double SOI_RADIUS = 0;
+    double FOREBIDDEN_AREA_RADIUS = 0;
+    double JACOBI_INTEGRAL = 0;
+    double inclination = 0;
+    double OMEGA = 0;
+    double THETA = 0;
     while (std::getline(ifs, str)) {
       if (str.find("MESH SIZE") != std::string::npos) {
         MESH_SIZE = std::stoi(str.substr(str.find("=") + 1));
@@ -252,12 +275,12 @@ int main() {
     }
 
     std::cout << std::endl;
-    std::cout << "<>    Start SALI caluculation --" << std::endl;
-
+    std::cout << "<>    Start SALI caluculation for " << configfilepath << std::endl;
     std::cout << "<>        Generating mesh ";
     std::vector<State3d<double>> meshPoints;
     if (mode == '1') {
       std::cout << "based on SOI radius" << std::endl;
+      // meshPoints = CreateCircleMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
       meshPoints = createSphereMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
     } else if (mode == '2') {
       // std::cout << "based on the specified point" << std::endl;
@@ -398,17 +421,19 @@ int main() {
     auto min = duration.count() / 1000 / 60 % 60;
     auto hour = duration.count() / 1000 / 60 / 60;
 
-    if (mode2 == '1') {
-      break;
-    }
+    // if (mode2 == '1') {
+    //   break;
+    // }
     std::cout << "<>        elapsed time : " << hour << "h " << min << "m " << sec << "s " << msec
               << "ms" << std::endl;
-    std::cout << "<>        Simulation for " << configfilename << " finished" << std::endl;
-    configdata_num++;
-    configfilename =
-        config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" + std::to_string(configdata_num) + ".txt";
-    std::cout << "<>        Next config file : " << configfilename << std::endl;
-    ifs.open(configfilename);
+    // std::cout << "<>        Simulation for " << configfilename << " finished" << std::endl;
+    std::cout << "<>        Simulation for " << configfilepath << " finished" << std::endl;
+    // configdata_num++;
+    // configfilename =
+    //     config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" + std::to_string(configdata_num) +
+    //     ".txt";
+    // std::cout << "<>        Next config file : " << configfilename << std::endl;
+    // ifs.open(configfilename);
   }
 
   // 実行時間の計測

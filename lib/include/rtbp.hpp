@@ -759,6 +759,9 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
           ast_vel_R_nd.x(), ast_vel_R_nd.y(), ast_vel_R_nd.z()};
 }
 
+/*
+ * @brief シンプレクティック積分法を用いた計算ステップのロジックを構成するパーツ
+ */
 namespace {
 
 /**
@@ -1133,6 +1136,7 @@ class EquationOfMotion {
     return dxdt;
   }
 };
+// -----------積分器----------------------------------------------------------
 
 /**
  * @brief 4次のルンゲ＝クッタ法 (RK4) の1ステップ
@@ -1162,10 +1166,6 @@ State<ScalarType> RungeKutta4Step(const EomType& eom, const State<ScalarType>& s
   //           << ", " << k4.vz << std::endl;
   return state + (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (h / 6.0);
 }
-
-// -----------------------------------------------------------------------------
-// 積分器 (シンプレクティック)
-// -----------------------------------------------------------------------------
 
 /**
  * @brief 2次のシンプレクティック積分ステップ（Strangスプリッティング）
@@ -1254,10 +1254,6 @@ State<ScalarType> SymplecticStep4thOrder(const ScalarType mu, const State<Scalar
   return state3;
 }
 
-// -----------------------------------------------------------------------------
-// 積分器 (SALI対応シンプレクティック)
-// -----------------------------------------------------------------------------
-
 /**
  * @brief 2次のSALI対応シンプレクティック積分ステップ
  *
@@ -1297,6 +1293,8 @@ void SymplecticStep4thOrderSALI(const ScalarType mu, SaliState<ScalarType>* stat
   SymplecticStepSALI(mu, state, kX0 * tau);
   SymplecticStepSALI(mu, state, kX1 * tau);
 }
+
+// -----------積分器のラッパー関数----------------------------------------------------------
 
 /**
  * @brief 汎用積分ドライバ

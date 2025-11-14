@@ -10,6 +10,7 @@
 #include <map>
 #include <rtbp.hpp>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -39,23 +40,20 @@ inline void WaitForEnter(const std::string& message = "<> Press Enter to continu
 }
 
 template <typename ScalarType>
-inline std::vector<State3d<double>> createSphereMesh(const ScalarType ROI_radius,
-                                                     const int divisions,
-                                                     const State3d<double>& center) {
-  std::vector<State3d<double>> meshPoints;
+inline std::vector<State3d<ScalarType>> createSphereMesh(const ScalarType ROI_radius,
+                                                         const int divisions,
+                                                         const State3d<ScalarType>& center) {
+  std::vector<State3d<ScalarType>> meshPoints;
   if (divisions <= 0) return meshPoints;
 
   ScalarType step = (2.0 * ROI_radius) / (divisions - 1);
   ScalarType radiusSquared = ROI_radius * ROI_radius;
-
+  const ScalarType cx = center.x;
+  const ScalarType cy = center.y;
+  const ScalarType cz = center.z;
   for (int i = 0; i < divisions; ++i) {
     for (int j = 0; j < divisions; ++j) {
       for (int k = 0; k < divisions; ++k) {
-        double cx, cy, cz;
-
-        cx = center.x;
-        cy = center.y;
-        cz = center.z;
         ScalarType x = cx - ROI_radius + i * step;
         ScalarType y = cy - ROI_radius + j * step;
         ScalarType z = cz - ROI_radius + k * step;
@@ -74,13 +72,149 @@ inline std::vector<State3d<double>> createSphereMesh(const ScalarType ROI_radius
   }
 
   std::sort(meshPoints.begin(), meshPoints.end(),
-            [](const State3d<double>& a, const State3d<double>& b) {
+            [](const State3d<ScalarType>& a, const State3d<ScalarType>& b) {
               if (a.z != b.z) return a.z < b.z;
               if (a.y != b.y) return a.y < b.y;
               return a.x < b.x;
             });
 
   return meshPoints;
+}
+template <typename ScalarType>
+inline std::vector<State3d<ScalarType>> CreateCircleMesh(const ScalarType ROI_radius,
+                                                         const int divisions,
+                                                         const State3d<ScalarType>& center) {
+  std::vector<State3d<ScalarType>> meshPoints;
+  if (divisions <= 0) return meshPoints;
+
+  ScalarType step = (2.0 * ROI_radius) / (divisions - 1);
+  ScalarType radiusSquared = ROI_radius * ROI_radius;
+
+  const ScalarType cx = center.x;
+  const ScalarType cy = center.y;
+  const ScalarType cz = center.z;
+  for (int i = 0; i < divisions; ++i) {
+    for (int j = 0; j < divisions; ++j) {
+      ScalarType x = cx - ROI_radius + i * step;
+      ScalarType y = cy - ROI_radius + j * step;
+      ScalarType z = cz;
+
+      ScalarType distanceSquared = std::pow(x - cx, 2) + std::pow(y - cy, 2) + std::pow(z - cz, 2);
+      if (distanceSquared <= radiusSquared) {
+        // 初回だけプリント
+        if (meshPoints.empty()) {
+          std::cout << " <> mesh point : " << x << ", " << y << ", " << z << std::endl;
+        }
+        meshPoints.push_back({x, y, z});
+      }
+    }
+  }
+
+  std::sort(meshPoints.begin(), meshPoints.end(),
+            [](const State3d<ScalarType>& a, const State3d<ScalarType>& b) {
+              if (a.y != b.y) return a.y < b.y;
+              return a.x < b.x;
+            });
+
+  return meshPoints;
+}
+
+template <typename ScalarType>
+inline std::vector<State3d<ScalarType>> createCubeMesh(const State3d<ScalarType>& center,
+                                                       const ScalarType spacing,
+                                                       const ScalarType halfExtentInSteps = 1) {
+  std::vector<State3d<ScalarType>> meshPoints;
+  if (spacing <= ScalarType(0) || halfExtentInSteps < 0) return meshPoints;
+
+  const int gridWidth = halfExtentInSteps * 2 + 1;
+  meshPoints.reserve(static_cast<std::size_t>(gridWidth) * gridWidth * gridWidth);
+
+  for (int dx = -halfExtentInSteps; dx <= halfExtentInSteps; ++dx) {
+    for (int dy = -halfExtentInSteps; dy <= halfExtentInSteps; ++dy) {
+      for (int dz = -halfExtentInSteps; dz <= halfExtentInSteps; ++dz) {
+        meshPoints.push_back({center.x + static_cast<ScalarType>(dx) * spacing,
+                              center.y + static_cast<ScalarType>(dy) * spacing,
+                              center.z + static_cast<ScalarType>(dz) * spacing});
+      }
+    }
+  }
+
+  std::sort(meshPoints.begin(), meshPoints.end(),
+            [](const State3d<ScalarType>& a, const State3d<ScalarType>& b) {
+              if (a.z != b.z) return a.z < b.z;
+              if (a.y != b.y) return a.y < b.y;
+              return a.x < b.x;
+            });
+
+  return meshPoints;
+}
+
+/**
+ * @brief Create a dimensionless Cartesian mesh around @p center.
+ * @param center    Mesh center in dimensionless coordinates.
+ * @param halfWidth Positive half-width per axis (extent from center to each boundary).
+ * @param divisions Number of samples per axis (>= 1).
+ */
+template <typename ScalarType>
+inline std::vector<State3d<ScalarType>> createDimensionlessCartesianMesh(
+    const State3d<ScalarType>& center, const State3d<ScalarType>& halfWidth,
+    const State3d<int>& divisions) {
+  if (halfWidth.x < ScalarType(0) || halfWidth.y < ScalarType(0) || halfWidth.z < ScalarType(0)) {
+    throw std::invalid_argument(
+        "createDimensionlessCartesianMesh: halfWidth must be non-negative.");
+  }
+  if (divisions.x <= 0 || divisions.y <= 0 || divisions.z <= 0) {
+    throw std::invalid_argument("createDimensionlessCartesianMesh: divisions must be positive.");
+  }
+
+  const State3d<ScalarType> minCorner{center.x - halfWidth.x, center.y - halfWidth.y,
+                                      center.z - halfWidth.z};
+  const auto computeStep = [](ScalarType width, int div) -> ScalarType {
+    return (div > 1) ? (width * ScalarType(2) / static_cast<ScalarType>(div - 1)) : ScalarType(0);
+  };
+  const ScalarType stepX = computeStep(halfWidth.x, divisions.x);
+  const ScalarType stepY = computeStep(halfWidth.y, divisions.y);
+  const ScalarType stepZ = computeStep(halfWidth.z, divisions.z);
+
+  const std::size_t totalPoints = static_cast<std::size_t>(divisions.x) *
+                                  static_cast<std::size_t>(divisions.y) *
+                                  static_cast<std::size_t>(divisions.z);
+  std::vector<State3d<ScalarType>> meshPoints;
+  meshPoints.reserve(totalPoints);
+
+  for (int ix = 0; ix < divisions.x; ++ix) {
+    for (int iy = 0; iy < divisions.y; ++iy) {
+      for (int iz = 0; iz < divisions.z; ++iz) {
+        meshPoints.push_back({minCorner.x + static_cast<ScalarType>(ix) * stepX,
+                              minCorner.y + static_cast<ScalarType>(iy) * stepY,
+                              minCorner.z + static_cast<ScalarType>(iz) * stepZ});
+      }
+    }
+  }
+
+  return meshPoints;
+}
+
+/**
+ * @brief Convert a mesh from dimensionless units into simulation units.
+ * @param mesh        Dimensionless mesh (e.g., output of createDimensionlessCartesianMesh()).
+ * @param scale       Per-axis scaling factors to reach the target unit system.
+ * @param offset      Optional translation applied after scaling (defaults to origin).
+ * @return            Mesh represented in simulation units.
+ */
+template <typename ScalarType>
+inline std::vector<State3d<ScalarType>> convertMeshToSimulationUnits(
+    const std::vector<State3d<ScalarType>>& mesh, const State3d<ScalarType>& scale,
+    const State3d<ScalarType>& offset = State3d<ScalarType>{0, 0, 0}) {
+  std::vector<State3d<ScalarType>> converted;
+  converted.reserve(mesh.size());
+
+  for (const auto& point : mesh) {
+    converted.push_back(
+        {point.x * scale.x + offset.x, point.y * scale.y + offset.y, point.z * scale.z + offset.z});
+  }
+
+  return converted;
 }
 
 // template <typename T, typename ScalarType>
@@ -183,6 +317,8 @@ inline std::string trim(const std::string& s) {
  */
 template <typename ScalarType>
 inline param::AstroConstants<ScalarType> loadConstants(const std::string& filename) {
+  std::cout << "<>-------------------------------" << std::endl;
+
   std::map<std::string, double> constants;
   std::ifstream file(filename);
   param::AstroConstants<ScalarType> astroConstants;
@@ -191,6 +327,7 @@ inline param::AstroConstants<ScalarType> loadConstants(const std::string& filena
     // ファイルが開けなかった場合、例外を投げる
     throw std::runtime_error("エラー: ファイルを開けません: " + filename);
   }
+  std::cout << "----" << std::endl;
 
   std::string line;
   int line_number = 0;
