@@ -1,0 +1,13 @@
+add_executable(CalcMethodCompare main.cpp)
+target_link_libraries(CalcMethodCompare PRIVATE
+    # Eigen3::Eigen
+    # Boost::boost
+    # OpenMP::OpenMP_CXX
+    my_lib
+)
+target_compile_definitions(CalcMethodCompare PRIVATE
+    CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
+    OUTPUT_DIR="${CMAKE_SOURCE_DIR}/data"
+)
+
+install(TARGETS CalcMethodCompare DESTINATION bin)

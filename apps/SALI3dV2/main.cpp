@@ -24,6 +24,30 @@ std::vector<std::streampos> indexFile(const std::string& filename);
 std::string readSpecificLine(const std::string& filename,
                              const std::vector<std::streampos>& linePositions, int targetLine);
 
+struct SaliOutputRow {
+  int mesh_num;
+  double final_sali;
+  double x;
+  double y;
+  double z;
+  double vx;
+  double vy;
+  double vz;
+};
+
+bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row);
+
+bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
+                                   std::string* sorted_output_filename);
+
+/**
+ * @brief enumの概要説明
+ */
+enum class MeshCenter {
+  kSUN = 0,
+  kEARTH = 1,
+};
+
 int main() {
   using namespace param;
   using namespace crtbp;
@@ -32,7 +56,7 @@ int main() {
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
   const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI/";
-  constexpr std::string kCalcConfigPrefix = "3DSALIconfig_";
+  std::string calc_config_prefix = "3DSALIconfig";
   std::string astro_param_file = kConfigFilePath + "/astro_param/astro_param.txt";
   AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
 
@@ -43,7 +67,7 @@ int main() {
   std::cout << "-" << std::endl;
 
   constexpr double HEADER_SIZE = 9;
-  my_type::State3d<double> MeshCenter{1.0 - kMU, 0, 0};
+  State3d<double> MeshCenter{1.0 - kMU, 0, 0};
   double ROI_length = 0;
 
   std::cout << "<>----------------------------------------------------------------" << std::endl;
@@ -138,7 +162,9 @@ int main() {
     std::cout << "selected mode : Exit\n" << std::endl;
     return 0;
   }
-  const std::regex pattern("^" + kCalcConfigPrefix + "\\d+\\.txt$");
+  const std::string calc_config_pattern_str =
+      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".txt$";
+  const std::regex pattern("^" + calc_config_pattern_str);
   try {
     for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
       if (entry.is_regular_file()) {
@@ -211,7 +237,7 @@ int main() {
   for (const auto& configfilepath : config_file_list) {
     std::cout << "<>        Next config file : " << configfilepath << std::endl;
     configdata_num++;
-    ifs.open(configfilename);
+    ifs.open(configfilepath);
     if (!ifs) {
       std::cerr << "<> !err! config : " << configfilepath << " does NOT EXIST" << std::endl;
       continue;
@@ -224,7 +250,9 @@ int main() {
 
     //--------- 設定ファイル読み込み部分---------
     //   // 設定ファイル読み込み
-    int MESH_SIZE = 0;
+    int MESH_CENTER = 0;
+    State3d<int> MESH_DIVISION = {50, 50, 50};
+    State3d<double> MESH_HALF_WIDTH{0.01, 0.01, 0.01};
     double CALC_TIMESTEP = 0;
     double SALI_CALCTIME_THRESHOLD = 0;
     double SOI_RADIUS = 0;
@@ -234,54 +262,80 @@ int main() {
     double OMEGA = 0;
     double THETA = 0;
     while (std::getline(ifs, str)) {
-      if (str.find("MESH SIZE") != std::string::npos) {
-        MESH_SIZE = std::stoi(str.substr(str.find("=") + 1));
-        std::cout << "<>        MESH SIZE : " << MESH_SIZE << std::endl;
+      if (str.find("MESH CENTER") != std::string::npos) {
+        MESH_CENTER = std::stoi(str.substr(str.find("=") + 1));
+        if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
+          MeshCenter.x = -kMU;
+          MeshCenter.y = 0.0;
+          MeshCenter.z = 0.0;
+        } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
+          MeshCenter.x = 1.0 - kMU;
+          MeshCenter.y = 0.0;
+          MeshCenter.z = 0.0;
+        } else {
+          std::cerr << "<> !err! MESH CENTER is INVALID. EXITING..." << std::endl;
+          return -1;
+        }
+      } else if (str.find("MESH DIVISION") != std::string::npos) {
+        MESH_DIVISION.x = std::stod(str.substr(str.find("=") + 1));
+        size_t first_space = str.find(" ", str.find("=") + 1);
+        size_t second_space = str.find(" ", first_space + 1);
+        MESH_DIVISION.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
+        MESH_DIVISION.z = std::stod(str.substr(second_space + 1));
+      } else if (str.find("MESH SIZE") != std::string::npos) {
+        MESH_HALF_WIDTH.x = std::stod(str.substr(str.find("=") + 1));
+        size_t first_space = str.find(" ", str.find("=") + 1);
+        size_t second_space = str.find(" ", first_space + 1);
+        MESH_HALF_WIDTH.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
+        MESH_HALF_WIDTH.z = std::stod(str.substr(second_space + 1));
       } else if (str.find("CALC TIMESTEP") != std::string::npos) {
         CALC_TIMESTEP = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        CALC TIMESTEP : " << CALC_TIMESTEP << std::endl;
       } else if (str.find("SALI CALCTIME THRESHOLD") != std::string::npos) {
         SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        SALI CALCTIME THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
       } else if (str.find("RADIUS OF SOI") != std::string::npos) {
         SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        SOI RADIUS : " << SOI_RADIUS << std::endl;
       } else if (str.find("RADIUS OF FOREBIDDEN AREA") != std::string::npos) {
         FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        RADIUS OF FOREBIDDEN AREA : " << FOREBIDDEN_AREA_RADIUS
-                  << std::endl;
       } else if (str.find("JACOBI INTEGRAL") != std::string::npos) {
         JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        JACOBI INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
       } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") != std::string::npos) {
         inclination = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        INCLINATION(deg) : " << inclination << std::endl;
         inclination = inclination * std::acos(-1) / 180.;
       } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") != std::string::npos) {
         OMEGA = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
         OMEGA = OMEGA * std::acos(-1) / 180.;
       } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
         THETA = std::stod(str.substr(str.find("=") + 1));
-        std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA << std::endl;
         THETA = THETA * std::acos(-1) / 180.;
       }
     }
     ifs.close();
+    std::string center_str = (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) ? "SUN" : "EARTH";
+    std::cout << "<>        MESH CENTER : " << center_str << std::endl;
+    std::cout << "<>        MESH DIVISION : " << MESH_DIVISION.x << ", " << MESH_DIVISION.y << ", "
+              << MESH_DIVISION.z << std::endl;
+    std::cout << "<>        MESH HALF WIDTH : " << MESH_HALF_WIDTH.x << ", " << MESH_HALF_WIDTH.y
+              << ", " << MESH_HALF_WIDTH.z << std::endl;
+    std::cout << "<>        CALC TIMESTEP : " << CALC_TIMESTEP << std::endl;
+    std::cout << "<>        SALI CALCTIME THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
+    std::cout << "<>        SOI RADIUS : " << SOI_RADIUS << std::endl;
+    std::cout << "<>        RADIUS OF FOREBIDDEN AREA : " << FOREBIDDEN_AREA_RADIUS << std::endl;
+    std::cout << "<>        JACOBI INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
+    std::cout << "<>        INCLINATION(deg) : " << inclination << std::endl;
+    std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
+    std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA << std::endl;
     std::cout << "<>    config file read successfully\n" << std::endl;
     if (is_continuous == 0) {
-      std::cout << "<>  [read config validation]" << std::endl;
       WaitForEnter();
     }
 
-    std::cout << std::endl;
-    std::cout << "<>    Start SALI caluculation for " << configfilepath << std::endl;
+    std::cout << "<>    -- Start SALI caluculation for " << configfilepath << std::endl;
     std::cout << "<>        Generating mesh ";
     std::vector<State3d<double>> meshPoints;
     if (mode == '1') {
       std::cout << "based on SOI radius" << std::endl;
       // meshPoints = CreateCircleMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
-      meshPoints = createSphereMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
+      meshPoints = createDimensionlessCartesianMesh(MeshCenter, MESH_HALF_WIDTH, MESH_DIVISION);
     } else if (mode == '2') {
       // std::cout << "based on the specified point" << std::endl;
       // meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
@@ -294,7 +348,7 @@ int main() {
     std::string output_base_path = OUTPUT_DIR;
     // シミュレーション終了時刻が同じでもファイル名が被らないようにする
     std::string filename = output_base_path + "/3D_crtbp_SALI/configdata_" +
-                           std::to_string(configdata_num) + "_" + getcurrent_date() + ".txt";
+                           std::to_string(configdata_num) + "_" + getcurrent_date() + ".dat";
     std::ofstream ofs1(filename);
     if (!ofs1) {
       std::filesystem::path filepath(filename);
@@ -309,15 +363,19 @@ int main() {
       }
     }
     // ヘッダーを書き込む
-    //     ofs1 << "MESH SIZE=" << MESH_SIZE << std::endl;
-    ofs1 << "CALCULATION TIMESTEP=" << CALC_TIMESTEP << std::endl;
-    ofs1 << "SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
-    ofs1 << "RADIUSofSOI=" << SOI_RADIUS << std::endl;
-    ofs1 << "FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
-    ofs1 << "INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
-    ofs1 << "INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
-    ofs1 << "LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
-    ofs1 << "DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
+    ofs1 << "# MESH CENTER=" << center_str << std::endl;
+    ofs1 << "# MESH DIVISION=" << MESH_DIVISION.x << " " << MESH_DIVISION.y << " "
+         << MESH_DIVISION.z << std::endl;
+    ofs1 << "# MESH HALF WIDTH=" << MESH_HALF_WIDTH.x << " " << MESH_HALF_WIDTH.y << " "
+         << MESH_HALF_WIDTH.z << std::endl;
+    ofs1 << "# CALCULATION TIMESTEP=" << CALC_TIMESTEP << std::endl;
+    ofs1 << "# SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
+    ofs1 << "# RADIUSofSOI=" << SOI_RADIUS << std::endl;
+    ofs1 << "# FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
+    ofs1 << "# INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
+    ofs1 << "# INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
+    ofs1 << "# LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
+    ofs1 << "# DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
     ofs1 << "Time,SALI,x,y,z,px,py,pz\n";
 
     // 計算のステップ数
@@ -371,10 +429,6 @@ int main() {
         }
 
         State<double> final_state = ConvertToPhysical(sali_state.state);
-        if (mesh_num == 9246) {
-          std::cout << "r2" << calc_r2(final_state.x, final_state.y, final_state.z, kMU)
-                    << std::endl;
-        }
         if (calc_r2(final_state.x, final_state.y, final_state.z, kMU) < SOI_RADIUS &&
             calc_r2(final_state.x, final_state.y, final_state.z, kMU) > FOREBIDDEN_AREA_RADIUS) {
           const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
@@ -412,6 +466,12 @@ int main() {
     std::cout << std::endl;
 
     ofs1.close();
+    std::string sorted_output_filename;
+    if (WriteSaliOutputsSortedByValue(filename, &sorted_output_filename)) {
+      std::cout << "<>    SALI sorted (desc) file: " << sorted_output_filename << std::endl;
+    } else {
+      std::cout << "<>    SALI sorting was skipped due to parse error." << std::endl;
+    }
     std::cout << "<>    Output File:" << filename << std::endl;
     auto end = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
@@ -493,4 +553,102 @@ std::string readSpecificLine(const std::string& filename,
   std::string line;
   std::getline(file, line);
   return line;
+}
+
+bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
+  if (output_row == nullptr) {
+    return false;
+  }
+
+  std::vector<std::string> fields;
+  std::stringstream ss(line);
+  std::string token;
+  while (std::getline(ss, token, ',')) {
+    fields.push_back(token);
+  }
+
+  if (fields.size() != 8) {
+    return false;
+  }
+
+  try {
+    output_row->mesh_num = static_cast<int>(std::stod(fields[0]));
+    output_row->final_sali = std::stod(fields[1]);
+    output_row->x = std::stod(fields[2]);
+    output_row->y = std::stod(fields[3]);
+    output_row->z = std::stod(fields[4]);
+    output_row->vx = std::stod(fields[5]);
+    output_row->vy = std::stod(fields[6]);
+    output_row->vz = std::stod(fields[7]);
+  } catch (const std::exception&) {
+    return false;
+  }
+
+  return true;
+}
+
+bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
+                                   std::string* sorted_output_filename) {
+  if (sorted_output_filename == nullptr) {
+    return false;
+  }
+
+  std::ifstream input(input_filename);
+  if (!input.is_open()) {
+    std::cerr << "Failed to open file for SALI sorting: " << input_filename << std::endl;
+    return false;
+  }
+
+  std::vector<std::string> headers;
+  std::vector<SaliOutputRow> rows;
+  std::string line;
+  bool header_finished = false;
+  while (std::getline(input, line)) {
+    if (line.empty()) {
+      continue;
+    }
+    if (!header_finished && (line[0] == '#' || line.rfind("Time", 0) == 0)) {
+      headers.push_back(line);
+      if (line[0] != '#') {
+        header_finished = true;
+      }
+      continue;
+    }
+    SaliOutputRow parsed;
+    if (ParseSaliDataLine(line, &parsed)) {
+      rows.push_back(parsed);
+    }
+  }
+
+  if (rows.empty()) {
+    std::cerr << "No SALI data lines to sort in " << input_filename << std::endl;
+    return false;
+  }
+
+  std::sort(rows.begin(), rows.end(),
+            [](const SaliOutputRow& lhs, const SaliOutputRow& rhs) {
+              return lhs.final_sali > rhs.final_sali;
+            });
+
+  std::filesystem::path input_path(input_filename);
+  std::filesystem::path sorted_path =
+      input_path.parent_path() /
+      (input_path.stem().string() + "_sorted" + input_path.extension().string());
+
+  std::ofstream output(sorted_path);
+  if (!output.is_open()) {
+    std::cerr << "Failed to create SALI sorted file: " << sorted_path << std::endl;
+    return false;
+  }
+  output << std::fixed << std::setprecision(15);
+  for (const auto& header : headers) {
+    output << header << '\n';
+  }
+  for (const auto& row : rows) {
+    output << row.mesh_num << "," << row.final_sali << "," << row.x << "," << row.y << ","
+           << row.z << "," << row.vx << "," << row.vy << "," << row.vz << "\n";
+  }
+
+  *sorted_output_filename = sorted_path.string();
+  return true;
 }

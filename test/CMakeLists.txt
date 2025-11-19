@@ -2,3 +2,4 @@
 add_subdirectory(testapp)
 add_subdirectory(boostandomp)
 add_subdirectory(salitest)
+add_subdirectory(error_compare)

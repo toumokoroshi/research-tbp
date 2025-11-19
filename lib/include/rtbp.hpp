@@ -16,16 +16,10 @@
 #include <array>
 #include <boost/numeric/odeint.hpp>
 #include <cmath>
-#include <fstream>
+#include <concepts>
 #include <iomanip>
 #include <iostream>
-// #include <numeric>
-#include <chrono>
-#include <concepts>
-#include <sstream>
 #include <stdexcept>
-#include <string>
-#include <thread>
 #include <vector3d.hpp>
 #include <vector>
 
@@ -63,8 +57,23 @@ struct State {
   State<ScalarType> operator*(ScalarType scalar) const {
     return {x * scalar, y * scalar, z * scalar, vx * scalar, vy * scalar, vz * scalar};
   }
+
+  State<ScalarType> operator+=(const State<ScalarType>& other) {
+    x += other.x;
+    y += other.y;
+    z += other.z;
+    vx += other.vx;
+    vy += other.vy;
+    vz += other.vz;
+    return *this;
+  }
 };
 
+// Allow scalar * State for Boost.Odeint vector_space_algebra
+template <typename ScalarType>
+State<ScalarType> operator*(ScalarType scalar, const State<ScalarType>& state) {
+  return state * scalar;
+}
 /**
  * @brief 正準状態ベクトル (位置 q, 正準運動量 p)
  * (qx, qy, qz, px, py, pz)
@@ -104,6 +113,20 @@ struct CanonicalState {
     return {qx / scalar, qy / scalar, qz / scalar, px / scalar, py / scalar, pz / scalar};
   }
 
+  CanonicalState<ScalarType> operator*(ScalarType scalar) const {
+    return {qx * scalar, qy * scalar, qz * scalar, px * scalar, py * scalar, pz * scalar};
+  }
+
+  CanonicalState<ScalarType>& operator+=(const CanonicalState<ScalarType>& other) {
+    qx += other.qx;
+    qy += other.qy;
+    qz += other.qz;
+    px += other.px;
+    py += other.py;
+    pz += other.pz;
+    return *this;
+  }
+
   // 6次元位相空間でのノルム (SALI計算用)
   ScalarType Norm() const {
     return std::sqrt(qx * qx + qy * qy + qz * qz + px * px + py * py + pz * pz);
@@ -126,6 +149,12 @@ struct CanonicalState {
     }
   }
 };
+
+// Allow scalar * CanonicalState for Boost.Odeint vector_space_algebra
+template <typename ScalarType>
+CanonicalState<ScalarType> operator*(ScalarType scalar, const CanonicalState<ScalarType>& state) {
+  return state * scalar;
+}
 /**
  * @brief ポテンシャルのヘッセ行列 (2階微分)
  * @details H_ij = d^2 U / (dq_i dq_j)
@@ -150,7 +179,28 @@ struct SaliState {
   CanonicalState<ScalarType> state;  // 主軌道の状態 (q, p)
   CanonicalState<ScalarType> w1;     // 偏差ベクトル1 (dq1, dp1)
   CanonicalState<ScalarType> w2;     // 偏差ベクトル2 (dq2, dp2)
+
+  SaliState<ScalarType> operator+(const SaliState<ScalarType>& other) const {
+    return {state + other.state, w1 + other.w1, w2 + other.w2};
+  }
+
+  SaliState<ScalarType> operator*(ScalarType scalar) const {
+    return {state * scalar, w1 * scalar, w2 * scalar};
+  }
+
+  SaliState<ScalarType>& operator+=(const SaliState<ScalarType>& other) {
+    state += other.state;
+    w1 += other.w1;
+    w2 += other.w2;
+    return *this;
+  }
 };
+
+// Allow scalar * SaliState for Boost.Odeint vector_space_algebra
+template <typename ScalarType>
+SaliState<ScalarType> operator*(ScalarType scalar, const SaliState<ScalarType>& state) {
+  return state * scalar;
+}
 };  // namespace my_type
 
 namespace param {
@@ -360,6 +410,7 @@ ScalarType calc_potential_U(ScalarType x, ScalarType y, ScalarType z, ScalarType
   if (r1 == 0.0 || r2 == 0.0) {
     throw std::runtime_error("Position coincides with a primary in calc_potential_U.");
   }
+  // return 0.5 * (x * x + y * y) + (1.0 - mu) / r1 + mu / r2;
   return 0.5 * (x * x + y * y) + (1.0 - mu) / r1 + mu / r2 + mu * (1. - mu) * 0.5;
 }
 
@@ -383,8 +434,11 @@ ScalarType calc_v_abs(const State3d<ScalarType>& r, const ScalarType JACOBI_INTE
   ScalarType x = r.x;
   ScalarType y = r.y;
   ScalarType z = r.z;
-  return std::sqrt(x * x + y * y + 2. * (1. - mu) / r1 + 2. * mu / r2 + mu * (1. - mu) -
-                   JACOBI_INTEGRAL);
+  ScalarType potential = calc_potential_U(x, y, z, mu);
+
+  // return std::sqrt(x * x + y * y + 2. * (1. - mu) / r1 + 2. * mu / r2 + mu * (1. - mu) -
+  //                  JACOBI_INTEGRAL);
+  return std::sqrt(2.0 * potential - JACOBI_INTEGRAL);
 }
 
 template <typename ScalarType>
@@ -1130,10 +1184,80 @@ class EquationOfMotion {
     dxdt.vx = 2.0 * state.vy + x - mu1 * (x + mu_) * r1_inv3 - mu_ * (x - 1.0 + mu_) * r2_inv3;
     dxdt.vy = -2.0 * state.vx + y - mu1 * y * r1_inv3 - mu_ * y * r2_inv3;
     dxdt.vz = -mu1 * z * r1_inv3 - mu_ * z * r2_inv3;
-    // std::cout << std::setprecision(15)
-    //           << "2 * vy, x, -(1-mu)*(x+mu)/r1^3, -mu*(x-1+mu)/r2^3: " << 2.0 * state.vy << ", "
-    //           << x << ", " << -(mu_) << ", " << -(mu_ * (x - 1.0 + mu_) * r2_inv3) << std::endl;
+    // std::cout << "dxdt.x: " << dxdt.x << ", dxdt.y: " << dxdt.y << ", dxdt.z: " << dxdt.z
+    //           << ", dxdt.vx: " << dxdt.vx << ", dxdt.vy: " << dxdt.vy << ", dxdt.vz: " << dxdt.vz
+    //           << std::endl;
     return dxdt;
+  }
+};
+
+/**
+ * @brief System wrapper for odeint Runge-Kutta-Dopri5 (orbit only).
+ */
+template <typename ScalarType>
+class Dopri5OrbitSystem {
+ private:
+  EquationOfMotion<ScalarType> eom_;
+
+ public:
+  explicit Dopri5OrbitSystem(const AstroConstants<ScalarType>& params) : eom_(params) {}
+
+  void operator()(const State<ScalarType>& state, State<ScalarType>& dxdt,
+                  const ScalarType t) const {
+    dxdt = eom_(state, t);
+  }
+};
+
+/**
+ * @brief System wrapper that advances the orbit and two deviation vectors for SALI with Dopri5.
+ */
+template <typename ScalarType>
+class Dopri5SaliSystem {
+ private:
+  ScalarType mu_;
+
+  static void ComputeVariationDerivative(const CanonicalState<ScalarType>& w,
+                                         const HessianMatrix<ScalarType>& hessian,
+                                         CanonicalState<ScalarType>* dw_dt) {
+    const ScalarType dq_x = w.qx;
+    const ScalarType dq_y = w.qy;
+    const ScalarType dq_z = w.qz;
+
+    // dq/dt = rotation(q) + dp
+    dw_dt->qx = w.px + w.qy;
+    dw_dt->qy = w.py - w.qx;
+    dw_dt->qz = w.pz;
+
+    // dp/dt = rotation(p) - Hessian(U) * dq
+    dw_dt->px = w.py - (hessian.hxx * dq_x + hessian.hxy * dq_y + hessian.hxz * dq_z);
+    dw_dt->py = -w.px - (hessian.hxy * dq_x + hessian.hyy * dq_y + hessian.hyz * dq_z);
+    dw_dt->pz = -(hessian.hxz * dq_x + hessian.hyz * dq_y + hessian.hzz * dq_z);
+  }
+
+ public:
+  explicit Dopri5SaliSystem(const AstroConstants<ScalarType>& params) {
+    mu_ = params.gm_earth / (params.gm_earth + params.gm_sun);
+  }
+
+  void operator()(const SaliState<ScalarType>& state, SaliState<ScalarType>& dstate_dt,
+                  const ScalarType /*t*/) const {
+    ScalarType grad_U[3];
+    HessianMatrix<ScalarType> hessian;
+    CalculateGradientAndHessianU(mu_, state.state.qx, state.state.qy, state.state.qz, grad_U,
+                                 &hessian);
+
+    // Central orbit
+    dstate_dt.state.qx = state.state.px + state.state.qy;
+    dstate_dt.state.qy = state.state.py - state.state.qx;
+    dstate_dt.state.qz = state.state.pz;
+
+    dstate_dt.state.px = state.state.py - grad_U[0];
+    dstate_dt.state.py = -state.state.px - grad_U[1];
+    dstate_dt.state.pz = -grad_U[2];
+
+    // Variational equations for two deviation vectors
+    ComputeVariationDerivative(state.w1, hessian, &dstate_dt.w1);
+    ComputeVariationDerivative(state.w2, hessian, &dstate_dt.w2);
   }
 };
 // -----------積分器----------------------------------------------------------
@@ -1151,19 +1275,20 @@ template <typename ScalarType, typename EomType>
 State<ScalarType> RungeKutta4Step(const EomType& eom, const State<ScalarType>& state, ScalarType t,
                                   ScalarType h) {
   const State<ScalarType> k1 = eom(state, t);
-  // std::cout << "state: " << state.x << ", " << state.y << ", " << state.z << ", " << state.vx
-  //           << ", " << state.vy << ", " << state.vz << std::endl;
-  // std::cout << "k1: " << k1.x << ", " << k1.y << ", " << k1.z << ", " << k1.vx << ", " << k1.vy
-  //           << ", " << k1.vz << std::endl;
   const State<ScalarType> k2 = eom(state + k1 * (h / 2.0), t + h / 2.0);
   const State<ScalarType> k3 = eom(state + k2 * (h / 2.0), t + h / 2.0);
   const State<ScalarType> k4 = eom(state + k3 * h, t + h);
-  // std::cout << "k2: " << k2.x << ", " << k2.y << ", " << k2.z << ", " << k2.vx << ", " << k2.vy
-  //           << ", " << k2.vz << std::endl;
-  // std::cout << "k3: " << k3.x << ", " << k3.y << ", " << k3.z << ", " << k3.vx << ", " << k3.vy
-  //           << ", " << k3.vz << std::endl;
-  // std::cout << "k4: " << k4.x << ", " << k4.y << ", " << k4.z << ", " << k4.vx << ", " << k4.vy
-  //           << ", " << k4.vz << std::endl;
+  // std::cout << "k1.vx: " << k1.vx << ", k1.vy: " << k1.vy << ", k1.vz: " << k1.vz << std::endl;
+  // std::cout << "k2.vx: " << k2.vx << ", k2.vy: " << k2.vy << ", k2.vz: " << k2.vz << std::endl;
+  // std::cout << "k3.vx: " << k3.vx << ", k3.vy: " << k3.vy << ", k3.vz: " << k3.vz << std::endl;
+  // std::cout << "k4.vx: " << k4.vx << ", k4.vy: " << k4.vy << ", k4.vz: " << k4.vz << std::endl;
+  // std::cout << "returning state.vx: "
+  //           << state.vx + (k1.vx + 2.0 * k2.vx + 2.0 * k3.vx + k4.vx) * (h / 6.0)
+  //           << ", state.vy: " << state.vy + (k1.vy + 2.0 * k2.vy + 2.0 * k3.vy + k4.vy) * (h
+  //           / 6.0)
+  //           << ", state.vz: " << state.vz + (k1.vz + 2.0 * k2.vz + 2.0 * k3.vz + k4.vz) * (h
+  //           / 6.0)
+  //           << std::endl;
   return state + (k1 + k2 * 2.0 + k3 * 2.0 + k4) * (h / 6.0);
 }
 
@@ -1331,15 +1456,20 @@ concept Observer = requires(ObserverType func, const StateType& state, ScalarTyp
 template <typename StateType, typename IntegratorType, typename ObserverType, typename ScalarType>
   requires Integrator<IntegratorType, StateType, ScalarType> &&
            Observer<ObserverType, StateType, ScalarType>
-void Integrate(StateType& current_state, IntegratorType integrator, ObserverType observer,
+void Integrate(StateType& initial_state, IntegratorType integrator, ObserverType observer,
                ScalarType start_time, ScalarType time_step, int num_steps) {
   ScalarType current_time = start_time;
-  observer(current_state, current_time);
-
+  StateType state_after_step = initial_state;
+  observer(initial_state, current_time);
   for (int i = 0; i < num_steps; ++i) {
-    current_state = integrator(current_state, current_time, time_step);
+    // std::cout << "Integrate step " << i + 1 << "/" << num_steps << std::endl;
+    // std::cout << "Current time: " << current_time << std::endl;
+    // std::cout << "State before step: x=" << state_after_step.x << ", y=" << state_after_step.y
+    //           << ", z=" << state_after_step.z << ", vx=" << state_after_step.vx
+    //           << ", vy=" << state_after_step.vy << ", vz=" << state_after_step.vz << std::endl;
+    state_after_step = integrator(state_after_step, current_time, time_step);
     current_time += time_step;
-    observer(current_state, current_time);
+    observer(state_after_step, current_time);
   }
 }
 /**
@@ -1380,6 +1510,58 @@ void IntegrateSALI(SaliState<ScalarType>& current_state, IntegratorType integrat
     OrthogonalizeDeviationVectors(&current_state);
 
     observer(current_state, current_time);
+  }
+}
+
+/**
+ * @brief Fixed-step Dopri5 integration for the orbit only.
+ */
+template <typename ScalarType, typename ObserverType,
+          typename Stepper = boost::numeric::odeint::runge_kutta_dopri5<
+              State<ScalarType>, ScalarType, State<ScalarType>, ScalarType,
+              boost::numeric::odeint::vector_space_algebra>>
+  requires Observer<ObserverType, State<ScalarType>, ScalarType>
+void IntegrateDopri5Orbit(const AstroConstants<ScalarType>& params, State<ScalarType>& state,
+                          ScalarType start_time, ScalarType end_time, ScalarType time_step,
+                          ObserverType observer, Stepper stepper = Stepper()) {
+  Dopri5OrbitSystem<ScalarType> system(params);
+
+  ScalarType current_time = start_time;
+  observer(state, current_time);
+  while (current_time < end_time) {
+    const ScalarType dt = std::min(time_step, end_time - current_time);
+    stepper.do_step(system, state, current_time, dt);
+    current_time += dt;
+    observer(state, current_time);
+  }
+}
+
+/**
+ * @brief Fixed-step Dopri5 integration for orbit + variational equations (SALI).
+ *
+ * @param orthonormalize_deviation true to orthogonalize w1/w2 after every step.
+ */
+template <typename ScalarType, typename ObserverType,
+          typename Stepper = boost::numeric::odeint::runge_kutta_dopri5<
+              SaliState<ScalarType>, ScalarType, SaliState<ScalarType>, ScalarType,
+              boost::numeric::odeint::vector_space_algebra>>
+  requires Observer<ObserverType, SaliState<ScalarType>, ScalarType>
+void IntegrateDopri5SALI(const AstroConstants<ScalarType>& params, SaliState<ScalarType>& state,
+                         ScalarType start_time, ScalarType end_time, ScalarType time_step,
+                         ObserverType observer, bool orthonormalize_deviation = true,
+                         Stepper stepper = Stepper()) {
+  Dopri5SaliSystem<ScalarType> system(params);
+
+  ScalarType current_time = start_time;
+  observer(state, current_time);
+  while (current_time < end_time) {
+    const ScalarType dt = std::min(time_step, end_time - current_time);
+    stepper.do_step(system, state, current_time, dt);
+    current_time += dt;
+    if (orthonormalize_deviation) {
+      OrthogonalizeDeviationVectors(&state);
+    }
+    observer(state, current_time);
   }
 }
 
@@ -1435,14 +1617,19 @@ class StateBufferObserver {
  private:
   std::vector<std::array<ScalarType, 8>>& history_;
   ScalarType mu_;
+  ScalarType JacobiIntegral_;
 
  public:
-  explicit StateBufferObserver(std::vector<std::array<ScalarType, 8>>& history, ScalarType mu)
-      : history_(history), mu_(mu) {}
+  explicit StateBufferObserver(std::vector<std::array<ScalarType, 8>>& history, ScalarType mu,
+                               ScalarType JacobiIntegral)
+      : history_(history), mu_(mu), JacobiIntegral_(JacobiIntegral) {}
 
   void operator()(const State<ScalarType>& state, ScalarType t) {
-    history_.push_back({t, calc_jacobi_integral(state, mu_), state.x, state.y, state.z, state.vx,
-                        state.vy, state.vz});
+    // std::cout << "x: " << state.x << ", y: " << state.y << ", z: " << state.z
+    //           << ", vx: " << state.vx << ", vy: " << state.vy << ", vz: " << state.vz <<
+    //           std::endl;
+    history_.push_back({t, JacobiIntegral_ - calc_jacobi_integral(state, mu_), state.x, state.y,
+                        state.z, state.vx, state.vy, state.vz});
   }
 
   const std::vector<std::array<ScalarType, 8>>& GetHistory() const { return history_; }
@@ -1503,6 +1690,118 @@ class SaliFileObserver {
         << "," << state.state.pz << "\n";
   }
 };
+// ---------------------------------------------------------------------------
+// Additional high-order symplectic schemes (state and SALI variants)
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief Blanes-Moan 4th-order symmetric (ABAH4/SS4) with reduced error constant.
+ */
+template <typename ScalarType>
+State<ScalarType> SymplecticStep4thOrderBM(const ScalarType mu, const State<ScalarType>& state,
+                                           ScalarType h) {
+  constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
+  constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
+  constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
+  constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
+  constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
+  constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
+  constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
+
+  CanonicalState<ScalarType> cs = ConvertToCanonical(state);
+  auto A = [&](ScalarType dt) {
+    ApplyDrift(&cs, dt / 2.0);
+    ApplyKick(mu, &cs, dt);
+    ApplyDrift(&cs, dt / 2.0);
+  };
+  auto B = [&](ScalarType dt) { ApplyRotation(&cs, dt); };
+
+  A(a1 * h);
+  B(b1 * h);
+  A(a2 * h);
+  B(b2 * h);
+  A(a3 * h);
+  B(b3 * h);
+  A(a4 * h);
+  B(b3 * h);
+  A(a3 * h);
+  B(b2 * h);
+  A(a2 * h);
+  B(b1 * h);
+  A(a1 * h);
+
+  return ConvertToPhysical(cs);
+}
+
+/**
+ * @brief 6th-order Yoshida (1990) using 7-fold composition of the 2nd-order Strang step.
+ */
+template <typename ScalarType>
+State<ScalarType> SymplecticStep6thOrder(const ScalarType mu, const State<ScalarType>& state,
+                                         ScalarType h) {
+  constexpr ScalarType w1 = static_cast<ScalarType>(0.784513610477560);
+  constexpr ScalarType w2 = static_cast<ScalarType>(0.235573213359357);
+  constexpr ScalarType w3 = static_cast<ScalarType>(-1.17767998417887);
+  constexpr ScalarType w4 = static_cast<ScalarType>(1.31518632068391);
+  constexpr ScalarType weights[7] = {w1, w2, w3, w4, w3, w2, w1};
+
+  State<ScalarType> s = state;
+  for (auto c : weights) {
+    s = SymplecticStep(mu, s, c * h);
+  }
+  return s;
+}
+
+/**
+ * @brief Blanes-Moan 4th order for SALI (same coefficients as SymplecticStep4thOrderBM).
+ */
+template <typename ScalarType>
+void SymplecticStep4thOrderBMSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType h) {
+  constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
+  constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
+  constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
+  constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
+  constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
+  constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
+  constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
+
+  auto A = [&](ScalarType dt) {
+    ApplyDriftSALI(state, dt / 2.0);
+    ApplyKickSALI(mu, state, dt);
+    ApplyDriftSALI(state, dt / 2.0);
+  };
+  auto B = [&](ScalarType dt) { ApplyRotationSALI(state, dt); };
+
+  A(a1 * h);
+  B(b1 * h);
+  A(a2 * h);
+  B(b2 * h);
+  A(a3 * h);
+  B(b3 * h);
+  A(a4 * h);
+  B(b3 * h);
+  A(a3 * h);
+  B(b2 * h);
+  A(a2 * h);
+  B(b1 * h);
+  A(a1 * h);
+}
+
+/**
+ * @brief 6th-order Yoshida for SALI (7-fold composition of 2nd-order step).
+ */
+template <typename ScalarType>
+void SymplecticStep6thOrderSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType h) {
+  constexpr ScalarType w1 = static_cast<ScalarType>(0.784513610477560);
+  constexpr ScalarType w2 = static_cast<ScalarType>(0.235573213359357);
+  constexpr ScalarType w3 = static_cast<ScalarType>(-1.17767998417887);
+  constexpr ScalarType w4 = static_cast<ScalarType>(1.31518632068391);
+  constexpr ScalarType weights[7] = {w1, w2, w3, w4, w3, w2, w1};
+
+  for (auto c : weights) {
+    SymplecticStepSALI(mu, state, c * h);
+  }
+}
 
 }  // namespace crtbp
 #endif  // RTBP_HPP
