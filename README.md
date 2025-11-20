@@ -19,7 +19,7 @@ TBP/
 ├── CMakeLists.txt            # ルートのCMake設定
 ├── CMakePresets.json         # CMakeのビルドのconfig
 ├── README.md　                # README
-├── setup.bat                 # インテルコンパイラ用の環境変数設定を行うバッチファイルを走らせた後に、cmakeを使い宣言されているすべてのappをビルドするためのバッチファイル
+├── setup.bat                 # インテルコンパイラ用の環境変数設定を行うバッチファイルを走らせた後に、宣言されているすべてのappをcmakeを使いビルドするためのバッチファイル
 │
 ├── .vscode/
 │   └── settings.json         # vscodeの設定　フォーマッタの設定ファイルパスを示してあるだけ　コードの動作やビルドの挙動には関係ない

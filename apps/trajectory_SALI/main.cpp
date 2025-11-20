@@ -1,592 +1,599 @@
-
-
 #include <omp.h>
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <numbers>
 #include <regex>
 #include <sstream>
 #include <string>
-#include <utils.hpp>
-#include <vector3d.hpp>
 #include <vector>
 
 #include "rtbp.hpp"
+#include "utils.hpp"
+#include "vector3d.hpp"
 
-/**
- * @brief クラスの概要説明
- *
- * クラスの詳細説明
- */
-template <typename ScalarType>
-class TrajectoryObserver {
- public:
-  /**
-   * @brief コンストラクタ
-   */
-  TrajectoryObserver(std::vector<std::array<ScalarType, 8>>& history, ScalarType jacobi_constant,
-                     ScalarType mu)
-      : history_(history), jacobi_constant_(jacobi_constant), mu_(mu) {};
+using ::kSecondsPerDay;
+using ::Vector3d;
+using crtbp::AstroConstants;
+using crtbp::calc_r2;
+using crtbp::CanonicalState;
+using crtbp::ConvertInertial2RotatingV2;
+using crtbp::ConvertToCanonical;
+using crtbp::ConvertToPhysical;
+using crtbp::IntegrateDopri5Orbit;
+using crtbp::IntegrateDopri5SALI;
+using crtbp::SaliState;
+using crtbp::State;
+using crtbp::State3d;
+using utils::loadConstants;
 
-  /**
-   * @brief デストラクタ
-   */
-  virtual ~TrajectoryObserver();
+namespace fs = std::filesystem;
+constexpr double kPi = std::numbers::pi;
 
-  TrajectoryObserver& operator=(const TrajectoryObserver&) = delete;
+struct TrajectorySaliConfig {
+  State<double> asteroid_state_helio{};
+  State<double> earth_state_helio{};
 
-  void operator()(const State<ScalarType>& state, ScalarType t) {
-    history_.push_back({t, jacobi_constant_ - calc_jacobi_integral(state, mu_), state.x, state.y,
-                        state.z, state.vx, state.vy, state.vz});
-  }
+  // Natural trajectory settings (days in inertial time).
+  double natural_duration_days = 5.0;
+  double natural_dt_days = 1e-3;
+  int sample_stride = 1;
 
- private:
-  std::vector<std::array<ScalarType, 8>>& history_;
-  ScalarType jacobi_constant_;
-  ScalarType mu_;
+  // Delta-v map settings.
+  double dv_magnitude_mps = 100.0;
+  double theta_start_deg = -180.0;
+  double theta_end_deg = 180.0;
+  double theta_step_deg = 5.0;
+
+  // SALI integration after the impulse (still in CRTBP non-dimensional time).
+  double sali_duration_days = 5.0;
+  double sali_dt_days = 1e-4;
+  double forbidden_radius = 1e-8;  // dimensionless distance to avoid singularity
+  bool limit_to_hill = true;
+
+  std::string output_tag;
 };
+
+struct NaturalUnits {
+  double mu = 0.0;
+  double lu_au = 0.0;
+  double tu_day = 0.0;
+  double vu_au_per_day = 0.0;
+  double vu_m_per_s = 0.0;
+  double hill_radius = 0.0;  // dimensionless Hill radius around P2
+};
+
+struct TrajectorySample {
+  double t_nd = 0.0;
+  double t_days = 0.0;
+  State<double> state{};
+  double r2 = 0.0;  // distance from Earth (dimensionless)
+};
+
+struct MapTask {
+  const TrajectorySample* sample = nullptr;
+  double theta_deg = 0.0;
+};
+
+struct MapResult {
+  double t_nd = 0.0;
+  double t_days = 0.0;
+  double theta_deg = 0.0;
+  double base_r2 = 0.0;
+  double final_r2 = 0.0;
+  double sali = std::numeric_limits<double>::quiet_NaN();
+  State<double> base_state{};
+  State<double> post_state{};
+};
+
+// Forward declarations
+bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* config);
+
+NaturalUnits ComputeNaturalUnits(const State<double>& earth_state_helio,
+                                 const AstroConstants<double>& astro);
+
+std::vector<TrajectorySample> IntegrateNaturalTrajectory(const AstroConstants<double>& astro,
+                                                         const State<double>& initial_state_nd,
+                                                         double duration_nd, double dt_nd,
+                                                         double mu, const NaturalUnits& units);
+
+bool EvaluateSali(const MapTask& task, double theta_rad, double dv_nd, double mu,
+                  double hill_radius, double forbidden_radius, double sali_duration_nd,
+                  double sali_dt_nd, const AstroConstants<double>& astro, MapResult* output);
+
+void WriteTrajectoryCsv(const std::string& filepath, const std::vector<TrajectorySample>& samples,
+                        double hill_radius);
+
+void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
+                 const TrajectorySaliConfig& cfg, double sali_duration_nd, double sali_dt_nd,
+                 const std::vector<MapTask>& tasks, double dv_nd, double hill_radius,
+                 double forbidden_radius, const AstroConstants<double>& astro);
+
+std::vector<std::string> DiscoverConfigFiles(const std::string& directory,
+                                             const std::string& prefix);
 
 int main() {
   using namespace param;
-  using namespace crtbp;
-  using namespace utils;
-  namespace fs = std::filesystem;
-  // CMakeから渡されたCONFIG_DIRマクロを使用
-  const std::string kConfigFilePath = CONFIG_DIR;
-  const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI/";
-  std::string calc_config_prefix = "3DSALIconfig";
-  std::string astro_param_file = kConfigFilePath + "/astro_param/astro_param.txt";
-  AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
 
-  const double kAU = astro_params.au;                 // astronomical unit in meters
-  const double kGMSUN = astro_params.gm_sun;          // heliocentric gravitational constant m3 s-2
-  const double kGMEARTH = astro_params.gm_earth;      // geocentric gravitational constant m3 s-2
-  const double kMU = kGMEARTH / (kGMEARTH + kGMSUN);  // mu parameter of Earth-Sun
-  std::cout << "-" << std::endl;
+  const std::string kConfigDir = std::string(CONFIG_DIR) + "/trajectory_SALI/";
+  const std::string kOutputDir = std::string(OUTPUT_DIR) + "/trajectory_SALI";
+  const std::string kConfigPrefix = "trajectorySALI";
 
-  std::cout << "<>----------------------------------------------------------------" << std::endl;
-  std::cout << "<>            SALI calc on spesific trajectory" << std::endl;
-  std::cout << "<>-------------------------------------------------------------"
-               "---\n\n"
-            << std::endl;
-  std::cout << "<>****************************************************************" << std::endl;
-  State<double> ast_state_ssb{};
-  State<double> sun_state_ssb{};
-  State<double> earth_state_ssb{};
-  State<double> init_ast_state_crtbp{};
-  /* ファイルから軌道要素と計算コンフィグをよんで表示
-  →座標変換
-  →座標変換後の値の表示 */
+  AstroConstants<double> astro_params =
+      loadConstants<double>(kConfigDir + "/../astro_param/astro_param.txt");
+  const double kMU = astro_params.gm_earth / (astro_params.gm_earth + astro_params.gm_sun);
 
-  WaitForEnter();
-  /* 読んだ要素から軌道計算 */
-  State<double> ast_state_crtbp = init_ast_state_crtbp;  // 読んだ要素をここにコピー
-  std::vector<std::array<double, 8>> history;
-  TrajectoryObserver<double> observer(history, 0.0, kMU);
-  auto trajectory_integrator = [&](const State<double>& state_ptr, double time,
-                                   double h) -> State<double> {
-    return SymplecticStep6thOrder(kMU, state_ptr, h);
-  };
+  std::cout << "<>------------------------------------------------------------\n";
+  std::cout << "<>  CRTBP SALI map along natural trajectory (Earth Hill sphere)\n";
+  std::cout << "<>------------------------------------------------------------\n\n";
 
-  Integrate(ast_state_crtbp, trajectory_integrator, observer, 0.0, 0.01, 1000);
-
-  /* 軌道上の各点でSALI計算 */
-  /* どの向きに速度ベクトルを与えるのがいいか調べる */
-  std::cout << "<>----------------------------------------------------------------" << std::endl;
-  std::cout << "<>           SALI calculation on the trajectory" << std::endl;
-  std::cout << "<>----------------------------------------------------------------\n" << std::endl;
-  double jacobi_range_min;
-  double SALI_range_max;
-  double SALI_range_step;
-  std::vector<double> sali_initial_range;
-  int SALI_point_interval;
-  int SALI_calc_num = history.size() / SALI_point_interval;
-  // 一番外側がヤコビ積分を変化させる次元、
-  // その内側が時刻歴の次元
-  // さらにその内側が各時刻のデータ配列
-  std::vector<std::vector<std::array<double, 8>>> sali_history_list;
-  auto sali_integrator = [&](SaliState<double>* state_ptr, double h) {
-    SymplecticStep6thOrderSALI(kMU, state_ptr, h);
-  };
-
-  for
-    /* 呼んだ要素から軌道計算 */
-
-    std::cout << "<>  [mode selection] : " << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<>        1. New simulation" << std::endl;
-  std::cout << "<>        2. Detailed simulation for existing data" << std::endl;
-  std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>   enter number " << std::endl;
-  std::cout << "<> >>>";
-  char mode;
-  std::cin >> mode;
-  std::cout << "<> " << std::endl;
-  if (mode == '1') {
-    std::cout << "<> > selected mode : New simulation" << std::endl;
-  } else if (mode == '2') {
-    std::cout << "<> > selected mode : Detailed simulation for existing data\n" << std::endl;
-  } else {
-    std::cout << "<> > selected mode : Exit\n" << std::endl;
-    return 0;
-  }
-  std::cout << "<> " << std::endl;
-
-  if (mode == '2') {
-    // ファイルを読み込んで、ターゲットのメッシュ番号を指定
-    std::cout << "<>        [input file name to refer] : ";
-    std::string filename_interested;
-    std::cin >> filename_interested;
-    std::cout << std::endl;
-    // メッシュ番号を指定
-    std::cout << "<>        [input mesh number to focus on] : ";
-    std::string mesh_num_of_interest;
-    std::cin >> mesh_num_of_interest;
-    std::cout << std::endl;
-
-    std::cout << "<>        [input the length of ROI] : ";
-    std::string ROI_length_;
-    std::cin >> ROI_length_;
-    std::cout << std::endl;
-    ROI_length = std::stod(ROI_length_);
-
-    // ファイル読み込み
-    std::ifstream ifs(filename_interested);
-    if (!ifs) {
-      std::cerr << "Can't open file : " << filename_interested << std::endl;
-      return -1;
-    }
-    std::vector<std::streampos> linePositions = indexFile(filename_interested);
-
-    // 指定した行を読み込む
-    int targetLine = std::stoi(mesh_num_of_interest) + HEADER_SIZE;  // 読み込みたい行番号
-    std::string line = readSpecificLine(filename_interested, linePositions, targetLine);
-    std::cout << "<>        interested line : " << line << std::endl;
-    std::stringstream ss(line);
-    std::array<double, 7> data;
-    for (int i = 0; i < 7; i++) {
-      ss >> data[i];
-    }
-
-    MeshCenter.x = data[2];
-    MeshCenter.y = data[3];
-    MeshCenter.z = data[4];
-  }
-  // #endif
-  char mode2;
-  std::cout << "<>  [single simulation or continuous simulation] : " << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<>        1. single simulation" << std::endl;
-  std::cout << "<>        2. continuous simulation" << std::endl;
-  std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>      enter number " << std::endl;
-  std::cout << "<> >>> ";
-  std::cin >> mode2;
-  std::cout << "<> " << std::endl;
-
-  double is_continuous = 0;
-  std::string configfilename;
-  std::vector<std::string> config_file_list;
-
-  if (mode2 == '1') {
-    std::cout << "<> >  selected mode : single simulation" << std::endl;
-    is_continuous = 0;
-  } else if (mode2 == '2') {
-    std::cout << "<>    selected mode : continuous simulation\n" << std::endl;
-    is_continuous = 1;
-  } else {
-    std::cout << "selected mode : Exit\n" << std::endl;
-    return 0;
-  }
-  const std::string calc_config_pattern_str =
-      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".txt$";
-  const std::regex pattern("^" + calc_config_pattern_str);
-  try {
-    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_file_list.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (fs::filesystem_error& e) {
-    std::cerr << "Error accessing directory: " << e.what() << std::endl;
-  }
-  std::sort(config_file_list.begin(), config_file_list.end(),
-            [](const std::string& a, const std::string& b) {
-              auto getNumber = [](const std::string& path_str) -> int {
-                std::string stem = std::filesystem::path(path_str).stem().string();
-                size_t lastUnderscore = stem.find_last_of('_');
-                return std::stoi(stem.substr(lastUnderscore + 1));
-              };
-              return getNumber(a) < getNumber(b);
-            });
-  std::cout << "<> Loaded config file list:" <<　std::endl;
-  for (const auto& filename : config_file_list) {
-    std::cout << "<>    - " << filename << std::endl;
+  std::vector<std::string> config_files = DiscoverConfigFiles(kConfigDir, kConfigPrefix);
+  if (config_files.empty()) {
+    std::cerr << "No config files found under " << kConfigDir << " with prefix " << kConfigPrefix
+              << "\n";
+    return 1;
   }
 
-  WaitForEnter();
-  std::cout << "<> " << std::endl;
-  std::cout << "<>----------------------------------------------------------------" << std::endl;
+  fs::create_directories(kOutputDir);
 
-  int Core_Max = omp_get_max_threads();
-  int OMP_Fmax{};
-  std::cout << "<>  [OpenMP preparation]" << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<> On your PC, " << Core_Max
-            << " threads can be used for parallel computing employing OMP." << std::endl;
-  std::cout << "<> >  " << std::endl;
-  std::cout << "<>   * How many threads do you want use for simulation? "
-            << "(input an integer)" << std::endl;
-  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
-  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
-  std::cout << "<> >>> ";
-  int getcore = 0;
-  std::cin >> getcore;
-  if (getcore <= Core_Max) {
-    OMP_Fmax = getcore;
-    std::cout << "<>" << std::endl;
-    std::cout << "<>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
-    std::cout << "<>" << std::endl;
-  } else {
-    OMP_Fmax = Core_Max;
-    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
-              << "automatically determined as " << OMP_Fmax << std::endl;
-  }
-  WaitForEnter();
-  omp_set_num_threads(OMP_Fmax);
-  std::cout << "<>----------------------------------------------------------------" << std::endl;
-
-  std::ifstream ifs;
-  // 積分器
-  auto integrator = [&](SaliState<double>* state_ptr, double h) {
-    SymplecticStep4thOrderSALI(kMU, state_ptr, h);
-  };
-  int configdata_num = 0;
-  //  実行時間の計測
-  auto start_ofall = std::chrono::system_clock::now();
-
-  // --------  configファイルの数だけSALI計算全体を繰り返す-----------------------
-  // while (ifs) {
-  for (const auto& configfilepath : config_file_list) {
-    std::cout << "<>        Next config file : " << configfilepath << std::endl;
-    configdata_num++;
-    ifs.open(configfilepath);
-    if (!ifs) {
-      std::cerr << "<> !err! config : " << configfilepath << " does NOT EXIST" << std::endl;
+  int config_index = 0;
+  for (const auto& config_path : config_files) {
+    ++config_index;
+    TrajectorySaliConfig cfg;
+    if (!LoadTrajectoryConfig(config_path, &cfg)) {
+      std::cerr << "Skipping config due to parse errors: " << config_path << "\n";
       continue;
     }
-    double progress = 0;
-    auto start = std::chrono::system_clock::now();
-    std::string str;
-    std::cout << std::setprecision(10);
-    std::cout << "<>    loaded config >>>" << std::endl;
 
-    //--------- 設定ファイル読み込み部分---------
-    //   // 設定ファイル読み込み
-    int MESH_CENTER = 0;
-    State3d<int> MESH_DIVISION = {50, 50, 50};
-    State3d<double> MESH_HALF_WIDTH{0.01, 0.01, 0.01};
-    double CALC_TIMESTEP = 0;
-    double SALI_CALCTIME_THRESHOLD = 0;
-    double SOI_RADIUS = 0;
-    double FOREBIDDEN_AREA_RADIUS = 0;
-    double JACOBI_INTEGRAL = 0;
-    double inclination = 0;
-    double OMEGA = 0;
-    double THETA = 0;
-    while (std::getline(ifs, str)) {
-      if (str.find("MESH CENTER") != std::string::npos) {
-        MESH_CENTER = std::stoi(str.substr(str.find("=") + 1));
-        if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
-          MeshCenter.x = -kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
-          MeshCenter.x = 1.0 - kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else {
-          std::cerr << "<> !err! MESH CENTER is INVALID. EXITING..." << std::endl;
-          return -1;
-        }
-      } else if (str.find("MESH DIVISION") != std::string::npos) {
-        MESH_DIVISION.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_DIVISION.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_DIVISION.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("MESH SIZE") != std::string::npos) {
-        MESH_HALF_WIDTH.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_HALF_WIDTH.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_HALF_WIDTH.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("CALC TIMESTEP") != std::string::npos) {
-        CALC_TIMESTEP = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("SALI CALCTIME THRESHOLD") != std::string::npos) {
-        SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF SOI") != std::string::npos) {
-        SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF FOREBIDDEN AREA") != std::string::npos) {
-        FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("JACOBI INTEGRAL") != std::string::npos) {
-        JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") != std::string::npos) {
-        inclination = std::stod(str.substr(str.find("=") + 1));
-        inclination = inclination * std::acos(-1) / 180.;
-      } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") != std::string::npos) {
-        OMEGA = std::stod(str.substr(str.find("=") + 1));
-        OMEGA = OMEGA * std::acos(-1) / 180.;
-      } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
-        THETA = std::stod(str.substr(str.find("=") + 1));
-        THETA = THETA * std::acos(-1) / 180.;
-      }
+    NaturalUnits units{};
+    try {
+      units = ComputeNaturalUnits(cfg.earth_state_helio, astro_params);
+    } catch (const std::exception& e) {
+      std::cerr << "Failed to compute natural units for " << config_path << ": " << e.what()
+                << "\n";
+      continue;
     }
-    ifs.close();
-    std::string center_str = (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) ? "SUN" : "EARTH";
-    std::cout << "<>        MESH CENTER : " << center_str << std::endl;
-    std::cout << "<>        MESH DIVISION : " << MESH_DIVISION.x << ", " << MESH_DIVISION.y << ", "
-              << MESH_DIVISION.z << std::endl;
-    std::cout << "<>        MESH HALF WIDTH : " << MESH_HALF_WIDTH.x << ", " << MESH_HALF_WIDTH.y
-              << ", " << MESH_HALF_WIDTH.z << std::endl;
-    std::cout << "<>        CALC TIMESTEP : " << CALC_TIMESTEP << std::endl;
-    std::cout << "<>        SALI CALCTIME THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
-    std::cout << "<>        SOI RADIUS : " << SOI_RADIUS << std::endl;
-    std::cout << "<>        RADIUS OF FOREBIDDEN AREA : " << FOREBIDDEN_AREA_RADIUS << std::endl;
-    std::cout << "<>        JACOBI INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
-    std::cout << "<>        INCLINATION(deg) : " << inclination << std::endl;
-    std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
-    std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA << std::endl;
-    std::cout << "<>    config file read successfully\n" << std::endl;
-    if (is_continuous == 0) {
-      WaitForEnter();
+    std::cout << "<> Config #" << config_index << ": " << config_path << "\n";
+    std::cout << "    mu=" << std::setprecision(8) << units.mu
+              << ", Hill radius=" << std::setprecision(6) << units.hill_radius
+              << ", LU(AU)=" << units.lu_au << ", TU(days)=" << units.tu_day
+              << ", VU(m/s)=" << units.vu_m_per_s << "\n";
+
+    State<double> initial_state_nd{};
+    try {
+      initial_state_nd = crtbp::ConvertInertial2Rotating____(cfg.asteroid_state_helio,
+                                                             cfg.earth_state_helio, astro_params);
+    } catch (const std::exception& e) {
+      std::cerr << "Failed to convert heliocentric states to CRTBP frame: " << e.what() << "\n";
+      continue;
     }
 
-    std::cout << "<>    -- Start SALI caluculation for " << configfilepath << std::endl;
-    std::cout << "<>        Generating mesh ";
-    std::vector<State3d<double>> meshPoints;
-    if (mode == '1') {
-      std::cout << "based on SOI radius" << std::endl;
-      // meshPoints = CreateCircleMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
-      meshPoints = createDimensionlessCartesianMesh(MeshCenter, MESH_HALF_WIDTH, MESH_DIVISION);
-    } else if (mode == '2') {
-      // std::cout << "based on the specified point" << std::endl;
-      // meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
+    std::cout << "  Initial state (before conberting): "
+              << cfg.asteroid_state_helio.x - cfg.earth_state_helio.x << " "
+              << cfg.asteroid_state_helio.y - cfg.earth_state_helio.y << " "
+              << cfg.asteroid_state_helio.z - cfg.earth_state_helio.z << " "
+              << cfg.asteroid_state_helio.vx - cfg.earth_state_helio.vx << " "
+              << cfg.asteroid_state_helio.vy - cfg.earth_state_helio.vy << " "
+              << cfg.asteroid_state_helio.vz - cfg.earth_state_helio.vz << "\n";
+    std::cout << "  Initial state (nd): " << initial_state_nd.x << " " << initial_state_nd.y << " "
+              << initial_state_nd.z << " " << initial_state_nd.vx << " " << initial_state_nd.vy
+              << " " << initial_state_nd.vz << "\n";
+    std::cout << " Jacobi constant: " << crtbp::calc_jacobi_integral(initial_state_nd, units.mu)
+              << "\n";
+    double target_jacobi = 3.0;
+    std::cout << " Target Jacobi constant: " << target_jacobi << "\n";
+    State3d<double> state(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z);
+    double needed_v_abs =
+        crtbp::calc_v_abs(
+            State3d<double>(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z),
+            target_jacobi, units.mu) -
+        crtbp::calc_v_abs(
+            State3d<double>(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z),
+            crtbp::calc_jacobi_integral(initial_state_nd, units.mu), units.mu);
+    std::cout << " Needed delta-v to reach target Jacobi: " << needed_v_abs * units.vu_m_per_s
+              << " m/s\n";
+    utils::WaitForEnter();
+
+    const double natural_duration_nd = cfg.natural_duration_days / units.tu_day;
+    const double natural_dt_nd = cfg.natural_dt_days / units.tu_day;
+    if (natural_duration_nd <= 0 || natural_dt_nd <= 0) {
+      std::cerr << "Invalid natural trajectory time settings. duration_nd=" << natural_duration_nd
+                << " dt_nd=" << natural_dt_nd << "\n";
+      continue;
     }
-    int countt = meshPoints.size();
-    std::cout << "<>        " << countt << " mesh generated successfully" << std::endl;
-    std::cout << "<>        Start calclation" << std::endl;
 
-    // ---------出力ファイル設定---------
-    std::string output_base_path = OUTPUT_DIR;
-    // シミュレーション終了時刻が同じでもファイル名が被らないようにする
-    std::string filename = output_base_path + "/3D_crtbp_SALI/configdata_" +
-                           std::to_string(configdata_num) + "_" + getcurrent_date() + ".dat";
-    std::ofstream ofs1(filename);
-    if (!ofs1) {
-      std::filesystem::path filepath(filename);
-      std::filesystem::path dir = filepath.parent_path();
-      if (!std::filesystem::exists(dir)) {
-        std::filesystem::create_directories(dir);
+    auto samples = IntegrateNaturalTrajectory(astro_params, initial_state_nd, natural_duration_nd,
+                                              natural_dt_nd, kMU, units);
+    if (samples.empty()) {
+      std::cerr << "Natural trajectory integration produced no samples.\n";
+      continue;
+    }
+
+    // Identify the segment inside the Hill sphere.
+    size_t start_idx = 0;
+    size_t end_idx = samples.size() - 1;
+    if (cfg.limit_to_hill) {
+      bool found = false;
+      for (size_t i = 0; i < samples.size(); ++i) {
+        if (samples[i].r2 <= 3.0 * units.hill_radius) {
+          start_idx = i;
+          found = true;
+          break;
+        }
       }
-      ofs1.open(filename);
-      if (!ofs1) {
-        std::cerr << "Failed to open file even after creating directory: " << filename << std::endl;
-        return -1;
+      for (size_t i = samples.size(); i-- > 0;) {
+        if (samples[i].r2 <= 3.0 * units.hill_radius) {
+          end_idx = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        std::cout << "  Warning: orbit never enters Hill sphere. Using full trajectory.\n";
+        start_idx = 0;
+        end_idx = samples.size() - 1;
       }
     }
-    // ヘッダーを書き込む
-    ofs1 << "# MESH CENTER=" << center_str << std::endl;
-    ofs1 << "# MESH DIVISION=" << MESH_DIVISION.x << " " << MESH_DIVISION.y << " "
-         << MESH_DIVISION.z << std::endl;
-    ofs1 << "# MESH HALF WIDTH=" << MESH_HALF_WIDTH.x << " " << MESH_HALF_WIDTH.y << " "
-         << MESH_HALF_WIDTH.z << std::endl;
-    ofs1 << "# CALCULATION TIMESTEP=" << CALC_TIMESTEP << std::endl;
-    ofs1 << "# SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
-    ofs1 << "# RADIUSofSOI=" << SOI_RADIUS << std::endl;
-    ofs1 << "# FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
-    ofs1 << "# INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
-    ofs1 << "# INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
-    ofs1 << "# LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
-    ofs1 << "# DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
-    ofs1 << "Time,SALI,x,y,z,px,py,pz\n";
 
-    // 計算のステップ数
-    int num_step = static_cast<int>(SALI_CALCTIME_THRESHOLD / CALC_TIMESTEP);
-    int totalIterations = meshPoints.size();
-    // 進捗カウンタ
-    int completed_count = 0;
+    // Select samples along the arc (with stride).
+    std::vector<MapTask> tasks;
+    const size_t stride = static_cast<size_t>(std::max(1, cfg.sample_stride));
+    const double theta_start = cfg.theta_start_deg;
+    const double theta_end = cfg.theta_end_deg;
+    const double theta_step = cfg.theta_step_deg > 0 ? cfg.theta_step_deg : 1.0;
 
-// OpenMP並列化ループ
-#pragma omp parallel shared(meshPoints, completed_count, totalIterations, progress, ofs1)
-    {
-      // 各スレッドがSALIの結果を一時的に保存する文字列
-      std::stringstream local_output_buffer;
-      local_output_buffer << std::fixed << std::setprecision(15);
-#pragma omp for schedule(dynamic)
-      for (int idx = 0; idx < static_cast<int>(meshPoints.size()); ++idx) {
-        const auto& point = meshPoints[idx];
-        int mesh_num = idx + 1;
-        bool velo_err = 0;
-        double final_sali = -1;
-        double vx = 0.0, vy = 0.0, vz = 0.0;
-
-        double v_abs = calc_v_abs(point, JACOBI_INTEGRAL, kMU);
-
-        if (v_abs > 0) {
-          State3d<double> velocity = calc_velocity(point, v_abs, kMU, inclination, OMEGA, THETA);
-          vx = velocity.x;
-          vy = velocity.y;
-          vz = velocity.z;
-        } else {
-          velo_err = 1;
-        }
-
-        if (velo_err) {
-          completed_count++;
-          continue;
-        }
-        State<double> initial_state = {point.x, point.y, point.z, vx, vy, vz};
-        SaliState<double> sali_state;
-        sali_state.state = ConvertToCanonical(initial_state);
-        // 偏差ベクトル w1, w2 の初期化
-        sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
-        // 積分ループ (オブザーバー無し)
-        for (int step = 0; step < num_step; ++step) {
-          // 1. 積分s
-          integrator(&sali_state, CALC_TIMESTEP);
-          // 2. 正規化
-          sali_state.w1.Normalize();
-          sali_state.w2.Normalize();
-        }
-
-        State<double> final_state = ConvertToPhysical(sali_state.state);
-        if (calc_r2(final_state.x, final_state.y, final_state.z, kMU) < SOI_RADIUS &&
-            calc_r2(final_state.x, final_state.y, final_state.z, kMU) > FOREBIDDEN_AREA_RADIUS) {
-          const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-          const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-          final_sali = std::min(norm_plus, norm_minus);
-        }
-        local_output_buffer << mesh_num << "," << final_sali << "," << point.x << "," << point.y
-                            << "," << point.z << "," << vx << "," << vy << "," << vz << "\n";
-        // 一定件数ごとにバッファをファイルに書き込む (排他制御)
-        if (idx % 100 == 0 || idx == totalIterations - 1) {
-#pragma omp critical
-          {
-            ofs1 << local_output_buffer.str();
-            local_output_buffer.str("");  // バッファをクリア
-          }
-        }
-#pragma omp atomic
-        completed_count++;
-
-#pragma omp critical
-        {
-          int display_interval = std::max(totalIterations / 100, 1);
-          if (completed_count % display_interval == 0 || completed_count == totalIterations) {
-            double current_progress = static_cast<double>(completed_count) / totalIterations;
-
-            // (注: この関数が内部で std::cout を使う前提)
-            displayProgressBarThreadSafe(current_progress);
-          }
-        }
+    for (size_t idx = start_idx; idx <= end_idx; idx += stride) {
+      for (double th = theta_start; th <= theta_end + 1e-9; th += theta_step) {
+        tasks.push_back(MapTask{&samples[idx], th});
       }
-    }  // end of parallel region
+    }
 
-    // 最終的な進捗バー表示
-    displayProgressBarThreadSafe(1.0);
-    std::cout << std::endl;
+    std::cout << "  Using samples [" << start_idx << ", " << end_idx << "] (total "
+              << samples.size() << ")\n";
+    std::cout << "  Map tasks: " << tasks.size() << " (theta step " << theta_step << " deg)\n";
 
-    ofs1.close();
-    std::cout << "<>    Output File:" << filename << std::endl;
-    auto end = std::chrono::system_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    // Dump natural trajectory and SALI map.
+    const std::string tag =
+        cfg.output_tag.empty() ? fs::path(config_path).stem().string() : cfg.output_tag;
+    const std::string trajectory_file = kOutputDir + "/" + tag + "_trajectory.csv";
+    const std::string map_file = kOutputDir + "/" + tag + "_sali_map.csv";
 
-    auto msec = duration.count() % 1000;
-    auto sec = duration.count() / 1000 % 60;
-    auto min = duration.count() / 1000 / 60 % 60;
-    auto hour = duration.count() / 1000 / 60 / 60;
+    WriteTrajectoryCsv(trajectory_file, samples, units.hill_radius);
 
-    // if (mode2 == '1') {
-    //   break;
-    // }
-    std::cout << "<>        elapsed time : " << hour << "h " << min << "m " << sec << "s " << msec
-              << "ms" << std::endl;
-    // std::cout << "<>        Simulation for " << configfilename << " finished" << std::endl;
-    std::cout << "<>        Simulation for " << configfilepath << " finished" << std::endl;
-    // configdata_num++;
-    // configfilename =
-    //     config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" + std::to_string(configdata_num) +
-    //     ".txt";
-    // std::cout << "<>        Next config file : " << configfilename << std::endl;
-    // ifs.open(configfilename);
+    const double sali_duration_nd = cfg.sali_duration_days / units.tu_day;
+    const double sali_dt_nd = cfg.sali_dt_days / units.tu_day;
+    const double dv_nd = cfg.dv_magnitude_mps / units.vu_m_per_s;
+    WriteMapCsv(map_file, units, cfg, sali_duration_nd, sali_dt_nd, tasks, dv_nd, units.hill_radius,
+                cfg.forbidden_radius, astro_params);
+
+    std::cout << "  -> trajectory: " << trajectory_file << "\n";
+    std::cout << "  -> SALI map : " << map_file << "\n";
   }
 
-  // 実行時間の計測
-  auto end = std::chrono::system_clock::now();
-
-  // 実行時間の計算
-  auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start_ofall);
-
-  // 時、分、秒、ミリ秒に分解
-  auto msec = duration.count() % 1000;
-  auto sec = duration.count() / 1000 % 60;
-  auto min = duration.count() / 1000 / 60 % 60;
-  auto hour = duration.count() / 1000 / 60 / 60;
-
-  std::cout << "<>" << std::endl;
-  std::cout << "<>        Calculation finished" << std::endl;
-  std::cout << "<>        Total elapsed time : " << hour << "h " << min << "m " << sec << "s "
-            << msec << "ms" << std::endl;
-
+  std::cout << "\nAll configs processed.\n";
   return 0;
 }
 
-std::vector<std::streampos> indexFile(const std::string& filename) {
-  std::ifstream file(filename, std::ios::binary);
-  if (!file.is_open()) {
-    throw std::runtime_error("ファイルを開けませんでした: " + filename);
+bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* config) {
+  if (config == nullptr) return false;
+
+  std::ifstream ifs(filepath);
+  if (!ifs) {
+    std::cerr << "Cannot open config: " << filepath << "\n";
+    return false;
   }
 
-  std::vector<std::streampos> linePositions;
   std::string line;
+  auto trim = [](const std::string& s) -> std::string {
+    const auto start = s.find_first_not_of(" \t");
+    const auto end = s.find_last_not_of(" \t");
+    if (start == std::string::npos) {
+      std::cout << "  Warning: empty or whitespace-only line encountered during config parsing.\n";
+      return "";
+    };
 
-  // 最初の行の開始位置を記録
-  linePositions.push_back(file.tellg());
+    return s.substr(start, end - start + 1);
+  };
 
-  // 各行の開始位置を記録
-  while (std::getline(file, line)) {
-    linePositions.push_back(file.tellg());
+  auto parse_state = [](const std::string& rhs, State<double>* out) -> bool {
+    if (out == nullptr) return false;
+    std::stringstream ss(rhs);
+    std::array<double, 6> values{};
+    for (int i = 0; i < 6; ++i) {
+      if (!(ss >> values[i])) return false;
+    }
+    *out = State<double>{values[0], values[1], values[2], values[3], values[4], values[5]};
+    return true;
+  };
+
+  bool earth_found = false;
+  bool asteroid_found = false;
+
+  while (std::getline(ifs, line)) {
+    if (line.empty() || line[0] == '#') continue;
+    const auto pos = line.find('=');
+    if (pos == std::string::npos) continue;
+    const std::string key = trim(line.substr(0, pos));
+    const std::string value = trim(line.substr(pos + 1));
+
+    if (key == "ASTEROID_STATE_HELIO_AU" || key == "ASTEROID_STATE_AU") {
+      if (!parse_state(value, &config->asteroid_state_helio)) {
+        std::cerr << "  Failed to parse ASTEROID_STATE_HELIO_AU\n";
+        return false;
+      }
+      asteroid_found = true;
+    } else if (key == "EARTH_STATE_HELIO_AU" || key == "EARTH_STATE_AU") {
+      if (!parse_state(value, &config->earth_state_helio)) {
+        std::cerr << "  Failed to parse EARTH_STATE_HELIO_AU\n";
+        return false;
+      }
+      earth_found = true;
+    } else if (key == "NATURAL_DURATION_DAYS") {
+      config->natural_duration_days = std::stod(value);
+    } else if (key == "NATURAL_DT_DAYS") {
+      config->natural_dt_days = std::stod(value);
+    } else if (key == "MAP_SAMPLE_STRIDE") {
+      config->sample_stride = std::stoi(value);
+    } else if (key == "DV_MPS") {
+      config->dv_magnitude_mps = std::stod(value);
+    } else if (key == "THETA_RANGE_DEG") {
+      std::stringstream ss(value);
+      ss >> config->theta_start_deg >> config->theta_end_deg >> config->theta_step_deg;
+    } else if (key == "SALI_DURATION_DAYS") {
+      config->sali_duration_days = std::stod(value);
+    } else if (key == "SALI_DT_DAYS") {
+      config->sali_dt_days = std::stod(value);
+    } else if (key == "FORBIDDEN_RADIUS") {
+      config->forbidden_radius = std::stod(value);
+    } else if (key == "LIMIT_TO_HILL") {
+      config->limit_to_hill = (std::stoi(value) != 0);
+    } else if (key == "OUTPUT_TAG") {
+      config->output_tag = value;
+    }
   }
 
-  return linePositions;
+  if (!earth_found || !asteroid_found) {
+    std::cerr << "  Missing Earth/Asteroid state definitions in " << filepath << "\n";
+    return false;
+  }
+
+  return true;
 }
 
-std::string readSpecificLine(const std::string& filename,
-                             const std::vector<std::streampos>& linePositions, int targetLine) {
-  if (targetLine < 1 || targetLine >= static_cast<int>(linePositions.size())) {
-    throw std::out_of_range("指定した行が範囲外です: " + std::to_string(targetLine));
+NaturalUnits ComputeNaturalUnits(const State<double>& earth_state_helio,
+                                 const AstroConstants<double>& astro) {
+  NaturalUnits units{};
+  units.mu = astro.gm_earth / (astro.gm_earth + astro.gm_sun);
+
+  const double kM3s2_to_AU3day2 =
+      (kSecondsPerDay * kSecondsPerDay) / (astro.au * astro.au * astro.au);
+  const double gm_sun_AD = astro.gm_sun * kM3s2_to_AU3day2;
+  const double gm_earth_AD = astro.gm_earth * kM3s2_to_AU3day2;
+  const double gm_total_AD = gm_sun_AD + gm_earth_AD;
+
+  const Vector3d<double> r_p2_G{earth_state_helio.x, earth_state_helio.y, earth_state_helio.z};
+  if (r_p2_G.magnitude() <= 0.0) {
+    throw std::runtime_error("Earth position magnitude must be positive to build CRTBP units.");
+  }
+  const double mean_motion_AD = std::sqrt(gm_total_AD);  // LU = 1 AU -> r = 1
+  const double tu_day = 1.0 / mean_motion_AD;
+  const double vu_au_day = 1.0 / tu_day;  // LU = 1 AU
+
+  units.lu_au = 1.0;
+  units.tu_day = tu_day;
+  units.vu_au_per_day = vu_au_day;
+  units.vu_m_per_s = vu_au_day * astro.au / kSecondsPerDay;
+  units.hill_radius = std::cbrt(units.mu / 3.0);  // normalized Earth Hill sphere radius
+  return units;
+}
+
+std::vector<TrajectorySample> IntegrateNaturalTrajectory(const AstroConstants<double>& astro,
+                                                         const State<double>& initial_state_nd,
+                                                         double duration_nd, double dt_nd,
+                                                         double mu, const NaturalUnits& units) {
+  std::vector<TrajectorySample> samples;
+  const int steps = static_cast<int>(std::ceil(duration_nd / dt_nd));
+  samples.reserve(static_cast<size_t>(steps) + 1);
+
+  auto observer = [&](const State<double>& state, double t) {
+    const double r2 = calc_r2(state.x, state.y, state.z, mu);
+    samples.push_back(TrajectorySample{t, t * units.tu_day, state, r2});
+  };
+
+  State<double> work_state = initial_state_nd;
+  IntegrateDopri5Orbit(astro, work_state, 0.0, duration_nd, dt_nd, observer);
+  return samples;
+}
+
+class SaliRecorder {
+ public:
+  void operator()(const SaliState<double>& state, double /*t*/) {
+    const double norm_plus = (state.w1 + state.w2).Norm();
+    const double norm_minus = (state.w1 - state.w2).Norm();
+    last_sali_ = std::min(norm_plus, norm_minus);
   }
 
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    throw std::runtime_error("ファイルを開けませんでした: " + filename);
+  double last_sali() const { return last_sali_; }
+
+ private:
+  double last_sali_ = std::numeric_limits<double>::quiet_NaN();
+};
+
+bool EvaluateSali(const MapTask& task, double theta_rad, double dv_nd, double mu,
+                  double hill_radius, double forbidden_radius, double sali_duration_nd,
+                  double sali_dt_nd, const AstroConstants<double>& astro, MapResult* output) {
+  if (output == nullptr || task.sample == nullptr) return false;
+
+  const State<double>& base_state = task.sample->state;
+  Vector3d<double> v_vec{base_state.vx, base_state.vy, base_state.vz};
+  const double speed = v_vec.magnitude();
+  if (speed < 1e-10) {
+    return false;
+  }
+  Vector3d<double> tangent = v_vec.normalise();
+
+  // Build an in-plane basis (tangent, radial).
+  Vector3d<double> r_to_earth{base_state.x - (1.0 - mu), base_state.y, base_state.z};
+  Vector3d<double> h_vec = r_to_earth.gaiseki(v_vec);
+  if (h_vec.magnitude() < 1e-12) {
+    // Degenerate: pick an arbitrary normal perpendicular to tangent.
+    if (std::abs(tangent.x()) < 0.9) {
+      h_vec = Vector3d<double>(0.0, 0.0, 1.0);
+    } else {
+      h_vec = Vector3d<double>(0.0, 1.0, 0.0);
+    }
+  }
+  Vector3d<double> normal = h_vec.normalise();
+  Vector3d<double> radial = normal.gaiseki(tangent).normalise();
+
+  const double c = std::cos(theta_rad);
+  const double s = std::sin(theta_rad);
+  const Vector3d<double> dv_dir = tangent * c + radial * s;
+
+  State<double> kicked_state = base_state;
+  kicked_state.vx += dv_nd * dv_dir.x();
+  kicked_state.vy += dv_nd * dv_dir.y();
+  kicked_state.vz += dv_nd * dv_dir.z();
+
+  SaliState<double> sali_state;
+  sali_state.state = ConvertToCanonical(kicked_state);
+  sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+
+  SaliRecorder recorder;
+  IntegrateDopri5SALI(astro, sali_state, 0.0, sali_duration_nd, sali_dt_nd, recorder, true);
+
+  const State<double> final_state = ConvertToPhysical(sali_state.state);
+  const double final_r2 = calc_r2(final_state.x, final_state.y, final_state.z, mu);
+
+  output->t_nd = task.sample->t_nd;
+  output->t_days = task.sample->t_days;
+  output->theta_deg = task.theta_deg;
+  output->base_r2 = task.sample->r2;
+  output->final_r2 = final_r2;
+  output->sali = recorder.last_sali();
+  output->base_state = base_state;
+  output->post_state = final_state;
+
+  // If the orbit after the impulse escapes or collides, flag with NaN.
+  if (final_r2 > hill_radius || final_r2 < forbidden_radius) {
+    output->sali = std::numeric_limits<double>::quiet_NaN();
+  }
+  return true;
+}
+
+void WriteTrajectoryCsv(const std::string& filepath, const std::vector<TrajectorySample>& samples,
+                        double hill_radius) {
+  std::ofstream ofs(filepath);
+  if (!ofs) {
+    std::cerr << "Failed to open trajectory output: " << filepath << "\n";
+    return;
+  }
+  ofs << std::fixed << std::setprecision(15);
+  ofs << "# time_days,time_nd,x,y,z,vx,vy,vz,r2,inside_hill\n";
+  for (const auto& s : samples) {
+    const bool inside = (s.r2 <= hill_radius);
+    ofs << s.t_days << "," << s.t_nd << "," << s.state.x << "," << s.state.y << "," << s.state.z
+        << "," << s.state.vx << "," << s.state.vy << "," << s.state.vz << "," << s.r2 << ","
+        << (inside ? 1 : 0) << "\n";
+  }
+}
+
+void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
+                 const TrajectorySaliConfig& cfg, double sali_duration_nd, double sali_dt_nd,
+                 const std::vector<MapTask>& tasks, double dv_nd, double hill_radius,
+                 double forbidden_radius, const AstroConstants<double>& astro) {
+  std::ofstream ofs(filepath);
+  if (!ofs) {
+    std::cerr << "Failed to open SALI map output: " << filepath << "\n";
+    return;
   }
 
-  // 指定した行の位置にシーク
-  file.seekg(linePositions[targetLine - 1]);
+  ofs << std::fixed << std::setprecision(15);
+  ofs << "# SALI map along natural trajectory\n";
+  ofs << "# DV_mps=" << cfg.dv_magnitude_mps << " (nd=" << dv_nd << ")\n";
+  ofs << "# theta_range_deg=" << cfg.theta_start_deg << " " << cfg.theta_end_deg
+      << " step=" << cfg.theta_step_deg << "\n";
+  ofs << "# sali_duration_nd=" << sali_duration_nd << " sali_dt_nd=" << sali_dt_nd << "\n";
+  ofs << "# hill_radius=" << hill_radius << " forbidden_radius=" << forbidden_radius << "\n";
+  ofs << "# LU(AU)=" << units.lu_au << " TU(days)=" << units.tu_day
+      << " VU(m/s)=" << units.vu_m_per_s << "\n";
+  ofs << "time_days,time_nd,theta_deg,base_r2,final_r2,inside_hill,x,y,z,vx,vy,vz,"
+         "post_x,post_y,post_z,post_vx,post_vy,post_vz,sali\n";
 
-  std::string line;
-  std::getline(file, line);
-  return line;
+  std::ostringstream buffer;
+  buffer << std::fixed << std::setprecision(15);
+
+#pragma omp parallel
+  {
+    std::ostringstream local;
+    local << std::fixed << std::setprecision(15);
+
+#pragma omp for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(tasks.size()); ++i) {
+      const MapTask& task = tasks[static_cast<size_t>(i)];
+      MapResult result;
+      const double theta_rad = task.theta_deg * kPi / 180.0;
+      if (!EvaluateSali(task, theta_rad, dv_nd, units.mu, 3.0 * hill_radius, forbidden_radius,
+                        sali_duration_nd, sali_dt_nd, astro, &result)) {
+        continue;
+      }
+
+      const bool inside_final =
+          result.final_r2 <= hill_radius && result.final_r2 >= forbidden_radius;
+      local << result.t_days << "," << result.t_nd << "," << result.theta_deg << ","
+            << result.base_r2 << "," << result.final_r2 << "," << (inside_final ? 1 : 0) << ","
+            << result.base_state.x << "," << result.base_state.y << "," << result.base_state.z
+            << "," << result.base_state.vx << "," << result.base_state.vy << ","
+            << result.base_state.vz << "," << result.post_state.x << "," << result.post_state.y
+            << "," << result.post_state.z << "," << result.post_state.vx << ","
+            << result.post_state.vy << "," << result.post_state.vz << "," << result.sali << "\n";
+    }
+
+#pragma omp critical
+    buffer << local.str();
+  }
+
+  ofs << buffer.str();
+}
+
+std::vector<std::string> DiscoverConfigFiles(const std::string& directory,
+                                             const std::string& prefix) {
+  std::vector<std::string> files;
+  if (!fs::exists(directory)) {
+    std::cerr << "Config directory does not exist: " << directory << "\n";
+    return files;
+  }
+  const std::regex pattern("^" + prefix + "(?:_\\d+)?\\.txt$");
+  try {
+    for (const auto& entry : fs::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) continue;
+      const auto name = entry.path().filename().string();
+      if (std::regex_match(name, pattern)) {
+        files.push_back(fs::absolute(entry.path()).string());
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to read config directory: " << e.what() << "\n";
+    return files;
+  }
+
+  auto sorter = [](const std::string& a, const std::string& b) {
+    const std::string stem_a = fs::path(a).stem().string();
+    const std::string stem_b = fs::path(b).stem().string();
+    auto number_from_stem = [](const std::string& stem) -> int {
+      const auto pos = stem.find_last_of('_');
+      if (pos == std::string::npos) return 0;
+      return std::stoi(stem.substr(pos + 1));
+    };
+    return number_from_stem(stem_a) < number_from_stem(stem_b);
+  };
+  std::sort(files.begin(), files.end(), sorter);
+  return files;
 }

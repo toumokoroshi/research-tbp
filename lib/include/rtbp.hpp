@@ -514,26 +514,18 @@ State3d<ScalarType> calc_velocity(const State3d<ScalarType>& point, const Scalar
   }
 }
 
-template <typename ElementType, typename ScalarType, std::size_t Dim>
-const std::array<ElementType, Dim> ConvertInertial2Rotating____(
-    const std::array<ElementType, Dim>& ast_state, const std::array<ElementType, Dim>& p2_state,
+template <typename ScalarType>
+const State<ScalarType> ConvertInertial2Rotating____(
+    const State<ScalarType>& ast_state, const State<ScalarType>& p2_state,
     const AstroConstants<ScalarType>& astro_params) {
-  static_assert((std::is_same_v<ElementType, ScalarType> && Dim == 6) ||
-                    (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2),
-                "Array must be either std::array<ScalarType, 6> or "
-                "std::array<Vector3d<ScalarType>, 2>");
   std::array<Vector3d<ScalarType>, 2> init_ast_state_G;
   std::array<Vector3d<ScalarType>, 2> init_p2_state_G;
-  if constexpr (std::is_same_v<ElementType, ScalarType> && Dim == 6) {
-    init_ast_state_G = {Vector3d<ScalarType>(ast_state[0], ast_state[1], ast_state[2]),
-                        Vector3d<ScalarType>(ast_state[3], ast_state[4], ast_state[5])};
-    init_p2_state_G = {Vector3d<ScalarType>(p2_state[0], p2_state[1], p2_state[2]),
-                       Vector3d<ScalarType>(p2_state[3], p2_state[4], p2_state[5])};
-  } else if constexpr (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2) {
-    init_ast_state_G = {ast_state[0], ast_state[1]};
-    init_p2_state_G = {p2_state[0], p2_state[1]};
-  }
-
+  init_ast_state_G = {{Vector3d<ScalarType>(ast_state.x, ast_state.y, ast_state.z),
+                       Vector3d<ScalarType>(ast_state.vx, ast_state.vy, ast_state.vz)}};
+  init_p2_state_G = {{Vector3d<ScalarType>(p2_state.x, p2_state.y, p2_state.z),
+                      Vector3d<ScalarType>(p2_state.vx, p2_state.vy, p2_state.vz)}};
+  const ScalarType mu =
+      astro_params.gm_earth / (astro_params.gm_sun + astro_params.gm_earth);  // 質量比
   // 慣性座標系での基底ベクトル
   Vector3d<ScalarType> G_x{1.0, 0.0, 0.0};
   Vector3d<ScalarType> G_y{0.0, 1.0, 0.0};
@@ -560,7 +552,7 @@ const std::array<ElementType, Dim> ConvertInertial2Rotating____(
   // 慣性系から見た中間座標系rot1のz軸
   Vector3d<ScalarType> rot1_z = ApplyMatrix(rotate1, G_z);
 
-  //   慣性座標系から見た地球軌道面の法線ベクトルと慣性系から見た中間座標系rot1のz軸がなす角度を計算
+  //  慣性座標系から見た地球軌道面の法線ベクトルと慣性系から見た中間座標系rot1のz軸がなす角度を計算
   ScalarType theta2 = std::atan2(n_plane.gaiseki(rot1_z).magnitude(), n_plane.naiseki(rot1_z));
   Vector3d<ScalarType> rotax2 = {1.0, 0.0, 0.0};
 
@@ -573,15 +565,15 @@ const std::array<ElementType, Dim> ConvertInertial2Rotating____(
   Vector3d<ScalarType> epos_R1 = ApplyMatrix(convert_G_to_R1, init_p2_state_G[0]);
   Vector3d<ScalarType> ast_pos_R2 = ApplyMatrix(convert_R1_to_R2, ast_pos_R1);
   Vector3d<ScalarType> epos_R2 = ApplyMatrix(convert_R1_to_R2, epos_R1);
-  Vector3d<ScalarType> ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - astro_params.mu,
-                                 ast_pos_R2.y(), ast_pos_R2.z()};
+  Vector3d<ScalarType> ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - mu, ast_pos_R2.y(),
+                                 ast_pos_R2.z()};
 
   /* calc the velocity of rotating frame */
   //  変換行列convert_G_to_R1の微分を計算
   // theta1の微分
 
   ScalarType ND_time_ref =
-      std::sqrt(astro_params.au * astro_params.au / astro_params.gm_sun);  // Non-Dimensional time
+      std::sqrt(astro_params.au * astro_params.au / astro_params.gm_sun);  // Non-Dimensionaltime
   ScalarType mean_motion = 1 / ND_time_ref;
   std::cout << "mean motion = " << mean_motion << std::endl;
   // conbert AU/day to Non-Dimensional
@@ -599,7 +591,7 @@ const std::array<ElementType, Dim> ConvertInertial2Rotating____(
   ScalarType sin_theta1 = std::sqrt(1. - std::cos(theta1) * std::cos(theta1));
 
   // ScalarType dot_theta1 = -(ND_e_G_vx * poo * poo -
-  //                      e_G_x * (e_G_x * ND_e_G_vx + e_G_y * ND_e_G_vy +
+  //                      e_G_x * (e_G_x * ND_e_G_vx + e_G_sy * ND_e_G_vy +
   //                      e_G_z * ND_e_G_vz)) /
   //                      <-
   //                      円制限三体問題だからちきゅうの速度と位置の内積は0
@@ -676,12 +668,8 @@ const std::array<ElementType, Dim> ConvertInertial2Rotating____(
   std::cout << "converted earth velocity = " << e_vel_R.x() << " " << e_vel_R.y() << " "
             << e_vel_R.z() << std::endl;
   std::cout << "<>                 Asteroid data converted to rotating frame" << std::endl;
-  if constexpr (std::is_same_v<ElementType, ScalarType> && Dim == 6) {
-    return {ast_pos_R.x(), ast_pos_R.y(), ast_pos_R.z(),
-            ast_vel_R.x(), ast_vel_R.y(), ast_vel_R.z()};
-  } else if constexpr (std::is_same_v<ElementType, Vector3d<ScalarType>> && Dim == 2) {
-    return {ast_pos_R, ast_vel_R};
-  }
+  return {State<ScalarType>(ast_pos_R.x(), ast_pos_R.y(), ast_pos_R.z(), ast_vel_R.x(),
+                            ast_vel_R.y(), ast_vel_R.z())};
 }
 
 /**
@@ -968,7 +956,7 @@ void CalculateGradientAndHessianU(const ScalarType mu, ScalarType x, ScalarType 
  * @cite yoshida,ハミルトン力学系のためのシンプレクティック数値積分法,
  */
 template <typename ScalarType>
-void ApplyRotation(CanonicalState<ScalarType>* state, ScalarType angle) {
+void RotateState(CanonicalState<ScalarType>* state, ScalarType angle) {
   const ScalarType c = std::cos(angle);
   const ScalarType s = std::sin(angle);
 
@@ -1004,7 +992,7 @@ void ApplyRotation(CanonicalState<ScalarType>* state, ScalarType angle) {
  * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  */
 template <typename ScalarType>
-void ApplyKick(const ScalarType mu, CanonicalState<ScalarType>* state, ScalarType dt) {
+void UpdateMomentum(const ScalarType mu, CanonicalState<ScalarType>* state, ScalarType dt) {
   ScalarType grad_U[3];
   CalculateGradientU(mu, state->qx, state->qy, state->qz, grad_U);
 
@@ -1032,7 +1020,7 @@ void ApplyKick(const ScalarType mu, CanonicalState<ScalarType>* state, ScalarTyp
  * 共同研究「非線形現象の数理科学」湘南レクチャー論文集, p. 68-83, 1997.
  */
 template <typename ScalarType>
-void ApplyDrift(CanonicalState<ScalarType>* state, ScalarType dt) {
+void UpdatePosition(CanonicalState<ScalarType>* state, ScalarType dt) {
   state->qx += dt * state->px;
   state->qy += dt * state->py;
   state->qz += dt * state->pz;
@@ -1044,10 +1032,10 @@ void ApplyDrift(CanonicalState<ScalarType>* state, ScalarType dt) {
  * @param[in] angle 回転角（ラジアン）
  */
 template <typename ScalarType>
-void ApplyRotationSALI(SaliState<ScalarType>* state, ScalarType angle) {
-  ApplyRotation(&(state->state), angle);
-  ApplyRotation(&(state->w1), angle);
-  ApplyRotation(&(state->w2), angle);
+void RotateStateSALI(SaliState<ScalarType>* state, ScalarType angle) {
+  RotateState(&(state->state), angle);
+  RotateState(&(state->w1), angle);
+  RotateState(&(state->w2), angle);
 }
 
 /**
@@ -1056,10 +1044,10 @@ void ApplyRotationSALI(SaliState<ScalarType>* state, ScalarType angle) {
  * @param[in] dt 時間ステップ幅
  */
 template <typename ScalarType>
-void ApplyDriftSALI(SaliState<ScalarType>* state, ScalarType dt) {
-  ApplyDrift(&(state->state), dt);
-  ApplyDrift(&(state->w1), dt);
-  ApplyDrift(&(state->w2), dt);
+void UpdatePositionSALI(SaliState<ScalarType>* state, ScalarType dt) {
+  UpdatePosition(&(state->state), dt);
+  UpdatePosition(&(state->w1), dt);
+  UpdatePosition(&(state->w2), dt);
 }
 
 /**
@@ -1082,7 +1070,7 @@ void ApplyDriftSALI(SaliState<ScalarType>* state, ScalarType dt) {
  * @param dt 時間ステップ幅
  */
 template <typename ScalarType>
-void ApplyKickSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType dt) {
+void UpdateMomentumSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType dt) {
   ScalarType grad_U[3];
   HessianMatrix<ScalarType> hessian_U;
 
@@ -1328,15 +1316,15 @@ State<ScalarType> SymplecticStep(const ScalarType mu, const State<ScalarType>& s
   CanonicalState<ScalarType> canonical_state = ConvertToCanonical(state);
 
   // 1. B(h/2) - 回転
-  ApplyRotation(&canonical_state, h / 2.0);
+  RotateState(&canonical_state, h / 2.0);
   // 2. A(h) = Kick(h/2) * Drift(h) * Kick(h/2)
   // qを先に更新　　更新したqを使って最終的なp,qを出す
-  ApplyDrift(&canonical_state, h / 2.0);
-  ApplyKick(mu, &canonical_state, h);
-  ApplyDrift(&canonical_state, h / 2.0);
+  UpdatePosition(&canonical_state, h / 2.0);
+  UpdateMomentum(mu, &canonical_state, h);
+  UpdatePosition(&canonical_state, h / 2.0);
 
   // 3. B(h/2) - 回転
-  ApplyRotation(&canonical_state, h / 2.0);
+  RotateState(&canonical_state, h / 2.0);
   return ConvertToPhysical(canonical_state);
 }
 
@@ -1390,13 +1378,13 @@ State<ScalarType> SymplecticStep4thOrder(const ScalarType mu, const State<Scalar
  */
 template <typename ScalarType>
 void SymplecticStepSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType h) {
-  ApplyRotationSALI(state, h / 2.0);
+  RotateStateSALI(state, h / 2.0);
   // 先にqを更新
-  ApplyDriftSALI(state, h / 2.0);
-  ApplyKickSALI(mu, state, h);
-  ApplyDriftSALI(state, h / 2.0);
+  UpdatePositionSALI(state, h / 2.0);
+  UpdateMomentumSALI(mu, state, h);
+  UpdatePositionSALI(state, h / 2.0);
 
-  ApplyRotationSALI(state, h / 2.0);
+  RotateStateSALI(state, h / 2.0);
 }
 
 /**

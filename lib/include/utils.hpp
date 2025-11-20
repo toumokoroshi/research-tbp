@@ -5,9 +5,11 @@
 #include <array>
 #include <cmath>
 #include <ctime>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <map>
+#include <regex>
 #include <rtbp.hpp>
 #include <sstream>
 #include <stdexcept>
@@ -15,6 +17,7 @@
 #include <vector>
 
 namespace utils {
+namespace fs = std::filesystem;
 using namespace my_type;
 #ifndef __KEYWAIT__
 #define __KEYWAIT__                                           \
@@ -369,5 +372,44 @@ inline param::AstroConstants<ScalarType> loadConstants(const std::string& filena
   astroConstants.G = constants.at("G");
   return astroConstants;  // 読み込んだ構造体を返す
 }
+
+/**
+ * @brief プレフィックスに一致する設定ファイルをディレクトリから列挙。
+ */
+inline std::vector<std::string> DiscoverConfigFiles(const std::string& directory,
+                                                    const std::string& prefix) {
+  std::vector<std::string> files;
+  if (!fs::exists(directory)) {
+    std::cerr << "Config directory does not exist: " << directory << "\n";
+    return files;
+  }
+  const std::regex pattern("^" + prefix + "(?:_\\d+)?\\.txt$");
+  try {
+    for (const auto& entry : fs::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) continue;
+      const auto name = entry.path().filename().string();
+      if (std::regex_match(name, pattern)) {
+        files.push_back(fs::absolute(entry.path()).string());
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to read config directory: " << e.what() << "\n";
+    return files;
+  }
+
+  auto sorter = [](const std::string& a, const std::string& b) {
+    const std::string stem_a = fs::path(a).stem().string();
+    const std::string stem_b = fs::path(b).stem().string();
+    auto number_from_stem = [](const std::string& stem) -> int {
+      const auto pos = stem.find_last_of('_');
+      if (pos == std::string::npos) return 0;
+      return std::stoi(stem.substr(pos + 1));
+    };
+    return number_from_stem(stem_a) < number_from_stem(stem_b);
+  };
+  std::sort(files.begin(), files.end(), sorter);
+  return files;
+}
+
 }  // namespace utils
 #endif  // UTILS_HPP

@@ -1,8 +1,6 @@
 add_executable(trajectory_SALI main.cpp)
 
-target_link_libraries(SALI3dV2 PRIVATE
-    my_lib
-)
+target_link_libraries(trajectory_SALI PRIVATE my_lib)
 
 # OpenMPの設定
 if(OpenMP_CXX_FOUND)

@@ -1,3 +1,4 @@
 {
-    "C_Cpp.clang_format_path": "./clang-format"
+    "C_Cpp.clang_format_path": "./.clang-format",
+    "clangd.path": "c:\\Users\\thayb\\AppData\\Roaming\\Code\\User\\globalStorage\\llvm-vs-code-extensions.vscode-clangd\\install\\19.1.2\\clangd_19.1.2\\bin\\clangd.exe"
 }

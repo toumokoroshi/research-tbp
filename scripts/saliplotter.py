@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Circle
 import pandas as pd
 
 try:
@@ -58,6 +59,25 @@ class SALIContourApp:
         ttk.Checkbutton(control_frame, text="ヘッダを自動検出",
                         variable=self.auto_detect).pack(anchor=tk.W, pady=(0, 10))
 
+
+        hill_frame = ttk.LabelFrame(control_frame, text="??Hill???????")
+        hill_frame.pack(fill=tk.X, pady=(0, 10))
+        hill_frame.columnconfigure(1, weight=1)
+
+        self.show_hill = tk.BooleanVar(value=False)
+        ttk.Checkbutton(hill_frame, text="Hill????", variable=self.show_hill).grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=2)
+
+        ttk.Label(hill_frame, text="?? (AU)").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.hill_radius = tk.DoubleVar(value=0.01)
+        ttk.Entry(hill_frame, textvariable=self.hill_radius, width=10).grid(row=1, column=1, sticky=tk.EW, pady=2)
+
+        ttk.Label(hill_frame, text="??X (AU)").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.hill_center_x = tk.DoubleVar(value=0.0)
+        ttk.Entry(hill_frame, textvariable=self.hill_center_x, width=10).grid(row=2, column=1, sticky=tk.EW, pady=2)
+
+        ttk.Label(hill_frame, text="??Y (AU)").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.hill_center_y = tk.DoubleVar(value=0.0)
+        ttk.Entry(hill_frame, textvariable=self.hill_center_y, width=10).grid(row=3, column=1, sticky=tk.EW, pady=2)
         # --- Z値スライス (スライダーに変更) ---
         ttk.Label(control_frame, text="Z値スライス (AU):").pack(anchor=tk.W, pady=(0, 5))
 
@@ -280,6 +300,28 @@ class SALIContourApp:
                              fontsize=14)
             self.ax.set_aspect('equal')
             self.ax.grid(True, alpha=0.3)
+
+            legend_handles = []
+            if self.show_hill.get():
+                try:
+                    hill_radius = float(self.hill_radius.get())
+                    hill_cx = float(self.hill_center_x.get())
+                    hill_cy = float(self.hill_center_y.get())
+                except (tk.TclError, ValueError):
+                    messagebox.showerror("?????", "Hill???????????????????")
+                    return
+
+                if hill_radius <= 0:
+                    messagebox.showerror("?????", "Hill??????????????????")
+                    return
+
+                hill_circle = Circle((hill_cx, hill_cy), hill_radius, fill=False, linestyle='--',
+                                     linewidth=1.5, edgecolor='green', label='Earth Hill sphere')
+                self.ax.add_patch(hill_circle)
+                legend_handles.append(hill_circle)
+
+            if legend_handles:
+                self.ax.legend(handles=legend_handles, loc='upper right')
 
             # --- ▼▼▼ ここから修正 ▼▼▼ ---
 
