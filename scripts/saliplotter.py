@@ -1,3 +1,5 @@
+from pathlib import Path
+import re
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
@@ -5,7 +7,46 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.patches import Circle
+from matplotlib.lines import Line2D
 import pandas as pd
+
+FALLBACK_MU = 3.0034805945421924e-06
+ASTRO_PARAM_PATH = Path(__file__).resolve().parents[1] / 'configs' / 'astro_param' / 'astro_param.txt'
+ZERO_VELOCITY_COLOR = '#d35400'
+FORBIDDEN_REGION_COLOR = '#ffe8d6'
+JACOBI_PATTERN = re.compile(
+    r'JACOBI(?:\s+(?:INTEGRAL|CONSTANT))?[^:=\n]*[:=]\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)',
+    re.IGNORECASE,
+)
+
+
+def load_mu_parameter():
+    gm_earth = None
+    gm_sun = None
+    try:
+        with open(ASTRO_PARAM_PATH, 'r') as f:
+            for raw_line in f:
+                line = raw_line.split('//', 1)[0].strip()
+                if not line or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                try:
+                    numeric_value = float(value.strip())
+                except ValueError:
+                    continue
+                key_lower = key.strip().lower()
+                if key_lower == 'gm_earth':
+                    gm_earth = numeric_value
+                elif key_lower == 'gm_sun':
+                    gm_sun = numeric_value
+        if gm_earth is not None and gm_sun is not None:
+            return gm_earth / (gm_earth + gm_sun)
+    except OSError:
+        pass
+    return FALLBACK_MU
+
+
+MU_PARAMETER = load_mu_parameter()
 
 try:
     # Windowsの場合
@@ -24,6 +65,8 @@ class SALIContourApp:
         self.root.geometry("1200x800")
 
         self.data = None
+        self.jacobi_constant = None
+        self.mu = MU_PARAMETER
         self.create_widgets()
 
     def create_widgets(self):
@@ -187,11 +230,30 @@ class SALIContourApp:
                     continue
         return 0
 
+    def extract_jacobi_constant(self, filepath, header_lines):
+        """ヘッダーに記されたヤコビ積分を抽出"""
+        lines_to_check = header_lines if header_lines and header_lines > 0 else 30
+        try:
+            with open(filepath, 'r') as f:
+                for idx, line in enumerate(f):
+                    if lines_to_check and idx >= lines_to_check:
+                        break
+                    match = JACOBI_PATTERN.search(line)
+                    if match:
+                        try:
+                            return float(match.group(1))
+                        except ValueError:
+                            continue
+        except OSError:
+            return None
+        return None
+
     def load_data(self):
         if not self.file_path.get():
             messagebox.showerror("エラー", "ファイルを選択してください")
             return
 
+        self.jacobi_constant = None
         try:
             delimiter = self.get_delimiter()
 
@@ -201,6 +263,8 @@ class SALIContourApp:
                 self.header_lines.set(header_lines)
             else:
                 header_lines = self.header_lines.get()
+
+            self.jacobi_constant = self.extract_jacobi_constant(self.file_path.get(), header_lines)
 
             # データ読み込み
             if delimiter is None:
@@ -238,6 +302,10 @@ class SALIContourApp:
             info += f"X範囲: [{self.data['x'].min():.4f}, {self.data['x'].max():.4f}] AU\n"
             info += f"Y範囲: [{self.data['y'].min():.4f}, {self.data['y'].max():.4f}] AU\n"
             info += f"Z範囲: [{self.data['z'].min():.4f}, {self.data['z'].max():.4f}] AU\n"
+            if self.jacobi_constant is not None:
+                info += f"Jacobi integral (C): {self.jacobi_constant:.6f}\n"
+            else:
+                info += "Jacobi integral (C): N/A\n"
 
             self.info_text.delete(1.0, tk.END)
             self.info_text.insert(1.0, info)
@@ -246,6 +314,88 @@ class SALIContourApp:
 
         except Exception as e:
             messagebox.showerror("エラー", f"データ読み込みエラー:\n{str(e)}")
+
+    def draw_zero_velocity_curve(self, z_target, reference_data=None):
+        """ヘッダーで取得したヤコビ積分からゼロ速度曲線を描画する"""
+        if self.jacobi_constant is None or self.mu is None:
+            return None
+
+        data_ref = reference_data if reference_data is not None else self.data
+        if data_ref is None or data_ref.empty:
+            return None
+
+        try:
+            x_min = float(data_ref['x'].min())
+            x_max = float(data_ref['x'].max())
+            y_min = float(data_ref['y'].min())
+            y_max = float(data_ref['y'].max())
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        x_span = max(x_max - x_min, 1e-3)
+        y_span = max(y_max - y_min, 1e-3)
+        margin = max(0.05, 0.15 * max(x_span, y_span))
+
+        x_vals = np.linspace(x_min - margin, x_max + margin, 400)
+        y_vals = np.linspace(y_min - margin, y_max + margin, 400)
+        X, Y = np.meshgrid(x_vals, y_vals)
+
+        z_plane = float(z_target)
+        zvc = np.ma.masked_invalid(self._compute_zero_velocity_field(X, Y, z_plane))
+
+        if isinstance(zvc, np.ma.MaskedArray):
+            if zvc.count() == 0:
+                return None
+            min_val = float(zvc.min())
+            max_val = float(zvc.max())
+        else:
+            finite_mask = np.isfinite(zvc)
+            if not finite_mask.any():
+                return None
+            min_val = float(np.min(zvc[finite_mask]))
+            max_val = float(np.max(zvc[finite_mask]))
+
+        if min_val < 0:
+            self.ax.contourf(
+                X,
+                Y,
+                zvc,
+                levels=[min_val, 0],
+                colors=[FORBIDDEN_REGION_COLOR],
+                alpha=0.35,
+                zorder=0.5,
+            )
+
+        if min_val <= 0 <= max_val:
+            contour = self.ax.contour(
+                X,
+                Y,
+                zvc,
+                levels=[0],
+                colors=[ZERO_VELOCITY_COLOR],
+                linewidths=2.0,
+                zorder=3,
+            )
+            if contour.collections:
+                return Line2D(
+                    [],
+                    [],
+                    color=ZERO_VELOCITY_COLOR,
+                    linewidth=2.0,
+                    label=f"Zero-velocity curve (C={self.jacobi_constant:.4f})",
+                )
+        return None
+
+    def _compute_zero_velocity_field(self, x_grid, y_grid, z_plane):
+        """2Ω - C（ゼロ速度面）を計算"""
+        mu = self.mu if self.mu is not None else MU_PARAMETER
+        eps = 1e-9
+        r1 = np.sqrt((x_grid + mu) ** 2 + y_grid ** 2 + z_plane ** 2)
+        r2 = np.sqrt((x_grid - (1 - mu)) ** 2 + y_grid ** 2 + z_plane ** 2)
+        r1 = np.maximum(r1, eps)
+        r2 = np.maximum(r2, eps)
+        omega = 0.5 * (x_grid ** 2 + y_grid ** 2) + (1 - mu) / r1 + mu / r2
+        return 2 * omega - self.jacobi_constant
 
     def create_contour(self):
         if self.data is None:
@@ -292,7 +442,7 @@ class SALIContourApp:
                                       c=sliced_data['SALI'],
                                       cmap=cmap,
                                       vmin=-1, vmax=sqrt2,
-                                      s=20, marker='s', edgecolors='none')
+                                      s=20, marker='s', edgecolors='none', zorder=2)
 
             self.ax.set_xlabel('X (AU)', fontsize=12)
             self.ax.set_ylabel('Y (AU)', fontsize=12)

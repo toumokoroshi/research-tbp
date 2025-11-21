@@ -226,7 +226,7 @@ int main() {
   std::ifstream ifs;
   // 積分器
   auto integrator = [&](SaliState<double>* state_ptr, double h) {
-    SymplecticStep4thOrderSALI(kMU, state_ptr, h);
+    SymplecticStep6thOrderSALI(kMU, state_ptr, h);
   };
   int configdata_num = 0;
   //  実行時間の計測
@@ -625,10 +625,9 @@ bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
     return false;
   }
 
-  std::sort(rows.begin(), rows.end(),
-            [](const SaliOutputRow& lhs, const SaliOutputRow& rhs) {
-              return lhs.final_sali > rhs.final_sali;
-            });
+  std::sort(rows.begin(), rows.end(), [](const SaliOutputRow& lhs, const SaliOutputRow& rhs) {
+    return lhs.final_sali > rhs.final_sali;
+  });
 
   std::filesystem::path input_path(input_filename);
   std::filesystem::path sorted_path =
@@ -645,8 +644,8 @@ bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
     output << header << '\n';
   }
   for (const auto& row : rows) {
-    output << row.mesh_num << "," << row.final_sali << "," << row.x << "," << row.y << ","
-           << row.z << "," << row.vx << "," << row.vy << "," << row.vz << "\n";
+    output << row.mesh_num << "," << row.final_sali << "," << row.x << "," << row.y << "," << row.z
+           << "," << row.vx << "," << row.vy << "," << row.vz << "\n";
   }
 
   *sorted_output_filename = sorted_path.string();

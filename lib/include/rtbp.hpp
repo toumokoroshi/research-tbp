@@ -19,6 +19,7 @@
 #include <concepts>
 #include <iomanip>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <vector3d.hpp>
 #include <vector>
@@ -1622,6 +1623,90 @@ class StateBufferObserver {
 
   const std::vector<std::array<ScalarType, 8>>& GetHistory() const { return history_; }
 };
+
+/**
+ * @brief GALI (Generalized Alignment Index) を偏差ベクトル集合から計算するユーティリティ.
+ *
+ * @details 入力ベクトルは自動的に正規化され、修正グラム・シュミット法で
+ *          k体並進体積を求める. GALI_k = ||\hat{w}_1 \wedge ... \wedge \hat{w}_k||
+ *          の定義と等価であり、値が急減するかどうかで軌道のカオス性を評価できる.
+ *
+ * @param deviation_vectors 正規化前でもよい偏差ベクトル群 (2 <= k <= 6 を想定)
+ * @param zero_threshold 正規直交化の途中で線形独立性を失ったと見做す閾値
+ * @return ScalarType GALI_k の値 (k = deviation_vectors.size())
+ *
+ * @throws std::invalid_argument 入力が空、または次元上限を超える場合に送出
+ */
+template <typename ScalarType>
+ScalarType ComputeGALI(std::span<const CanonicalState<ScalarType>> deviation_vectors,
+                       ScalarType zero_threshold = static_cast<ScalarType>(1e-12)) {
+  const std::size_t k = deviation_vectors.size();
+  if (k == 0) {
+    throw std::invalid_argument("ComputeGALI requires at least one deviation vector.");
+  }
+  constexpr std::size_t kPhaseSpaceDim = 6;
+  if (k > kPhaseSpaceDim) {
+    throw std::invalid_argument("ComputeGALI supports up to 6 deviation vectors in CRTBP.");
+  }
+  if (zero_threshold <= static_cast<ScalarType>(0)) {
+    throw std::invalid_argument("ComputeGALI expects a strictly positive threshold.");
+  }
+
+  std::vector<CanonicalState<ScalarType>> orthonormal_basis;
+  orthonormal_basis.reserve(k);
+
+  ScalarType gali = static_cast<ScalarType>(1);
+  for (const auto& deviation : deviation_vectors) {
+    CanonicalState<ScalarType> v = deviation;
+    v.Normalize();
+
+    for (const auto& basis_vec : orthonormal_basis) {
+      const ScalarType projection = v.Dot(basis_vec);
+      v.qx -= projection * basis_vec.qx;
+      v.qy -= projection * basis_vec.qy;
+      v.qz -= projection * basis_vec.qz;
+      v.px -= projection * basis_vec.px;
+      v.py -= projection * basis_vec.py;
+      v.pz -= projection * basis_vec.pz;
+    }
+
+    const ScalarType orth_norm = v.Norm();
+    if (orth_norm < zero_threshold) {
+      return static_cast<ScalarType>(0);
+    }
+
+    gali *= orth_norm;
+
+    const ScalarType inv_norm = static_cast<ScalarType>(1) / orth_norm;
+    v.qx *= inv_norm;
+    v.qy *= inv_norm;
+    v.qz *= inv_norm;
+    v.px *= inv_norm;
+    v.py *= inv_norm;
+    v.pz *= inv_norm;
+
+    orthonormal_basis.push_back(v);
+  }
+
+  return gali;
+}
+
+template <typename ScalarType>
+ScalarType ComputeGALI(const std::vector<CanonicalState<ScalarType>>& deviation_vectors,
+                       ScalarType zero_threshold = static_cast<ScalarType>(1e-12)) {
+  return ComputeGALI<ScalarType>(
+      std::span<const CanonicalState<ScalarType>>(deviation_vectors.data(), deviation_vectors.size()),
+      zero_threshold);
+}
+
+template <typename ScalarType, std::size_t N>
+ScalarType ComputeGALI(const std::array<CanonicalState<ScalarType>, N>& deviation_vectors,
+                       ScalarType zero_threshold = static_cast<ScalarType>(1e-12)) {
+  return ComputeGALI<ScalarType>(
+      std::span<const CanonicalState<ScalarType>>(deviation_vectors.data(), deviation_vectors.size()),
+      zero_threshold);
+}
+
 template <typename ScalarType>
 class SaliObserver {
  private:
