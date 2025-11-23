@@ -33,6 +33,8 @@ struct SaliOutputRow {
   double vx;
   double vy;
   double vz;
+  int collision;
+  int escape;
 };
 
 bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row);
@@ -376,7 +378,7 @@ int main() {
     ofs1 << "# INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
     ofs1 << "# LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
     ofs1 << "# DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
-    ofs1 << "Time,SALI,x,y,z,px,py,pz\n";
+    ofs1 << "Time,SALI,x,y,z,px,py,pz,collision,escape\n";
 
     // 計算のステップ数
     int num_step = static_cast<int>(SALI_CALCTIME_THRESHOLD / CALC_TIMESTEP);
@@ -397,6 +399,8 @@ int main() {
         bool velo_err = 0;
         double final_sali = -1;
         double vx = 0.0, vy = 0.0, vz = 0.0;
+        int collision_flag = 0;
+        int escape_flag = 0;
 
         double v_abs = calc_v_abs(point, JACOBI_INTEGRAL, kMU);
 
@@ -426,17 +430,24 @@ int main() {
           // 2. 正規化
           sali_state.w1.Normalize();
           sali_state.w2.Normalize();
+
+          // Check for collision or escape
+          double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, kMU);
+          if (r2 < FOREBIDDEN_AREA_RADIUS) {
+            collision_flag = 1;
+          }
+          if (r2 > SOI_RADIUS) {
+            escape_flag = 1;
+          }
         }
 
-        State<double> final_state = ConvertToPhysical(sali_state.state);
-        if (calc_r2(final_state.x, final_state.y, final_state.z, kMU) < SOI_RADIUS &&
-            calc_r2(final_state.x, final_state.y, final_state.z, kMU) > FOREBIDDEN_AREA_RADIUS) {
-          const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-          const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-          final_sali = std::min(norm_plus, norm_minus);
-        }
+        const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
+        const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
+        final_sali = std::min(norm_plus, norm_minus);
+
         local_output_buffer << mesh_num << "," << final_sali << "," << point.x << "," << point.y
-                            << "," << point.z << "," << vx << "," << vy << "," << vz << "\n";
+                            << "," << point.z << "," << vx << "," << vy << "," << vz << ","
+                            << collision_flag << "," << escape_flag << "\n";
         // 一定件数ごとにバッファをファイルに書き込む (排他制御)
         if (idx % 100 == 0 || idx == totalIterations - 1) {
 #pragma omp critical
@@ -567,7 +578,7 @@ bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
     fields.push_back(token);
   }
 
-  if (fields.size() != 8) {
+  if (fields.size() != 10) {
     return false;
   }
 
@@ -580,6 +591,8 @@ bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
     output_row->vx = std::stod(fields[5]);
     output_row->vy = std::stod(fields[6]);
     output_row->vz = std::stod(fields[7]);
+    output_row->collision = std::stoi(fields[8]);
+    output_row->escape = std::stoi(fields[9]);
   } catch (const std::exception&) {
     return false;
   }
@@ -645,7 +658,8 @@ bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
   }
   for (const auto& row : rows) {
     output << row.mesh_num << "," << row.final_sali << "," << row.x << "," << row.y << "," << row.z
-           << "," << row.vx << "," << row.vy << "," << row.vz << "\n";
+           << "," << row.vx << "," << row.vy << "," << row.vz << "," << row.collision << ","
+           << row.escape << "\n";
   }
 
   *sorted_output_filename = sorted_path.string();

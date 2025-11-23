@@ -1877,4 +1877,243 @@ void SymplecticStep6thOrderSALI(const ScalarType mu, SaliState<ScalarType>* stat
 }
 
 }  // namespace crtbp
+
+/**
+ * @brief Helper namespace that groups both circular (crtbp) and elliptic (ertbp) RTBP utilities.
+ *
+ * The existing circular toolkit is exposed as rtbp::crtbp (namespace alias). New elliptic helpers
+ * live under rtbp::ertbp.
+ */
+namespace rtbp {
+namespace crtbp = ::crtbp;
+
+namespace ertbp {
+using my_type::State;
+using my_type::State3d;
+
+/**
+ * @brief Elliptic two-body elements used to place the primaries.
+ *
+ * All quantities are non-dimensional: the semi-major axis and mean motion default to 1, matching
+ * the scaling of the circular toolkit.
+ */
+template <typename ScalarType>
+struct Elements {
+  ScalarType mu;                   ///< Mass parameter m2/(m1+m2)
+  ScalarType eccentricity;         ///< Orbital eccentricity (0 <= e < 1)
+  ScalarType mean_motion = static_cast<ScalarType>(1);    ///< Mean motion (rad / time unit)
+  ScalarType semi_major_axis = static_cast<ScalarType>(1);  ///< Relative semi-major axis of the primaries
+
+  Elements() = default;
+  Elements(ScalarType mu_in, ScalarType e_in, ScalarType n_in = static_cast<ScalarType>(1),
+           ScalarType a_in = static_cast<ScalarType>(1))
+      : mu(mu_in), eccentricity(e_in), mean_motion(n_in), semi_major_axis(a_in) {
+    if (eccentricity < 0.0 || eccentricity >= 1.0) {
+      throw std::invalid_argument("eccentricity must satisfy 0 <= e < 1 for elliptic RTBP.");
+    }
+  }
+};
+
+/**
+ * @brief Ephemeris of the two primaries in the inertial barycentric frame.
+ */
+template <typename ScalarType>
+struct PrimariesState {
+  Vector3d<ScalarType> primary1_position;  ///< m1 (larger body) position
+  Vector3d<ScalarType> primary2_position;  ///< m2 (smaller body) position
+  Vector3d<ScalarType> primary1_velocity;
+  Vector3d<ScalarType> primary2_velocity;
+  ScalarType separation = 0.0;  ///< |r2 - r1|
+};
+
+/**
+ * @brief Solve Kepler's equation M = E - e sin(E) for the eccentric anomaly.
+ */
+template <typename ScalarType>
+ScalarType SolveKeplerEquation(ScalarType mean_anomaly, ScalarType eccentricity,
+                               int max_iterations = 30,
+                               ScalarType tolerance = static_cast<ScalarType>(1e-12)) {
+  ScalarType E = mean_anomaly;
+  for (int i = 0; i < max_iterations; ++i) {
+    const ScalarType f = E - eccentricity * std::sin(E) - mean_anomaly;
+    const ScalarType f_prime = static_cast<ScalarType>(1) - eccentricity * std::cos(E);
+    if (std::abs(f_prime) < tolerance) {
+      break;
+    }
+    const ScalarType delta = -f / f_prime;
+    E += delta;
+    if (std::abs(delta) < tolerance) {
+      break;
+    }
+  }
+  return E;
+}
+
+/**
+ * @brief Compute barycentric positions/velocities of the primaries on an ellipse in the xy-plane.
+ *
+ * The relative motion of the primaries follows the standard two-body ellipse with semi-major axis
+ * `a` and eccentricity `e`. The returned coordinates place the system barycenter at the origin.
+ */
+template <typename ScalarType>
+PrimariesState<ScalarType> ComputePrimariesEphemeris(const Elements<ScalarType>& elements,
+                                                     ScalarType t) {
+  const ScalarType mean_anomaly = elements.mean_motion * t;
+  const ScalarType E = SolveKeplerEquation(mean_anomaly, elements.eccentricity);
+  const ScalarType cos_E = std::cos(E);
+  const ScalarType sin_E = std::sin(E);
+
+  const ScalarType one_minus_e2 =
+      static_cast<ScalarType>(1) - elements.eccentricity * elements.eccentricity;
+  const ScalarType sqrt_one_minus_e2 = std::sqrt(std::max(static_cast<ScalarType>(0), one_minus_e2));
+  const ScalarType denom = static_cast<ScalarType>(1) - elements.eccentricity * cos_E;
+
+  // Relative m1->m2 state in perifocal (pericenter aligned with +x).
+  const ScalarType rel_x = elements.semi_major_axis * (cos_E - elements.eccentricity);
+  const ScalarType rel_y = elements.semi_major_axis * sqrt_one_minus_e2 * sin_E;
+  const ScalarType rel_vx =
+      -elements.semi_major_axis * elements.mean_motion * sin_E / denom;
+  const ScalarType rel_vy =
+      elements.semi_major_axis * elements.mean_motion * sqrt_one_minus_e2 * cos_E / denom;
+
+  PrimariesState<ScalarType> ephem;
+  ephem.primary1_position = Vector3d<ScalarType>(-elements.mu * rel_x, -elements.mu * rel_y, 0);
+  ephem.primary2_position =
+      Vector3d<ScalarType>((static_cast<ScalarType>(1) - elements.mu) * rel_x,
+                           (static_cast<ScalarType>(1) - elements.mu) * rel_y, 0);
+  ephem.primary1_velocity = Vector3d<ScalarType>(-elements.mu * rel_vx, -elements.mu * rel_vy, 0);
+  ephem.primary2_velocity =
+      Vector3d<ScalarType>((static_cast<ScalarType>(1) - elements.mu) * rel_vx,
+                           (static_cast<ScalarType>(1) - elements.mu) * rel_vy, 0);
+  ephem.separation = elements.semi_major_axis * denom;
+
+  return ephem;
+}
+
+template <typename ScalarType>
+inline ScalarType calc_r1(const State<ScalarType>& state,
+                          const PrimariesState<ScalarType>& primaries) {
+  const Vector3d<ScalarType> delta(state.x - primaries.primary1_position.x(),
+                                   state.y - primaries.primary1_position.y(),
+                                   state.z - primaries.primary1_position.z());
+  return delta.magnitude();
+}
+
+template <typename ScalarType>
+inline ScalarType calc_r2(const State<ScalarType>& state,
+                          const PrimariesState<ScalarType>& primaries) {
+  const Vector3d<ScalarType> delta(state.x - primaries.primary2_position.x(),
+                                   state.y - primaries.primary2_position.y(),
+                                   state.z - primaries.primary2_position.z());
+  return delta.magnitude();
+}
+
+template <typename ScalarType>
+ScalarType calc_potential_U(const State<ScalarType>& state,
+                            const PrimariesState<ScalarType>& primaries,
+                            ScalarType mu) {
+  const ScalarType r1 = calc_r1(state, primaries);
+  const ScalarType r2 = calc_r2(state, primaries);
+  if (r1 == 0.0 || r2 == 0.0) {
+    throw std::runtime_error("Position coincides with a primary in calc_potential_U (ERTBP).");
+  }
+  return -(static_cast<ScalarType>(1) - mu) / r1 - mu / r2;
+}
+
+template <typename ScalarType>
+ScalarType calc_mechanical_energy(const State<ScalarType>& state,
+                                  const PrimariesState<ScalarType>& primaries,
+                                  ScalarType mu) {
+  const ScalarType v_sq = state.vx * state.vx + state.vy * state.vy + state.vz * state.vz;
+  return static_cast<ScalarType>(0.5) * v_sq + calc_potential_U(state, primaries, mu);
+}
+
+/**
+ * @brief Elliptic restricted three-body equations in the inertial barycentric frame.
+ *
+ * The primaries evolve on an ellipse; the third body feels their instantaneous Newtonian gravity.
+ */
+template <typename ScalarType>
+class EquationOfMotion {
+ private:
+  Elements<ScalarType> elements_;
+
+ public:
+  explicit EquationOfMotion(const Elements<ScalarType>& elements) : elements_(elements) {}
+
+  State<ScalarType> operator()(const State<ScalarType>& state, const ScalarType t) const {
+    const PrimariesState<ScalarType> primaries = ComputePrimariesEphemeris(elements_, t);
+    const Vector3d<ScalarType> r(state.x, state.y, state.z);
+    const Vector3d<ScalarType> r1 = r - primaries.primary1_position;
+    const Vector3d<ScalarType> r2 = r - primaries.primary2_position;
+
+    const ScalarType dist1 = r1.magnitude();
+    const ScalarType dist2 = r2.magnitude();
+    if (dist1 == 0.0 || dist2 == 0.0) {
+      throw std::runtime_error("Position coincides with a primary in EquationOfMotion (ERTBP).");
+    }
+
+    const ScalarType inv_r1_3 = static_cast<ScalarType>(1) / (dist1 * dist1 * dist1);
+    const ScalarType inv_r2_3 = static_cast<ScalarType>(1) / (dist2 * dist2 * dist2);
+
+    const ScalarType mu1 = static_cast<ScalarType>(1) - elements_.mu;
+    const Vector3d<ScalarType> accel =
+        r1 * (-mu1 * inv_r1_3) + r2 * (-elements_.mu * inv_r2_3);
+
+    State<ScalarType> dxdt;
+    dxdt.x = state.vx;
+    dxdt.y = state.vy;
+    dxdt.z = state.vz;
+    dxdt.vx = accel.x();
+    dxdt.vy = accel.y();
+    dxdt.vz = accel.z();
+    return dxdt;
+  }
+};
+
+/**
+ * @brief System wrapper for odeint Runge-Kutta-Dopri5 (orbit only) in ERTBP.
+ */
+template <typename ScalarType>
+class Dopri5OrbitSystem {
+ private:
+  EquationOfMotion<ScalarType> eom_;
+
+ public:
+  explicit Dopri5OrbitSystem(const Elements<ScalarType>& elements) : eom_(elements) {}
+
+  void operator()(const State<ScalarType>& state, State<ScalarType>& dxdt,
+                  const ScalarType t) const {
+    dxdt = eom_(state, t);
+  }
+};
+
+/**
+ * @brief Fixed-step Dopri5 integration helper for the elliptic RTBP.
+ */
+template <typename ScalarType, typename ObserverType,
+          typename Stepper = boost::numeric::odeint::runge_kutta_dopri5<
+              State<ScalarType>, ScalarType, State<ScalarType>, ScalarType,
+              boost::numeric::odeint::vector_space_algebra>>
+void IntegrateDopri5Orbit(const Elements<ScalarType>& elements, State<ScalarType>& state,
+                          ScalarType start_time, ScalarType end_time, ScalarType time_step,
+                          ObserverType observer, Stepper stepper = Stepper()) {
+  Dopri5OrbitSystem<ScalarType> system(elements);
+
+  ScalarType current_time = start_time;
+  observer(state, current_time);
+  while (current_time < end_time) {
+    const ScalarType dt = std::min(time_step, end_time - current_time);
+    stepper.do_step(system, state, current_time, dt);
+    current_time += dt;
+    observer(state, current_time);
+  }
+}
+
+// Reuse the generic RK4/Integrate helpers from the circular namespace for convenience.
+using ::crtbp::Integrate;
+using ::crtbp::RungeKutta4Step;
+
+}  // namespace ertbp
+}  // namespace rtbp
 #endif  // RTBP_HPP
