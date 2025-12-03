@@ -1,0 +1,47 @@
+Deleting old exe... 
+Starting build... 
+MSBuild version 17.14.23+b0019275e for .NET Framework
+
+  Microsoft (R) Incremental Linker Version 14.44.35217.0
+  Copyright (C) Microsoft Corporation.  All rights reserved.
+  
+  -qm64 "/OUT:C:\WORKSPACE\Research_git\TBP\build\bin\Debug\trajectory_SALI.exe" /INCREMENTAL "/ILK:trajectory_SALI.dir\Debug\trajectory_SALI.ilk" /NOLOGO "C:\Program Files (x86)\Intel\oneAPI\compiler\latest\lib\libiomp5md.lib" kernel32.lib user32.lib gdi32.lib winspool.lib shell32.lib ole32.lib oleaut32.lib uuid.lib comdlg32.lib advapi32.lib /MANIFEST /manifest:embed "/MANIFESTUAC:level='asInvoker' uiAccess='false'" /DEBUG "/PDB:C:/WORKSPACE/Research_git/TBP/build/bin/Debug/trajectory_SALI.pdb" /SUBSYSTEM:CONSOLE -qnextgen /TLBID:1 "/IMPLIB:C:/WORKSPACE/Research_git/TBP/build/lib/Debug/trajectory_SALI.lib" /MACHINE:X64 trajectory_SALI.dir\Debug\main.obj /machine:x64 
+LINK : : warning LNK4044: unrecognized option '/qm64'; ignored [C:\WORKSPACE\Research_git\TBP\build\apps\trajectory_SALI\trajectory_SALI.vcxproj]
+LINK : : warning LNK4044: unrecognized option '/qnextgen'; ignored [C:\WORKSPACE\Research_git\TBP\build\apps\trajectory_SALI\trajectory_SALI.vcxproj]
+  LINK : C:\WORKSPACE\Research_git\TBP\build\bin\Debug\trajectory_SALI.exe not found or not built by the last incremental link; performing full link
+Build success. Running app... 
+Config Dir: C:/WORKSPACE/Research_git/TBP/configs/trajectory_SALI/
+<>-------------------------------
+----
+<>------------------------------------------------------------
+<>  CRTBP SALI map along natural trajectory (Earth Hill sphere)
+<>------------------------------------------------------------
+
+<> Config #1: C:\WORKSPACE\Research_git\TBP\configs\trajectory_SALI\trajectorySALI.txt
+    mu=3.0034806e-06, Hill radius=0.0100039, LU(AU)=1, TU(days)=58.1324, VU(m/s)=29784.7
+mean motion = 0.0770070355227191
+converted earth velocity = 1.95550666686364e-23 2.60579400211427e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  Initial state (before conberting): 0.0982295961284003 0.0249356290802926 0.0290944136375607 -0.87099388814781 0.745768674150043 -0.208181738948268
+  Initial state (nd): 1.090420596541 -0.0350848964047868 0.0413515013208932 -0.167338834946894 1.03923375872517 -0.534907941626378
+ Jacobi constant: 1.6280524266949
+ Target Jacobi constant: 3
+ Needed delta-v to reach target Jacobi: -30731.2580973535 m/s
+  Warning: orbit never enters Hill sphere. Using full trajectory.
+  Using samples [0, 1001] (total 1002)
+  Map tasks: 2613 (theta step 10 deg)
+  -> trajectory: C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/poe/poe_trajectory.csv
+  -> SALI map : C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/poe/poe_sali_map.csv
+
+All configs processed. Press Enter to close the last plot and exit...
+         line 0: warning: Skipping data file with no valid points
+
+gnuplot> plot 'C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/poe/poe_trajectory.csv' using 3:4:5 with lines title 'Trajectory' lc rgb 'blue'
+                                                                                                                                                 ^
+         line 0: x range is invalid
+
+
+gnuplot> replot
+         ^
+         line 0: no previous plot
+

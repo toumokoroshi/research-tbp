@@ -22,4 +22,6 @@ target_compile_definitions(trajectory_SALI PRIVATE
     OUTPUT_DIR="${CMAKE_SOURCE_DIR}/data"
 )
 
+# set_target_properties(trajectory_SALI PROPERTIES OUTPUT_NAME "trajectory_SALI_v3")
+
 install(TARGETS trajectory_SALI DESTINATION bin)

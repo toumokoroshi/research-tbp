@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -58,6 +59,10 @@ struct TrajectorySaliConfig {
   bool limit_to_hill = true;
 
   std::string output_tag;
+  std::string orbit_data_dir;
+
+  // Target Jacobi Integral (overrides dv_magnitude_mps if set)
+  double target_jacobi = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct NaturalUnits {
@@ -95,6 +100,10 @@ struct MapResult {
 // Forward declarations
 bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* config);
 
+// New functions for orbital data
+std::vector<std::string> DiscoverOrbitFiles(const std::string& directory);
+bool ParseOrbitFile(const std::string& filepath, State<double>* asteroid, State<double>* earth);
+
 NaturalUnits ComputeNaturalUnits(const State<double>& earth_state_helio,
                                  const AstroConstants<double>& astro);
 
@@ -119,164 +128,402 @@ std::vector<std::string> DiscoverConfigFiles(const std::string& directory,
                                              const std::string& prefix);
 
 int main() {
-  using namespace param;
+  try {
+    using namespace param;
 
-  const std::string kConfigDir = std::string(CONFIG_DIR) + "/trajectory_SALI/";
-  const std::string kOutputDir = std::string(OUTPUT_DIR) + "/trajectory_SALI";
-  const std::string kConfigPrefix = "trajectorySALI";
+    const std::string kConfigDir = std::string(CONFIG_DIR) + "/trajectory_SALI/";
+    const std::string kOutputDir = std::string(OUTPUT_DIR) + "/trajectory_SALI";
+    const std::string kConfigPrefix = "trajectorySALI";
 
-  AstroConstants<double> astro_params =
-      loadConstants<double>(kConfigDir + "/../astro_param/astro_param.txt");
-  const double kMU = astro_params.gm_earth / (astro_params.gm_earth + astro_params.gm_sun);
+    std::cout << "Config Dir: " << kConfigDir << std::endl;
 
-  std::cout << "<>------------------------------------------------------------\n";
-  std::cout << "<>  CRTBP SALI map along natural trajectory (Earth Hill sphere)\n";
-  std::cout << "<>------------------------------------------------------------\n\n";
+    AstroConstants<double> astro_params =
+        loadConstants<double>(kConfigDir + "/../astro_param/astro_param.txt");
+    const double kMU = astro_params.gm_earth / (astro_params.gm_earth + astro_params.gm_sun);
 
-  std::vector<std::string> config_files = DiscoverConfigFiles(kConfigDir, kConfigPrefix);
-  if (config_files.empty()) {
-    std::cerr << "No config files found under " << kConfigDir << " with prefix " << kConfigPrefix
-              << "\n";
+    std::cout << "<>------------------------------------------------------------\n";
+    std::cout << "<>  CRTBP SALI map along natural trajectory (Earth Hill sphere)\n";
+    std::cout << "<>------------------------------------------------------------\n\n";
+
+    std::vector<std::string> config_files = DiscoverConfigFiles(kConfigDir, kConfigPrefix);
+    if (config_files.empty()) {
+      std::cerr << "No config files found under " << kConfigDir << " with prefix " << kConfigPrefix
+                << "\n";
+      return 1;
+    }
+
+    fs::create_directories(kOutputDir);
+
+    FILE* gp_window = nullptr;
+
+    int config_index = 0;
+    for (const auto& config_path : config_files) {
+      ++config_index;
+      TrajectorySaliConfig base_cfg;
+      if (!LoadTrajectoryConfig(config_path, &base_cfg)) {
+        std::cerr << "Skipping config due to parse errors: " << config_path << "\n";
+        continue;
+      }
+
+      std::vector<std::string> orbit_files;
+      if (!base_cfg.orbit_data_dir.empty()) {
+        std::cout << "Discovering orbit files in: " << base_cfg.orbit_data_dir << "\n";
+        orbit_files = DiscoverOrbitFiles(base_cfg.orbit_data_dir);
+        if (orbit_files.empty()) {
+          std::cerr << "No orbit files found in " << base_cfg.orbit_data_dir << "\n";
+          continue;
+        }
+        std::cout << "Found " << orbit_files.size() << " orbit files.\n";
+        for (const auto& orbit_file : orbit_files) {
+          std::cout << orbit_file << "\n";
+        }
+      } else {
+        // Legacy mode: run once with the base config
+        orbit_files.push_back("");
+      }
+      std::cout << "<> >> check orbit files <<\n";
+      utils::WaitForEnter();
+
+      struct ScanResult {
+        int index = 0;
+        std::string filename;
+        double jacobi = 0.0;
+        bool valid = false;
+        std::string error_msg;
+      };
+      std::vector<ScanResult> scan_results;
+
+      // 1. Scan Phase
+      std::cout << "\n--- Phase 1: Scanning and Verifying Orbit Files ---\n";
+      for (const auto& orbit_file : orbit_files) {
+        ScanResult result;
+        result.filename = fs::path(orbit_file).filename().string();
+
+        // Extract ID
+        std::regex id_pattern("OBT_(\\d+)_Earth");
+        std::smatch match;
+        std::string stem = fs::path(orbit_file).stem().string();
+        if (std::regex_search(stem, match, id_pattern) && match.size() > 1) {
+          result.index = std::stoi(match[1].str());
+        }
+
+        TrajectorySaliConfig cfg = base_cfg;
+        if (!orbit_file.empty()) {
+          if (!ParseOrbitFile(orbit_file, &cfg.asteroid_state_helio, &cfg.earth_state_helio)) {
+            result.valid = false;
+            result.error_msg = "Parse failed";
+            scan_results.push_back(result);
+            continue;
+          }
+        }
+
+        NaturalUnits units{};
+        try {
+          units = ComputeNaturalUnits(cfg.earth_state_helio, astro_params);
+        } catch (const std::exception& e) {
+          result.valid = false;
+          result.error_msg = std::string("Unit compute failed: ") + e.what();
+          scan_results.push_back(result);
+          continue;
+        }
+
+        State<double> initial_state_nd{};
+        try {
+          initial_state_nd = crtbp::ConvertInertial2Rotating____(
+              cfg.asteroid_state_helio, cfg.earth_state_helio, astro_params);
+        } catch (const std::exception& e) {
+          result.valid = false;
+          result.error_msg = std::string("Conversion failed: ") + e.what();
+          scan_results.push_back(result);
+          continue;
+        }
+
+        // --- Debug Info Calculation ---
+        // 1. Distance
+        Vector3d<double> r_ast_h(cfg.asteroid_state_helio.x, cfg.asteroid_state_helio.y,
+                                 cfg.asteroid_state_helio.z);
+        Vector3d<double> r_ear_h(cfg.earth_state_helio.x, cfg.earth_state_helio.y,
+                                 cfg.earth_state_helio.z);
+        double dist_inertial = (r_ast_h - r_ear_h).magnitude();  // AU
+
+        Vector3d<double> r_nd(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z);
+        // In CRTBP, Earth is at (1-mu, 0, 0).
+        // However, the ConvertInertial2Rotating____ returns state relative to barycenter in
+        // rotating frame. The distance to Earth in rotating frame: Earth pos in rotating frame:
+        // (1-mu, 0, 0)
+        Vector3d<double> r_earth_rot(1.0 - units.mu, 0.0, 0.0);
+        double dist_rotating_nd = (r_nd - r_earth_rot).magnitude();
+        double dist_rotating_au = dist_rotating_nd * units.lu_au;
+
+        // 2. Velocity
+        Vector3d<double> v_ast_h(cfg.asteroid_state_helio.vx, cfg.asteroid_state_helio.vy,
+                                 cfg.asteroid_state_helio.vz);
+        Vector3d<double> v_ear_h(cfg.earth_state_helio.vx, cfg.earth_state_helio.vy,
+                                 cfg.earth_state_helio.vz);
+        // Inertial relative velocity magnitude (AU/day)
+        double v_rel_inertial_au_day = (v_ast_h - v_ear_h).magnitude();
+        double v_rel_inertial_nd = v_rel_inertial_au_day / 365.25;
+
+        Vector3d<double> v_nd(initial_state_nd.vx, initial_state_nd.vy, initial_state_nd.vz);
+        double v_rot_nd = v_nd.magnitude();
+
+        std::cout << "  [" << result.index << "] " << result.filename << "\n";
+        std::cout << "    Dist: Inertial=" << dist_inertial << " AU, Rotating=" << dist_rotating_au
+                  << " AU (Diff: " << std::abs(dist_inertial - dist_rotating_au) << ")\n";
+        std::cout << "    Vel : Inertial(Rel)=" << v_rel_inertial_nd
+                  << " AU/TU, Rotating=" << v_rot_nd << " AU/TU\n";
+
+        result.jacobi = crtbp::calc_jacobi_integral(initial_state_nd, units.mu);
+        result.valid = true;
+        scan_results.push_back(result);
+      }
+
+      // 2. Interaction Phase
+      std::cout << "\n--- Phase 2: Jacobi Integral Summary ---\n";
+      std::cout << "Index | Filename             | Jacobi Constant\n";
+      std::cout << "------+----------------------+----------------\n";
+      for (const auto& res : scan_results) {
+        if (res.valid) {
+          std::cout << std::setw(5) << res.index << " | " << std::setw(20) << res.filename << " | "
+                    << std::fixed << std::setprecision(6) << res.jacobi << "\n";
+        } else {
+          std::cout << std::setw(5) << res.index << " | " << std::setw(20) << res.filename << " | "
+                    << "INVALID: " << res.error_msg << "\n";
+        }
+      }
+
+      std::cout << "\nEnter indices to simulate (space separated, or 'all'): ";
+      std::string input_line;
+      std::getline(std::cin, input_line);
+
+      std::vector<int> selected_indices;
+      bool run_all = false;
+      if (input_line == "all") {
+        run_all = true;
+      } else {
+        std::stringstream ss(input_line);
+        int idx;
+        while (ss >> idx) {
+          selected_indices.push_back(idx);
+        }
+      }
+
+      // 3. Execution Phase
+      std::cout << "\n--- Phase 3: Simulation Execution ---\n";
+      for (const auto& orbit_file : orbit_files) {
+        // Identify index again
+        std::regex id_pattern("OBT_(\\d+)_Earth");
+        std::smatch match;
+        std::string stem = fs::path(orbit_file).stem().string();
+        int current_index = -1;
+        if (std::regex_search(stem, match, id_pattern) && match.size() > 1) {
+          current_index = std::stoi(match[1].str());
+        }
+
+        // Check selection
+        if (!run_all) {
+          bool selected = false;
+          for (int sel : selected_indices) {
+            if (sel == current_index) {
+              selected = true;
+              break;
+            }
+          }
+          if (!selected) continue;
+        }
+
+        TrajectorySaliConfig cfg = base_cfg;
+        if (!orbit_file.empty()) {
+          if (!ParseOrbitFile(orbit_file, &cfg.asteroid_state_helio, &cfg.earth_state_helio)) {
+            std::cerr << "Failed to parse orbit file: " << orbit_file << "\n";
+            continue;
+          }
+          // Update tag
+          if (!cfg.output_tag.empty()) {
+            cfg.output_tag += "_OBT_" + std::to_string(current_index);
+          } else {
+            cfg.output_tag = "OBT_" + std::to_string(current_index);
+          }
+          std::cout << "Processing Orbit File: " << orbit_file << " (Tag: " << cfg.output_tag
+                    << ")\n";
+        }
+
+        NaturalUnits units{};
+        try {
+          units = ComputeNaturalUnits(cfg.earth_state_helio, astro_params);
+        } catch (const std::exception& e) {
+          std::cerr << "Failed to compute natural units for " << config_path << ": " << e.what()
+                    << "\n";
+          continue;
+        }
+        std::cout << "<> Config #" << config_index << ": " << config_path << "\n";
+        std::cout << "    mu=" << std::setprecision(8) << units.mu
+                  << ", Hill radius=" << std::setprecision(6) << units.hill_radius
+                  << ", LU(AU)=" << units.lu_au << ", TU(days)=" << units.tu_day
+                  << ", VU(m/s)=" << units.vu_m_per_s << "\n";
+
+        State<double> initial_state_nd{};
+        try {
+          initial_state_nd = crtbp::ConvertInertial2Rotating____(
+              cfg.asteroid_state_helio, cfg.earth_state_helio, astro_params);
+        } catch (const std::exception& e) {
+          std::cerr << "Failed to convert heliocentric states to CRTBP frame: " << e.what() << "\n";
+          continue;
+        }
+
+        std::cout << "  Initial state (before conberting): "
+                  << cfg.asteroid_state_helio.x - cfg.earth_state_helio.x << " "
+                  << cfg.asteroid_state_helio.y - cfg.earth_state_helio.y << " "
+                  << cfg.asteroid_state_helio.z - cfg.earth_state_helio.z << " "
+                  << cfg.asteroid_state_helio.vx - cfg.earth_state_helio.vx << " "
+                  << cfg.asteroid_state_helio.vy - cfg.earth_state_helio.vy << " "
+                  << cfg.asteroid_state_helio.vz - cfg.earth_state_helio.vz << "\n";
+        std::cout << "  Initial state (nd): " << initial_state_nd.x << " " << initial_state_nd.y
+                  << " " << initial_state_nd.z << " " << initial_state_nd.vx << " "
+                  << initial_state_nd.vy << " " << initial_state_nd.vz << "\n";
+        std::cout << " Jacobi constant: " << crtbp::calc_jacobi_integral(initial_state_nd, units.mu)
+                  << "\n";
+
+        const double natural_duration_nd = cfg.natural_duration_days / units.tu_day;
+        const double natural_dt_nd = cfg.natural_dt_days / units.tu_day;
+        if (natural_duration_nd <= 0 || natural_dt_nd <= 0) {
+          std::cerr << "Invalid natural trajectory time settings. duration_nd="
+                    << natural_duration_nd << " dt_nd=" << natural_dt_nd << "\n";
+          continue;
+        }
+
+        auto samples = IntegrateNaturalTrajectory(astro_params, initial_state_nd,
+                                                  natural_duration_nd, natural_dt_nd, kMU, units);
+        if (samples.empty()) {
+          std::cerr << "Natural trajectory integration produced no samples.\n";
+          continue;
+        }
+
+        // Identify the segment inside the Hill sphere.
+        size_t start_idx = 0;
+        size_t end_idx = samples.size() - 1;
+        if (cfg.limit_to_hill) {
+          bool found = false;
+          for (size_t i = 0; i < samples.size(); ++i) {
+            if (samples[i].r2 <= 3.0 * units.hill_radius) {
+              start_idx = i;
+              found = true;
+              break;
+            }
+          }
+          for (size_t i = samples.size(); i-- > 0;) {
+            if (samples[i].r2 <= 3.0 * units.hill_radius) {
+              end_idx = i;
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            std::cout << "  Warning: orbit never enters Hill sphere. Using full trajectory.\n";
+            start_idx = 0;
+            end_idx = samples.size() - 1;
+          }
+        }
+
+        // Select samples along the arc (with stride).
+        std::vector<MapTask> tasks;
+        const size_t stride = static_cast<size_t>(std::max(1, cfg.sample_stride));
+        const double theta_start = cfg.theta_start_deg;
+        const double theta_end = cfg.theta_end_deg;
+        const double theta_step = cfg.theta_step_deg > 0 ? cfg.theta_step_deg : 1.0;
+
+        for (size_t idx = start_idx; idx <= end_idx; idx += stride) {
+          for (double th = theta_start; th <= theta_end + 1e-9; th += theta_step) {
+            tasks.push_back(MapTask{&samples[idx], th});
+          }
+        }
+
+        std::cout << "  Using samples [" << start_idx << ", " << end_idx << "] (total "
+                  << samples.size() << ")\n";
+        std::cout << "  Map tasks: " << tasks.size() << " (theta step " << theta_step << " deg)\n";
+
+        // Dump natural trajectory and SALI map.
+        const std::string tag =
+            cfg.output_tag.empty() ? fs::path(config_path).stem().string() : cfg.output_tag;
+
+        // Create a specific directory for this simulation result
+        const std::string sim_output_dir = kOutputDir + "/" + tag;
+        fs::create_directories(sim_output_dir);
+
+        const std::string trajectory_file = sim_output_dir + "/" + tag + "_trajectory.csv";
+        const std::string map_file = sim_output_dir + "/" + tag + "_sali_map.csv";
+        const std::string eps_file = sim_output_dir + "/" + tag + "_trajectory.eps";
+        const std::string png_file = sim_output_dir + "/" + tag + "_trajectory.png";
+
+        WriteTrajectoryCsv(trajectory_file, samples, units.hill_radius);
+
+        const double sali_duration_nd = cfg.sali_duration_days / units.tu_day;
+        const double sali_dt_nd = cfg.sali_dt_days / units.tu_day;
+        const double dv_nd = cfg.dv_magnitude_mps / units.vu_m_per_s;
+        WriteMapCsv(map_file, units, cfg, sali_duration_nd, sali_dt_nd, tasks, dv_nd,
+                    units.hill_radius, cfg.forbidden_radius, astro_params);
+
+        std::cout << "  -> trajectory: " << trajectory_file << "\n";
+        std::cout << "  -> SALI map : " << map_file << "\n";
+
+        // --- Gnuplot Visualization ---
+        if (gp_window) {
+          _pclose(gp_window);
+          gp_window = nullptr;
+        }
+
+        gp_window = _popen("gnuplot", "w");
+        if (gp_window) {
+          // Helper to escape backslashes for Gnuplot string literals
+          auto escape_path = [](const std::string& p) {
+            std::string s = p;
+            size_t pos = 0;
+            while ((pos = s.find('\\', pos)) != std::string::npos) {
+              s.replace(pos, 1, "/");
+              pos += 1;
+            }
+            return s;
+          };
+
+          std::string plot_cmd = "plot '" + escape_path(trajectory_file) +
+                                 "' using 3:4:5 with lines title 'Trajectory' lc rgb 'blue'";
+
+          // 1. Save as EPS
+          fprintf(gp_window, "set terminal postscript eps enhanced color size 5,4\n");
+          fprintf(gp_window, "set output '%s'\n", escape_path(eps_file).c_str());
+          fprintf(gp_window, "set title '%s'\n", tag.c_str());
+          fprintf(gp_window, "set xlabel 'x (AU)'\n");
+          fprintf(gp_window, "set ylabel 'y (AU)'\n");
+          fprintf(gp_window, "set zlabel 'z (AU)'\n");
+          fprintf(gp_window, "set grid\n");
+          fprintf(gp_window, "set view equal xyz\n");
+          fprintf(gp_window, "%s\n", plot_cmd.c_str());
+
+          // 2. Save as PNG
+          fprintf(gp_window, "set terminal pngcairo size 800,600 enhanced font 'Arial,10'\n");
+          fprintf(gp_window, "set output '%s'\n", escape_path(png_file).c_str());
+          fprintf(gp_window, "replot\n");
+
+          // 3. Show in Window
+          // Try 'wxt' or 'qt' or 'windows'
+          fprintf(gp_window, "set terminal wxt size 800,600 title '%s'\n", tag.c_str());
+          fprintf(gp_window, "replot\n");
+          fflush(gp_window);
+        }
+      }
+    }
+
+    if (gp_window) {
+      std::cout << "\nAll configs processed. Press Enter to close the last plot and exit...\n";
+      std::cin.get();
+      _pclose(gp_window);
+    } else {
+      std::cout << "\nAll configs processed.\n";
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "CRITICAL ERROR: " << e.what() << std::endl;
     return 1;
   }
-
-  fs::create_directories(kOutputDir);
-
-  int config_index = 0;
-  for (const auto& config_path : config_files) {
-    ++config_index;
-    TrajectorySaliConfig cfg;
-    if (!LoadTrajectoryConfig(config_path, &cfg)) {
-      std::cerr << "Skipping config due to parse errors: " << config_path << "\n";
-      continue;
-    }
-
-    NaturalUnits units{};
-    try {
-      units = ComputeNaturalUnits(cfg.earth_state_helio, astro_params);
-    } catch (const std::exception& e) {
-      std::cerr << "Failed to compute natural units for " << config_path << ": " << e.what()
-                << "\n";
-      continue;
-    }
-    std::cout << "<> Config #" << config_index << ": " << config_path << "\n";
-    std::cout << "    mu=" << std::setprecision(8) << units.mu
-              << ", Hill radius=" << std::setprecision(6) << units.hill_radius
-              << ", LU(AU)=" << units.lu_au << ", TU(days)=" << units.tu_day
-              << ", VU(m/s)=" << units.vu_m_per_s << "\n";
-
-    State<double> initial_state_nd{};
-    try {
-      initial_state_nd = crtbp::ConvertInertial2Rotating____(cfg.asteroid_state_helio,
-                                                             cfg.earth_state_helio, astro_params);
-    } catch (const std::exception& e) {
-      std::cerr << "Failed to convert heliocentric states to CRTBP frame: " << e.what() << "\n";
-      continue;
-    }
-
-    std::cout << "  Initial state (before conberting): "
-              << cfg.asteroid_state_helio.x - cfg.earth_state_helio.x << " "
-              << cfg.asteroid_state_helio.y - cfg.earth_state_helio.y << " "
-              << cfg.asteroid_state_helio.z - cfg.earth_state_helio.z << " "
-              << cfg.asteroid_state_helio.vx - cfg.earth_state_helio.vx << " "
-              << cfg.asteroid_state_helio.vy - cfg.earth_state_helio.vy << " "
-              << cfg.asteroid_state_helio.vz - cfg.earth_state_helio.vz << "\n";
-    std::cout << "  Initial state (nd): " << initial_state_nd.x << " " << initial_state_nd.y << " "
-              << initial_state_nd.z << " " << initial_state_nd.vx << " " << initial_state_nd.vy
-              << " " << initial_state_nd.vz << "\n";
-    std::cout << " Jacobi constant: " << crtbp::calc_jacobi_integral(initial_state_nd, units.mu)
-              << "\n";
-    double target_jacobi = 3.0;
-    std::cout << " Target Jacobi constant: " << target_jacobi << "\n";
-    State3d<double> state(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z);
-    double needed_v_abs =
-        crtbp::calc_v_abs(
-            State3d<double>(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z),
-            target_jacobi, units.mu) -
-        crtbp::calc_v_abs(
-            State3d<double>(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z),
-            crtbp::calc_jacobi_integral(initial_state_nd, units.mu), units.mu);
-    std::cout << " Needed delta-v to reach target Jacobi: " << needed_v_abs * units.vu_m_per_s
-              << " m/s\n";
-    utils::WaitForEnter();
-
-    const double natural_duration_nd = cfg.natural_duration_days / units.tu_day;
-    const double natural_dt_nd = cfg.natural_dt_days / units.tu_day;
-    if (natural_duration_nd <= 0 || natural_dt_nd <= 0) {
-      std::cerr << "Invalid natural trajectory time settings. duration_nd=" << natural_duration_nd
-                << " dt_nd=" << natural_dt_nd << "\n";
-      continue;
-    }
-
-    auto samples = IntegrateNaturalTrajectory(astro_params, initial_state_nd, natural_duration_nd,
-                                              natural_dt_nd, kMU, units);
-    if (samples.empty()) {
-      std::cerr << "Natural trajectory integration produced no samples.\n";
-      continue;
-    }
-
-    // Identify the segment inside the Hill sphere.
-    size_t start_idx = 0;
-    size_t end_idx = samples.size() - 1;
-    if (cfg.limit_to_hill) {
-      bool found = false;
-      for (size_t i = 0; i < samples.size(); ++i) {
-        if (samples[i].r2 <= 3.0 * units.hill_radius) {
-          start_idx = i;
-          found = true;
-          break;
-        }
-      }
-      for (size_t i = samples.size(); i-- > 0;) {
-        if (samples[i].r2 <= 3.0 * units.hill_radius) {
-          end_idx = i;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        std::cout << "  Warning: orbit never enters Hill sphere. Using full trajectory.\n";
-        start_idx = 0;
-        end_idx = samples.size() - 1;
-      }
-    }
-
-    // Select samples along the arc (with stride).
-    std::vector<MapTask> tasks;
-    const size_t stride = static_cast<size_t>(std::max(1, cfg.sample_stride));
-    const double theta_start = cfg.theta_start_deg;
-    const double theta_end = cfg.theta_end_deg;
-    const double theta_step = cfg.theta_step_deg > 0 ? cfg.theta_step_deg : 1.0;
-
-    for (size_t idx = start_idx; idx <= end_idx; idx += stride) {
-      for (double th = theta_start; th <= theta_end + 1e-9; th += theta_step) {
-        tasks.push_back(MapTask{&samples[idx], th});
-      }
-    }
-
-    std::cout << "  Using samples [" << start_idx << ", " << end_idx << "] (total "
-              << samples.size() << ")\n";
-    std::cout << "  Map tasks: " << tasks.size() << " (theta step " << theta_step << " deg)\n";
-
-    // Dump natural trajectory and SALI map.
-    const std::string tag =
-        cfg.output_tag.empty() ? fs::path(config_path).stem().string() : cfg.output_tag;
-    const std::string trajectory_file = kOutputDir + "/" + tag + "_trajectory.csv";
-    const std::string map_file = kOutputDir + "/" + tag + "_sali_map.csv";
-
-    WriteTrajectoryCsv(trajectory_file, samples, units.hill_radius);
-
-    const double sali_duration_nd = cfg.sali_duration_days / units.tu_day;
-    const double sali_dt_nd = cfg.sali_dt_days / units.tu_day;
-    const double dv_nd = cfg.dv_magnitude_mps / units.vu_m_per_s;
-    WriteMapCsv(map_file, units, cfg, sali_duration_nd, sali_dt_nd, tasks, dv_nd, units.hill_radius,
-                cfg.forbidden_radius, astro_params);
-
-    std::cout << "  -> trajectory: " << trajectory_file << "\n";
-    std::cout << "  -> SALI map : " << map_file << "\n";
-  }
-
-  std::cout << "\nAll configs processed.\n";
   return 0;
 }
 
@@ -294,7 +541,6 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* con
     const auto start = s.find_first_not_of(" \t");
     const auto end = s.find_last_not_of(" \t");
     if (start == std::string::npos) {
-      std::cout << "  Warning: empty or whitespace-only line encountered during config parsing.\n";
       return "";
     };
 
@@ -314,9 +560,20 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* con
 
   bool earth_found = false;
   bool asteroid_found = false;
+  bool first_line = true;
 
   while (std::getline(ifs, line)) {
-    if (line.empty() || line[0] == '#') continue;
+    std::string trimmed_line = trim(line);
+    if (trimmed_line.empty() || trimmed_line[0] == '#') continue;
+
+    // Check for directory path on the first valid line (no '=' sign)
+    if (first_line && trimmed_line.find('=') == std::string::npos) {
+      config->orbit_data_dir = trimmed_line;
+      first_line = false;
+      continue;
+    }
+    first_line = false;
+
     const auto pos = line.find('=');
     if (pos == std::string::npos) continue;
     const std::string key = trim(line.substr(0, pos));
@@ -334,6 +591,8 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* con
         return false;
       }
       earth_found = true;
+    } else if (key == "DATA_DIR" || key == "ORBIT_DATA_DIR") {
+      config->orbit_data_dir = value;
     } else if (key == "NATURAL_DURATION_DAYS") {
       config->natural_duration_days = std::stod(value);
     } else if (key == "NATURAL_DT_DAYS") {
@@ -355,12 +614,17 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectorySaliConfig* con
       config->limit_to_hill = (std::stoi(value) != 0);
     } else if (key == "OUTPUT_TAG") {
       config->output_tag = value;
+    } else if (key == "TARGET_JACOBI") {
+      config->target_jacobi = std::stod(value);
     }
   }
 
-  if (!earth_found || !asteroid_found) {
-    std::cerr << "  Missing Earth/Asteroid state definitions in " << filepath << "\n";
-    return false;
+  // If orbit_data_dir is set, we don't strictly need the states in the config.
+  if (config->orbit_data_dir.empty()) {
+    if (!earth_found || !asteroid_found) {
+      std::cerr << "  Missing Earth/Asteroid state definitions in " << filepath << "\n";
+      return false;
+    }
   }
 
   return true;
@@ -507,7 +771,7 @@ void WriteTrajectoryCsv(const std::string& filepath, const std::vector<Trajector
 
 void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
                  const TrajectorySaliConfig& cfg, double sali_duration_nd, double sali_dt_nd,
-                 const std::vector<MapTask>& tasks, double dv_nd, double hill_radius,
+                 const std::vector<MapTask>& tasks, double default_dv_nd, double hill_radius,
                  double forbidden_radius, const AstroConstants<double>& astro) {
   std::ofstream ofs(filepath);
   if (!ofs) {
@@ -517,7 +781,11 @@ void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
 
   ofs << std::fixed << std::setprecision(15);
   ofs << "# SALI map along natural trajectory\n";
-  ofs << "# DV_mps=" << cfg.dv_magnitude_mps << " (nd=" << dv_nd << ")\n";
+  if (!std::isnan(cfg.target_jacobi)) {
+    ofs << "# Target Jacobi=" << cfg.target_jacobi << "\n";
+  } else {
+    ofs << "# DV_mps=" << cfg.dv_magnitude_mps << " (nd=" << default_dv_nd << ")\n";
+  }
   ofs << "# theta_range_deg=" << cfg.theta_start_deg << " " << cfg.theta_end_deg
       << " step=" << cfg.theta_step_deg << "\n";
   ofs << "# sali_duration_nd=" << sali_duration_nd << " sali_dt_nd=" << sali_dt_nd << "\n";
@@ -525,7 +793,7 @@ void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
   ofs << "# LU(AU)=" << units.lu_au << " TU(days)=" << units.tu_day
       << " VU(m/s)=" << units.vu_m_per_s << "\n";
   ofs << "time_days,time_nd,theta_deg,base_r2,final_r2,inside_hill,x,y,z,vx,vy,vz,"
-         "post_x,post_y,post_z,post_vx,post_vy,post_vz,sali\n";
+         "post_x,post_y,post_z,post_vx,post_vy,post_vz,sali,applied_dv_mps\n";
 
   std::ostringstream buffer;
   buffer << std::fixed << std::setprecision(15);
@@ -540,8 +808,98 @@ void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
       const MapTask& task = tasks[static_cast<size_t>(i)];
       MapResult result;
       const double theta_rad = task.theta_deg * kPi / 180.0;
-      if (!EvaluateSali(task, theta_rad, dv_nd, units.mu, 3.0 * hill_radius, forbidden_radius,
-                        sali_duration_nd, sali_dt_nd, astro, &result)) {
+
+      double current_dv_nd = default_dv_nd;
+      if (!std::isnan(cfg.target_jacobi)) {
+        // Calculate required velocity for target Jacobi
+        // C = 2*Omega(r) - v^2  =>  v = sqrt(2*Omega(r) - C)
+        // Omega(r) = 0.5 * (x^2 + y^2) + (1-mu)/r1 + mu/r2
+        // But we can use calc_jacobi_integral to get current C, then adjust v.
+        // Actually, simpler:
+        // v_req^2 = 2*Omega(r) - C_target
+        // v_curr^2 = 2*Omega(r) - C_curr
+        // => v_req = sqrt(v_curr^2 + C_curr - C_target)
+        // Wait, let's just use the potential function directly if possible, or re-derive.
+        // C = 2*U - v^2.
+        // v^2 = 2*U - C.
+        // So v_req = sqrt(2*U - C_target).
+        // We need U (pseudo-potential).
+        // Let's use the existing calc_jacobi_integral to back out U?
+        // C_curr = calc_jacobi_integral(state, mu) = 2*U - v_curr^2
+        // => 2*U = C_curr + v_curr^2
+        // => v_req = sqrt(C_curr + v_curr^2 - C_target)
+
+        const double v_curr2 = task.sample->state.vx * task.sample->state.vx +
+                               task.sample->state.vy * task.sample->state.vy +
+                               task.sample->state.vz * task.sample->state.vz;
+        const double c_curr = crtbp::calc_jacobi_integral(task.sample->state, units.mu);
+        const double two_U = c_curr + v_curr2;
+        const double v_req2 = two_U - cfg.target_jacobi;
+
+        if (v_req2 < 0) {
+          // Cannot reach target Jacobi (requires imaginary velocity)
+          // Skip or mark as invalid?
+          // For now, let's skip or set result to NaN
+          continue;
+        }
+        const double v_req = std::sqrt(v_req2);
+        const double v_curr = std::sqrt(v_curr2);
+
+        // We want to apply an impulse. The impulse is applied in the direction specified by theta.
+        // Wait, the user said "calculate necessary velocity increment".
+        // Usually this implies a tangential burn to change speed, OR a specific vector addition?
+        // "小惑星の持つヤコビ積分と目標のヤコビ積分の値から必要な速度増分を算出して適用"
+        // (Calculate necessary velocity increment from asteroid's Jacobi integral and target Jacobi
+        // integral and apply it) If we apply delta-v in an arbitrary direction (theta), the change
+        // in speed depends on the angle between v and dv. v_new^2 = |v + dv|^2 = v^2 + dv^2 +
+        // 2*v*dv*cos(alpha) We want v_new = v_req. So v_req^2 = v_curr^2 + dv^2 +
+        // 2*v_curr*dv*cos(alpha) This is a quadratic equation for dv. However, usually in these
+        // maps, 'theta' defines the direction of the impulse relative to the velocity vector. If
+        // theta is the angle of the impulse vector in the V-H plane (velocity-angular momentum
+        // plane), then the angle between v and dv is theta (if theta=0 is along v). Let's check
+        // EvaluateSali's definition of theta. In EvaluateSali: Vector3d<double> tangent =
+        // v_vec.normalise(); Vector3d<double> dv_dir = tangent * c + radial * s; So theta=0 means
+        // dv is along tangent (velocity). theta=180 means dv is opposite to velocity. So 'theta' IS
+        // the angle between v and dv (in the plane). Let alpha = theta_rad. v_req^2 = v_curr^2 +
+        // dv^2 + 2*v_curr*dv*cos(theta) dv^2 + (2*v_curr*cos(theta))*dv + (v_curr^2 - v_req^2) = 0
+        // Solve for dv (positive real root).
+
+        double A = 1.0;
+        double B = 2.0 * v_curr * std::cos(theta_rad);
+        double C_eq = v_curr2 - v_req2;  // v_curr^2 - v_req^2
+
+        // Discriminant D = B^2 - 4AC
+        double D = B * B - 4.0 * A * C_eq;
+
+        if (D < 0) {
+          // No real solution for dv
+          continue;
+        }
+
+        // Solutions: (-B +/- sqrt(D)) / 2A
+        double sqrt_D = std::sqrt(D);
+        double sol1 = (-B + sqrt_D) / 2.0;
+        double sol2 = (-B - sqrt_D) / 2.0;
+
+        // We generally want the smallest positive magnitude? Or just a positive magnitude?
+        // Impulse magnitude must be positive.
+        double dv_sol = -1.0;
+        if (sol1 >= 0 && sol2 >= 0)
+          dv_sol = std::min(sol1, sol2);
+        else if (sol1 >= 0)
+          dv_sol = sol1;
+        else if (sol2 >= 0)
+          dv_sol = sol2;
+
+        if (dv_sol < 0) {
+          // No positive dv solution
+          continue;
+        }
+        current_dv_nd = dv_sol;
+      }
+
+      if (!EvaluateSali(task, theta_rad, current_dv_nd, units.mu, 3.0 * hill_radius,
+                        forbidden_radius, sali_duration_nd, sali_dt_nd, astro, &result)) {
         continue;
       }
 
@@ -553,7 +911,8 @@ void WriteMapCsv(const std::string& filepath, const NaturalUnits& units,
             << "," << result.base_state.vx << "," << result.base_state.vy << ","
             << result.base_state.vz << "," << result.post_state.x << "," << result.post_state.y
             << "," << result.post_state.z << "," << result.post_state.vx << ","
-            << result.post_state.vy << "," << result.post_state.vz << "," << result.sali << "\n";
+            << result.post_state.vy << "," << result.post_state.vz << "," << result.sali << ","
+            << current_dv_nd * units.vu_m_per_s << "\n";
     }
 
 #pragma omp critical
@@ -596,4 +955,117 @@ std::vector<std::string> DiscoverConfigFiles(const std::string& directory,
   };
   std::sort(files.begin(), files.end(), sorter);
   return files;
+}
+
+std::vector<std::string> DiscoverOrbitFiles(const std::string& directory) {
+  std::vector<std::string> files;
+  if (!fs::exists(directory)) {
+    std::cerr << "Orbit data directory does not exist: " << directory << "\n";
+    return files;
+  }
+
+  // Match OBT_#_Earth.txt
+  const std::regex pattern("^OBT_(\\d+)_Earth\\.txt$");
+
+  try {
+    for (const auto& entry : fs::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) continue;
+      const auto name = entry.path().filename().string();
+      if (std::regex_match(name, pattern)) {
+        files.push_back(fs::absolute(entry.path()).string());
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to read orbit data directory: " << e.what() << "\n";
+    return files;
+  }
+
+  // Sort numerically by the ID number
+  auto sorter = [](const std::string& a, const std::string& b) {
+    const std::string stem_a = fs::path(a).stem().string();
+    const std::string stem_b = fs::path(b).stem().string();
+    auto extract_id = [](const std::string& stem) -> int {
+      // Expected format: OBT_123_Earth
+      // We want 123.
+      std::regex id_pattern("OBT_(\\d+)_Earth");
+      std::smatch match;
+      if (std::regex_search(stem, match, id_pattern) && match.size() > 1) {
+        return std::stoi(match[1].str());
+      }
+      return 0;
+    };
+    return extract_id(stem_a) < extract_id(stem_b);
+  };
+  std::sort(files.begin(), files.end(), sorter);
+  return files;
+}
+
+bool ParseOrbitFile(const std::string& filepath, State<double>* asteroid, State<double>* earth) {
+  std::ifstream ifs(filepath);
+  if (!ifs) {
+    std::cerr << "Cannot open orbit file: " << filepath << "\n";
+    return false;
+  }
+
+  std::string line;
+  bool separator_found = false;
+
+  // 1. Find the first empty line.
+  while (std::getline(ifs, line)) {
+    // Check for empty line (handling potential whitespace)
+    if (line.find_first_not_of(" \t\r") == std::string::npos) {
+      separator_found = true;
+      break;
+    }
+  }
+
+  if (!separator_found) {
+    std::cerr << "Failed to find empty line separator in " << filepath << "\n";
+    return false;
+  }
+
+  // 2. Find the next non-empty line.
+  bool data_found = false;
+  while (std::getline(ifs, line)) {
+    if (line.find_first_not_of(" \t\r") != std::string::npos) {
+      data_found = true;
+      break;
+    }
+  }
+
+  if (!data_found) {
+    std::cerr << "Unexpected end of file or no data after separator in " << filepath << "\n";
+    return false;
+  }
+
+  std::stringstream ss(line);
+  std::vector<double> values;
+  double val;
+  while (ss >> val) {
+    values.push_back(val);
+  }
+
+  // We expect at least 13 columns (index 0 is time/ID?, 1-6 asteroid, 7-12 earth)
+  // User requirement:
+  // 2~7 columns (indices 1-6) -> Asteroid
+  // 8~13 columns (indices 7-12) -> Earth
+  // Note: C++ indices are 0-based.
+  // Column 1 is index 0.
+  // Columns 2-7 are indices 1, 2, 3, 4, 5, 6.
+  // Columns 8-13 are indices 7, 8, 9, 10, 11, 12.
+
+  if (values.size() < 13) {
+    std::cerr << "Insufficient columns in orbit data line. Expected at least 13, got "
+              << values.size() << " in " << filepath << "\n";
+    return false;
+  }
+
+  if (asteroid) {
+    *asteroid = State<double>{values[1], values[2], values[3], values[4], values[5], values[6]};
+  }
+  if (earth) {
+    *earth = State<double>{values[7], values[8], values[9], values[10], values[11], values[12]};
+  }
+
+  return true;
 }

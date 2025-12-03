@@ -1,0 +1,1045 @@
+Config Dir: C:/WORKSPACE/Research_git/TBP/configs/trajectory_SALI/
+<>-------------------------------
+----
+<>------------------------------------------------------------
+<>  CRTBP SALI map along natural trajectory (Earth Hill sphere)
+<>------------------------------------------------------------
+
+Discovering orbit files in: C:/WORKSPACE/Research_git/TBP/data/eph_cpp_result/OBT_RESULT_PHAs_ssmall_GR2_20251119
+Found 144 orbit files.
+
+--- Phase 1: Scanning and Verifying Orbit Files ---
+mean motion = 0.0770070355227191
+converted earth velocity = 3.77801820086524e-22 2.60964492097625e-06 -3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [2] OBT_2_Earth.txt
+    Dist: Inertial=0.0294594943964095 AU, Rotating=0.0294594943964094 AU (Diff: 1.73472347597681e-17)
+    Vel : Inertial(Rel)=2005913.08493461 m/s, Rotating=34942.1654048811 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 9.41434934661915e-23 2.19378369503591e-06 -1.43559620528364e-06
+<>                 Asteroid data converted to rotating frame
+  [4] OBT_4_Earth.txt
+    Dist: Inertial=0.0345603746256278 AU, Rotating=0.0345603746256279 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2130713.54829139 m/s, Rotating=37043.2798001296 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.25489108691081e-22 2.5953757167948e-06 -4.2351647362715e-22
+<>                 Asteroid data converted to rotating frame
+  [8] OBT_8_Earth.txt
+    Dist: Inertial=0.0369822985551633 AU, Rotating=0.0369822985551633 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1540493.34546432 m/s, Rotating=26912.9443048104 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.2156646312999e-22 2.61676084966585e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [17] OBT_17_Earth.txt
+    Dist: Inertial=0.0242735624412437 AU, Rotating=0.0242735624412437 AU (Diff: 2.42861286636753e-17)
+    Vel : Inertial(Rel)=2190012.66384148 m/s, Rotating=38173.4206691944 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.64406990332868e-23 1.77071334803792e-06 -1.89430309808555e-06
+<>                 Asteroid data converted to rotating frame
+  [21] OBT_21_Earth.txt
+    Dist: Inertial=0.0237397223104345 AU, Rotating=0.0237397223104345 AU (Diff: 4.5102810375397e-17)
+    Vel : Inertial(Rel)=1743669.79640999 m/s, Rotating=30410.7425908205 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.22904169276853e-22 2.62417465051082e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [22] OBT_22_Earth.txt
+    Dist: Inertial=0.0320187309317233 AU, Rotating=0.0320187309317232 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1954441.8636405 m/s, Rotating=34131.0813529679 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.81848869030373e-22 2.48700762715437e-06 -5.49205685994977e-07
+<>                 Asteroid data converted to rotating frame
+  [24] OBT_24_Earth.txt
+    Dist: Inertial=0.0270586140623413 AU, Rotating=0.0270586140623413 AU (Diff: 5.55111512312578e-17)
+    Vel : Inertial(Rel)=1993588.49324145 m/s, Rotating=34673.134672442 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.92523050050554e-23 2.5600400574592e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [37] OBT_37_Earth.txt
+    Dist: Inertial=0.0340039820011325 AU, Rotating=0.0340039820011324 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=1750910.95354493 m/s, Rotating=30376.9715754371 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.72543080792256e-23 2.57214890010232e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [38] OBT_38_Earth.txt
+    Dist: Inertial=0.0330221444462466 AU, Rotating=0.0330221444462465 AU (Diff: 5.55111512312578e-17)
+    Vel : Inertial(Rel)=2061967.04660385 m/s, Rotating=35927.9463795291 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -7.22878307188919e-23 2.54317450591672e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [45] OBT_45_Earth.txt
+    Dist: Inertial=0.0300247426787321 AU, Rotating=0.0300247426787323 AU (Diff: 1.6306400674182e-16)
+    Vel : Inertial(Rel)=1926014.76327465 m/s, Rotating=33577.7863729623 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.66156674372322e-22 2.54277734634944e-06 -2.64697796016969e-23
+<>                 Asteroid data converted to rotating frame
+  [46] OBT_46_Earth.txt
+    Dist: Inertial=0.0275630169934633 AU, Rotating=0.0275630169934633 AU (Diff: 1.04083408558608e-17)
+    Vel : Inertial(Rel)=2165939.64538139 m/s, Rotating=37756.529016141 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.34970992753344e-22 2.15318296537036e-06 -1.38819048589738e-06
+<>                 Asteroid data converted to rotating frame
+  [49] OBT_49_Earth.txt
+    Dist: Inertial=0.0392143709440306 AU, Rotating=0.0392143709440307 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=2023977.58417266 m/s, Rotating=35248.4459261794 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.28355166613502e-22 2.59886032922675e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [59] OBT_59_Earth.txt
+    Dist: Inertial=0.0319239283059775 AU, Rotating=0.0319239283059776 AU (Diff: 4.16333634234434e-17)
+    Vel : Inertial(Rel)=2009061.29188225 m/s, Rotating=34985.8628060227 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 6.11015054038193e-24 2.58032255893737e-06 -5.29395592033938e-22
+<>                 Asteroid data converted to rotating frame
+  [64] OBT_64_Earth.txt
+    Dist: Inertial=0.0355351694766787 AU, Rotating=0.0355351694766787 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2019965.76648655 m/s, Rotating=35176.6616523793 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.27771936484719e-22 2.36843170796684e-06 -9.56780372066438e-07
+<>                 Asteroid data converted to rotating frame
+  [77] OBT_77_Earth.txt
+    Dist: Inertial=0.0363241764415106 AU, Rotating=0.0363241764415106 AU (Diff: 4.85722573273506e-17)
+    Vel : Inertial(Rel)=1088315.59472846 m/s, Rotating=19010.9965287792 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.93240370738002e-22 2.27524001510121e-06 -1.16573298989421e-06
+<>                 Asteroid data converted to rotating frame
+  [85] OBT_85_Earth.txt
+    Dist: Inertial=0.0273129237865642 AU, Rotating=0.0273129237865642 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=1752798.41025093 m/s, Rotating=30514.2387071652 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 7.18251265637451e-22 1.99129776862483e-06 -1.62513652078219e-06
+<>                 Asteroid data converted to rotating frame
+  [86] OBT_86_Earth.txt
+    Dist: Inertial=0.0355794860845211 AU, Rotating=0.0355794860845209 AU (Diff: 2.35922392732846e-16)
+    Vel : Inertial(Rel)=2028825.64103346 m/s, Rotating=35323.7431278367 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.79470724769283e-22 2.11184042701558e-06 -1.45360760004522e-06
+<>                 Asteroid data converted to rotating frame
+  [100] OBT_100_Earth.txt
+    Dist: Inertial=0.0309557872363677 AU, Rotating=0.0309557872363676 AU (Diff: 1.42247325030098e-16)
+    Vel : Inertial(Rel)=1876499.37409458 m/s, Rotating=32760.8930999311 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.13309200462112e-22 2.11295716765115e-06 -1.54818073720277e-06
+<>                 Asteroid data converted to rotating frame
+  [106] OBT_106_Earth.txt
+    Dist: Inertial=0.0337108417407177 AU, Rotating=0.0337108417407177 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=2004313.74410601 m/s, Rotating=34952.5257742634 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 8.71996999647209e-23 1.81263904967777e-06 -1.84223031813874e-06
+<>                 Asteroid data converted to rotating frame
+  [108] OBT_108_Earth.txt
+    Dist: Inertial=0.0339656619834239 AU, Rotating=0.0339656619834238 AU (Diff: 1.11022302462516e-16)
+    Vel : Inertial(Rel)=1580410.52315761 m/s, Rotating=27638.6888180934 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 6.48189713989063e-23 2.56939273889363e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [111] OBT_111_Earth.txt
+    Dist: Inertial=0.0314562884454252 AU, Rotating=0.0314562884454252 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1748830.52928086 m/s, Rotating=30561.523963402 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.26926987587141e-22 2.54912834002794e-06 0
+<>                 Asteroid data converted to rotating frame
+  [118] OBT_118_Earth.txt
+    Dist: Inertial=0.0312445933579823 AU, Rotating=0.0312445933579823 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=1968326.7621729 m/s, Rotating=34268.9094846182 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.0800523107499e-22 2.55195795301976e-06 3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [120] OBT_120_Earth.txt
+    Dist: Inertial=0.0315312888804854 AU, Rotating=0.0315312888804852 AU (Diff: 1.2490009027033e-16)
+    Vel : Inertial(Rel)=2060962.63655448 m/s, Rotating=35872.7594435589 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.52963789836954e-22 2.55857511354085e-06 0
+<>                 Asteroid data converted to rotating frame
+  [143] OBT_143_Earth.txt
+    Dist: Inertial=0.0328522869744588 AU, Rotating=0.0328522869744588 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2104084.74043437 m/s, Rotating=36627.775060241 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.81823019636231e-22 2.06422809037389e-06 -1.52478113164487e-06
+<>                 Asteroid data converted to rotating frame
+  [149] OBT_149_Earth.txt
+    Dist: Inertial=0.0369899162944529 AU, Rotating=0.0369899162944527 AU (Diff: 1.45716771982052e-16)
+    Vel : Inertial(Rel)=1922159.09567036 m/s, Rotating=33465.4352187745 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.34555783686486e-23 2.54283911555987e-06 5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [151] OBT_151_Earth.txt
+    Dist: Inertial=0.0352081281774851 AU, Rotating=0.0352081281774849 AU (Diff: 1.94289029309402e-16)
+    Vel : Inertial(Rel)=1900901.71934328 m/s, Rotating=33173.6217374372 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -9.91683481058321e-23 2.54385163152979e-06 -4.13590306276514e-25
+<>                 Asteroid data converted to rotating frame
+  [153] OBT_153_Earth.txt
+    Dist: Inertial=0.0331641222834324 AU, Rotating=0.0331641222834323 AU (Diff: 4.85722573273506e-17)
+    Vel : Inertial(Rel)=1514967.09514816 m/s, Rotating=26541.6390976692 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 5.9962516474425e-24 2.58019090645576e-06 0
+<>                 Asteroid data converted to rotating frame
+  [154] OBT_154_Earth.txt
+    Dist: Inertial=0.0366420812321561 AU, Rotating=0.0366420812321559 AU (Diff: 1.04083408558608e-16)
+    Vel : Inertial(Rel)=2136420.04784427 m/s, Rotating=37166.5848876184 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.51739168442568e-22 2.62030997762831e-06 -1.58818677610181e-22
+<>                 Asteroid data converted to rotating frame
+  [163] OBT_163_Earth.txt
+    Dist: Inertial=0.036026827568042 AU, Rotating=0.0360268275680419 AU (Diff: 2.77555756156289e-17)
+    Vel : Inertial(Rel)=1681188.82571908 m/s, Rotating=29238.6060906852 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.61423004070016e-22 2.54312221168844e-06 5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [167] OBT_167_Earth.txt
+    Dist: Inertial=0.0243181713809771 AU, Rotating=0.024318171380977 AU (Diff: 6.59194920871187e-17)
+    Vel : Inertial(Rel)=2011977.48060679 m/s, Rotating=35099.4631925053 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.27938338786062e-22 2.60024807610452e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [171] OBT_171_Earth.txt
+    Dist: Inertial=0.0358919343767542 AU, Rotating=0.0358919343767543 AU (Diff: 1.2490009027033e-16)
+    Vel : Inertial(Rel)=1993986.49876341 m/s, Rotating=34712.2357532197 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.57881637072524e-22 2.62001751441012e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [175] OBT_175_Earth.txt
+    Dist: Inertial=0.0299287018213471 AU, Rotating=0.0299287018213472 AU (Diff: 4.16333634234434e-17)
+    Vel : Inertial(Rel)=2054758.60397107 m/s, Rotating=35821.7225090854 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.03029222702601e-22 2.56012348674282e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [178] OBT_178_Earth.txt
+    Dist: Inertial=0.0311269859076159 AU, Rotating=0.0311269859076159 AU (Diff: 3.46944695195361e-18)
+    Vel : Inertial(Rel)=1786616.55612448 m/s, Rotating=31069.0261881985 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -5.16987882845642e-24 2.61292078533793e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [179] OBT_179_Earth.txt
+    Dist: Inertial=0.0261269406032745 AU, Rotating=0.0261269406032746 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=2061523.33185358 m/s, Rotating=35943.7293573781 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.03213393288969e-22 2.58912948158586e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [183] OBT_183_Earth.txt
+    Dist: Inertial=0.034343213440181 AU, Rotating=0.0343432134401812 AU (Diff: 2.56739074444567e-16)
+    Vel : Inertial(Rel)=1736292.63690281 m/s, Rotating=30255.1536125036 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.43089321274603e-22 2.62499862803213e-06 -2.64697796016969e-23
+<>                 Asteroid data converted to rotating frame
+  [192] OBT_192_Earth.txt
+    Dist: Inertial=0.0328393614495835 AU, Rotating=0.0328393614495835 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1910431.34991823 m/s, Rotating=33201.6428408391 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.54658531220065e-22 1.77586785790873e-06 -1.88943087467575e-06
+<>                 Asteroid data converted to rotating frame
+  [196] OBT_196_Earth.txt
+    Dist: Inertial=0.0312731008855682 AU, Rotating=0.0312731008855682 AU (Diff: 6.93889390390723e-17)
+    Vel : Inertial(Rel)=2148172.72742734 m/s, Rotating=37397.5007972449 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 7.34252040611523e-23 2.59587673216128e-06 0
+<>                 Asteroid data converted to rotating frame
+  [209] OBT_209_Earth.txt
+    Dist: Inertial=0.0264031347370944 AU, Rotating=0.0264031347370942 AU (Diff: 1.6306400674182e-16)
+    Vel : Inertial(Rel)=1957991.5971141 m/s, Rotating=34119.058143229 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.28728364067983e-22 2.46648313401035e-06 -6.44987758342305e-07
+<>                 Asteroid data converted to rotating frame
+  [210] OBT_210_Earth.txt
+    Dist: Inertial=0.0293720027157908 AU, Rotating=0.0293720027157907 AU (Diff: 1.70002900645727e-16)
+    Vel : Inertial(Rel)=1601953.7409558 m/s, Rotating=27999.5790424786 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.77995690542591e-22 2.17695682943257e-06 -1.35194465502279e-06
+<>                 Asteroid data converted to rotating frame
+  [213] OBT_213_Earth.txt
+    Dist: Inertial=0.0347378179450986 AU, Rotating=0.0347378179450984 AU (Diff: 2.28983498828939e-16)
+    Vel : Inertial(Rel)=1963888.99659304 m/s, Rotating=34180.6341002677 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.78816415153504e-22 2.62502870206693e-06 0
+<>                 Asteroid data converted to rotating frame
+  [216] OBT_216_Earth.txt
+    Dist: Inertial=0.0315392799196158 AU, Rotating=0.0315392799196158 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=1542087.72473634 m/s, Rotating=27033.9731377112 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.76006905954217e-22 2.01936105851488e-06 -1.59079877530477e-06
+<>                 Asteroid data converted to rotating frame
+  [217] OBT_217_Earth.txt
+    Dist: Inertial=0.0379961507046625 AU, Rotating=0.0379961507046625 AU (Diff: 5.55111512312578e-17)
+    Vel : Inertial(Rel)=1777068.41784643 m/s, Rotating=31012.9531131245 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.48346435461394e-22 2.10322521809648e-06 -1.56067520313764e-06
+<>                 Asteroid data converted to rotating frame
+  [218] OBT_218_Earth.txt
+    Dist: Inertial=0.0296147417018342 AU, Rotating=0.0296147417018342 AU (Diff: 3.81639164714898e-17)
+    Vel : Inertial(Rel)=1737314.60797654 m/s, Rotating=30374.2931720701 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.58828371132985e-22 2.5498524838455e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [229] OBT_229_Earth.txt
+    Dist: Inertial=0.0365216959466053 AU, Rotating=0.0365216959466053 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1910534.61792657 m/s, Rotating=33215.8109713214 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.89946179051652e-22 2.54387764187278e-06 -5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [231] OBT_231_Earth.txt
+    Dist: Inertial=0.0295987464700285 AU, Rotating=0.0295987464700285 AU (Diff: 2.42861286636753e-17)
+    Vel : Inertial(Rel)=1847288.91554328 m/s, Rotating=32202.2740279323 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.73430047649106e-22 2.54258388914264e-06 5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [239] OBT_239_Earth.txt
+    Dist: Inertial=0.0322126807342125 AU, Rotating=0.0322126807342127 AU (Diff: 2.08166817117217e-16)
+    Vel : Inertial(Rel)=1848002.88727036 m/s, Rotating=32256.961674554 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.80747032258163e-22 2.0455179851737e-06 -1.55097854136157e-06
+<>                 Asteroid data converted to rotating frame
+  [242] OBT_242_Earth.txt
+    Dist: Inertial=0.0326917474446237 AU, Rotating=0.0326917474446236 AU (Diff: 4.16333634234434e-17)
+    Vel : Inertial(Rel)=1759904.48591838 m/s, Rotating=30709.3319793765 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.35326421922801e-23 2.5682254358914e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [245] OBT_245_Earth.txt
+    Dist: Inertial=0.0299441132402454 AU, Rotating=0.0299441132402454 AU (Diff: 6.24500451351651e-17)
+    Vel : Inertial(Rel)=1978794.41520197 m/s, Rotating=34473.0978358234 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.80068492008823e-22 2.552649445519e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [260] OBT_260_Earth.txt
+    Dist: Inertial=0.0277711885777053 AU, Rotating=0.0277711885777053 AU (Diff: 4.5102810375397e-17)
+    Vel : Inertial(Rel)=2201666.13519666 m/s, Rotating=38358.8859497817 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.67672095103913e-22 2.5599030071767e-06 3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [269] OBT_269_Earth.txt
+    Dist: Inertial=0.0302038925920932 AU, Rotating=0.0302038925920931 AU (Diff: 1.17961196366423e-16)
+    Vel : Inertial(Rel)=2202587.54283353 m/s, Rotating=38327.3364825575 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.15289891247578e-23 2.59148452144448e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [272] OBT_272_Earth.txt
+    Dist: Inertial=0.0265568470521266 AU, Rotating=0.0265568470521267 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=2193099.781258 m/s, Rotating=38117.1440350078 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.85062275013133e-22 2.60075083967302e-06 -4.2351647362715e-22
+<>                 Asteroid data converted to rotating frame
+  [280] OBT_280_Earth.txt
+    Dist: Inertial=0.0282429845632754 AU, Rotating=0.0282429845632753 AU (Diff: 6.93889390390723e-17)
+    Vel : Inertial(Rel)=2056605.15939621 m/s, Rotating=35867.1632052931 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.29505464652833e-22 2.61618260267786e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [292] OBT_292_Earth.txt
+    Dist: Inertial=0.0367530821694474 AU, Rotating=0.0367530821694474 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=1907507.2286825 m/s, Rotating=33288.0300651776 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 8.16033061329169e-22 2.05563801902929e-06 -1.61895962592152e-06
+<>                 Asteroid data converted to rotating frame
+  [297] OBT_297_Earth.txt
+    Dist: Inertial=0.0352186366211876 AU, Rotating=0.0352186366211875 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=1946664.05397486 m/s, Rotating=33872.0722718105 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.35100239724056e-23 2.56530333892332e-06 -3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [301] OBT_301_Earth.txt
+    Dist: Inertial=0.0351375964836533 AU, Rotating=0.0351375964836531 AU (Diff: 1.52655665885959e-16)
+    Vel : Inertial(Rel)=2124145.75447691 m/s, Rotating=36912.7121491106 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.11940801333153e-22 2.13526373194754e-06 -1.51959394902655e-06
+<>                 Asteroid data converted to rotating frame
+  [347] OBT_347_Earth.txt
+    Dist: Inertial=0.0269971975897177 AU, Rotating=0.0269971975897176 AU (Diff: 7.63278329429795e-17)
+    Vel : Inertial(Rel)=2161694.17847406 m/s, Rotating=37594.1371114422 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.11965031966713e-24 2.57472913526121e-06 0
+<>                 Asteroid data converted to rotating frame
+  [349] OBT_349_Earth.txt
+    Dist: Inertial=0.0292161582767188 AU, Rotating=0.0292161582767188 AU (Diff: 6.59194920871187e-17)
+    Vel : Inertial(Rel)=2125276.81922026 m/s, Rotating=37050.496023838 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.00878854013256e-23 1.79921171966723e-06 -1.85922605718955e-06
+<>                 Asteroid data converted to rotating frame
+  [354] OBT_354_Earth.txt
+    Dist: Inertial=0.0265470183134226 AU, Rotating=0.0265470183134227 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=1833852.77885319 m/s, Rotating=31939.0387948707 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 7.28048186017376e-23 1.80017717300218e-06 -1.85631896365967e-06
+<>                 Asteroid data converted to rotating frame
+  [363] OBT_363_Earth.txt
+    Dist: Inertial=0.0246087829662215 AU, Rotating=0.0246087829662217 AU (Diff: 2.04697370165263e-16)
+    Vel : Inertial(Rel)=2141789.97645904 m/s, Rotating=37256.1612382653 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.49524182614763e-23 2.60181515016717e-06 -3.72330692525184e-07
+<>                 Asteroid data converted to rotating frame
+  [368] OBT_368_Earth.txt
+    Dist: Inertial=0.0267528111853943 AU, Rotating=0.0267528111853943 AU (Diff: 2.42861286636753e-17)
+    Vel : Inertial(Rel)=1809851.86549005 m/s, Rotating=31621.3987313558 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.4959527479555e-23 2.55763537780287e-06 4.2351647362715e-22
+<>                 Asteroid data converted to rotating frame
+  [370] OBT_370_Earth.txt
+    Dist: Inertial=0.0256401627483137 AU, Rotating=0.0256401627483138 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=2188502.98282857 m/s, Rotating=38111.2884764952 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.90770122143042e-23 2.58447755409651e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [373] OBT_373_Earth.txt
+    Dist: Inertial=0.0328047077050763 AU, Rotating=0.0328047077050762 AU (Diff: 1.04083408558608e-16)
+    Vel : Inertial(Rel)=2041114.37202017 m/s, Rotating=35530.9665950676 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -5.76699983314314e-23 2.0068714108868e-06 -1.60589342252853e-06
+<>                 Asteroid data converted to rotating frame
+  [396] OBT_396_Earth.txt
+    Dist: Inertial=0.0396113777547462 AU, Rotating=0.0396113777547462 AU (Diff: 6.93889390390723e-17)
+    Vel : Inertial(Rel)=2055102.98567264 m/s, Rotating=35757.1105259414 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 8.71996999647209e-23 1.81263904967777e-06 -1.84223031813874e-06
+<>                 Asteroid data converted to rotating frame
+  [398] OBT_398_Earth.txt
+    Dist: Inertial=0.0346434543964825 AU, Rotating=0.0346434543964825 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2115791.76378497 m/s, Rotating=36852.5329980938 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -9.4090179090773e-23 2.58224640104448e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [412] OBT_412_Earth.txt
+    Dist: Inertial=0.0325279554709136 AU, Rotating=0.0325279554709137 AU (Diff: 6.24500451351651e-17)
+    Vel : Inertial(Rel)=1995902.33293354 m/s, Rotating=34745.0555092777 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.02226272723609e-22 2.40942936480809e-06 -8.37977332180652e-07
+<>                 Asteroid data converted to rotating frame
+  [423] OBT_423_Earth.txt
+    Dist: Inertial=0.034612791560042 AU, Rotating=0.034612791560042 AU (Diff: 6.93889390390723e-18)
+    Vel : Inertial(Rel)=1738370.62848624 m/s, Rotating=30311.4485983597 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.19430663285879e-22 2.58705262331719e-06 4.2351647362715e-22
+<>                 Asteroid data converted to rotating frame
+  [436] OBT_436_Earth.txt
+    Dist: Inertial=0.0296982064933414 AU, Rotating=0.0296982064933414 AU (Diff: 4.5102810375397e-17)
+    Vel : Inertial(Rel)=2154011.74632621 m/s, Rotating=37474.3924985496 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.56703858184677e-23 2.59269127431262e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [446] OBT_446_Earth.txt
+    Dist: Inertial=0.0254112803706509 AU, Rotating=0.025411280370651 AU (Diff: 5.89805981832114e-17)
+    Vel : Inertial(Rel)=2061706.07180768 m/s, Rotating=35931.4483033765 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.07972919332312e-22 2.45632728481423e-06 -6.80222187907993e-07
+<>                 Asteroid data converted to rotating frame
+  [454] OBT_454_Earth.txt
+    Dist: Inertial=0.0287450967133065 AU, Rotating=0.0287450967133065 AU (Diff: 4.16333634234434e-17)
+    Vel : Inertial(Rel)=2118637.8925553 m/s, Rotating=36830.0864271177 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 6.15758417863302e-22 2.37110273915054e-06 -9.4529912926513e-07
+<>                 Asteroid data converted to rotating frame
+  [460] OBT_460_Earth.txt
+    Dist: Inertial=0.0315522804586821 AU, Rotating=0.031552280458682 AU (Diff: 1.11022302462516e-16)
+    Vel : Inertial(Rel)=2190236.23563415 m/s, Rotating=38097.8936084632 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -4.5063895043094e-22 2.6152179037679e-06 0
+<>                 Asteroid data converted to rotating frame
+  [463] OBT_463_Earth.txt
+    Dist: Inertial=0.0337890819256334 AU, Rotating=0.0337890819256334 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2078421.72210611 m/s, Rotating=36233.4664159471 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.64439302075546e-22 2.59095250198992e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [483] OBT_483_Earth.txt
+    Dist: Inertial=0.0325738571052399 AU, Rotating=0.0325738571052398 AU (Diff: 6.24500451351651e-17)
+    Vel : Inertial(Rel)=2079480.72526394 m/s, Rotating=36198.8729466346 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.13606468494748e-22 2.54339260240693e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [502] OBT_502_Earth.txt
+    Dist: Inertial=0.027096620572338 AU, Rotating=0.027096620572338 AU (Diff: 5.20417042793042e-17)
+    Vel : Inertial(Rel)=2114312.74873694 m/s, Rotating=36774.2801361293 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.23007573200317e-22 2.41627506280121e-06 -8.1504117715563e-07
+<>                 Asteroid data converted to rotating frame
+  [506] OBT_506_Earth.txt
+    Dist: Inertial=0.0353809561636153 AU, Rotating=0.0353809561636152 AU (Diff: 1.31838984174237e-16)
+    Vel : Inertial(Rel)=2094407.53781651 m/s, Rotating=36340.2450845627 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.6182205091864e-23 2.58264548235205e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [513] OBT_513_Earth.txt
+    Dist: Inertial=0.0296468664201326 AU, Rotating=0.0296468664201328 AU (Diff: 1.17961196366423e-16)
+    Vel : Inertial(Rel)=1841158.82941973 m/s, Rotating=32156.6442155566 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 5.78735623103019e-23 2.58302501231997e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [528] OBT_528_Earth.txt
+    Dist: Inertial=0.0292292130133516 AU, Rotating=0.0292292130133516 AU (Diff: 3.46944695195361e-18)
+    Vel : Inertial(Rel)=1919836.42991912 m/s, Rotating=33497.8628946007 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.16272180918776e-23 2.58217413140821e-06 0
+<>                 Asteroid data converted to rotating frame
+  [530] OBT_530_Earth.txt
+    Dist: Inertial=0.0312648185577032 AU, Rotating=0.0312648185577032 AU (Diff: 0)
+    Vel : Inertial(Rel)=1819110.23368556 m/s, Rotating=31595.1458576325 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.03224686531668e-22 2.41672729212471e-06 -1.02726284851543e-06
+<>                 Asteroid data converted to rotating frame
+  [532] OBT_532_Earth.txt
+    Dist: Inertial=0.0245107607417756 AU, Rotating=0.0245107607417755 AU (Diff: 1.21430643318376e-16)
+    Vel : Inertial(Rel)=2133921.88552888 m/s, Rotating=37203.338778135 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.64143652803491e-24 1.96076317985427e-06 -1.66455736025481e-06
+<>                 Asteroid data converted to rotating frame
+  [535] OBT_535_Earth.txt
+    Dist: Inertial=0.0330632726862873 AU, Rotating=0.0330632726862872 AU (Diff: 9.0205620750794e-17)
+    Vel : Inertial(Rel)=2069271.66195621 m/s, Rotating=35971.2359811 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -4.52364397489937e-24 2.61670012872233e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [538] OBT_538_Earth.txt
+    Dist: Inertial=0.0326283266256338 AU, Rotating=0.0326283266256337 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=1787331.8228813 m/s, Rotating=31227.2602611998 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.0742522577358e-22 2.59526215660666e-06 -4.26658500169431e-07
+<>                 Asteroid data converted to rotating frame
+  [549] OBT_549_Earth.txt
+    Dist: Inertial=0.0298231036259181 AU, Rotating=0.0298231036259182 AU (Diff: 8.67361737988404e-17)
+    Vel : Inertial(Rel)=1954436.09885575 m/s, Rotating=34033.697797555 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.63146832368432e-22 2.54553986855044e-06 0
+<>                 Asteroid data converted to rotating frame
+  [552] OBT_552_Earth.txt
+    Dist: Inertial=0.032761061055082 AU, Rotating=0.032761061055082 AU (Diff: 7.63278329429795e-17)
+    Vel : Inertial(Rel)=1779077.30964721 m/s, Rotating=30951.3131599454 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.21501839644634e-24 1.95674820041804e-06 -1.73286372287595e-06
+<>                 Asteroid data converted to rotating frame
+  [555] OBT_555_Earth.txt
+    Dist: Inertial=0.0279099632375526 AU, Rotating=0.0279099632375526 AU (Diff: 1.04083408558608e-17)
+    Vel : Inertial(Rel)=1872672.33255 m/s, Rotating=32488.6639711147 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.43767867870838e-22 2.14083984694787e-06 -1.5127783325861e-06
+<>                 Asteroid data converted to rotating frame
+  [558] OBT_558_Earth.txt
+    Dist: Inertial=0.0297905777863464 AU, Rotating=0.0297905777863465 AU (Diff: 7.63278329429795e-17)
+    Vel : Inertial(Rel)=1641437.50577784 m/s, Rotating=28697.4944566155 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.83567856914283e-22 2.56719740369597e-06 3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [559] OBT_559_Earth.txt
+    Dist: Inertial=0.0304516846015997 AU, Rotating=0.0304516846015997 AU (Diff: 4.5102810375397e-17)
+    Vel : Inertial(Rel)=1871609.43867288 m/s, Rotating=32690.4493843439 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 6.44263837253704e-22 2.14783821441351e-06 -1.4007400974668e-06
+<>                 Asteroid data converted to rotating frame
+  [564] OBT_564_Earth.txt
+    Dist: Inertial=0.0274272783139516 AU, Rotating=0.0274272783139516 AU (Diff: 4.5102810375397e-17)
+    Vel : Inertial(Rel)=2151412.785482 m/s, Rotating=37482.2844427117 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.40724101710584e-22 2.30674999791509e-06 -1.2522984268062e-06
+<>                 Asteroid data converted to rotating frame
+  [571] OBT_571_Earth.txt
+    Dist: Inertial=0.0356731341700311 AU, Rotating=0.0356731341700316 AU (Diff: 4.5102810375397e-16)
+    Vel : Inertial(Rel)=2062294.01911492 m/s, Rotating=35875.9567206139 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.15215580586314e-24 2.41872525593842e-06 -1.02710654412648e-06
+<>                 Asteroid data converted to rotating frame
+  [578] OBT_578_Earth.txt
+    Dist: Inertial=0.0255002951877445 AU, Rotating=0.0255002951877443 AU (Diff: 1.42247325030098e-16)
+    Vel : Inertial(Rel)=2210168.98497094 m/s, Rotating=38527.0786740899 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.29240508362875e-22 2.62269717987925e-06 0
+<>                 Asteroid data converted to rotating frame
+  [582] OBT_582_Earth.txt
+    Dist: Inertial=0.0288851685524613 AU, Rotating=0.0288851685524613 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2193730.3299151 m/s, Rotating=38244.2016338853 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -8.27051365582316e-23 2.59700964665836e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [595] OBT_595_Earth.txt
+    Dist: Inertial=0.0308600666919681 AU, Rotating=0.030860066691968 AU (Diff: 2.08166817117217e-17)
+    Vel : Inertial(Rel)=2144788.30314168 m/s, Rotating=37406.2234336258 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.26491586854557e-22 2.62609436274979e-06 -1.32348898008484e-23
+<>                 Asteroid data converted to rotating frame
+  [597] OBT_597_Earth.txt
+    Dist: Inertial=0.0263763311906255 AU, Rotating=0.0263763311906255 AU (Diff: 8.67361737988404e-17)
+    Vel : Inertial(Rel)=2053278.91270504 m/s, Rotating=35796.6717523137 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.66271371538485e-22 2.00097724700598e-06 -1.61463495621943e-06
+<>                 Asteroid data converted to rotating frame
+  [600] OBT_600_Earth.txt
+    Dist: Inertial=0.0242392117686634 AU, Rotating=0.0242392117686635 AU (Diff: 5.55111512312578e-17)
+    Vel : Inertial(Rel)=2172600.21404276 m/s, Rotating=37821.6622483365 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.2465224090262e-22 2.14627089614684e-06 -1.50462881322224e-06
+<>                 Asteroid data converted to rotating frame
+  [603] OBT_603_Earth.txt
+    Dist: Inertial=0.0296399114740884 AU, Rotating=0.0296399114740884 AU (Diff: 3.81639164714898e-17)
+    Vel : Inertial(Rel)=1621695.65130892 m/s, Rotating=28286.9939725516 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.24960802177955e-22 2.22835504833447e-06 -1.25837944474445e-06
+<>                 Asteroid data converted to rotating frame
+  [612] OBT_612_Earth.txt
+    Dist: Inertial=0.0297944181572968 AU, Rotating=0.0297944181572968 AU (Diff: 2.77555756156289e-17)
+    Vel : Inertial(Rel)=1934962.4104293 m/s, Rotating=33787.7159504796 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.4111506745009e-23 2.56489842392396e-06 3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [615] OBT_615_Earth.txt
+    Dist: Inertial=0.0315726833102498 AU, Rotating=0.0315726833102499 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=1993179.60222771 m/s, Rotating=34728.8406134393 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.16173639623951e-22 2.560751549458e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [626] OBT_626_Earth.txt
+    Dist: Inertial=0.0281879331391069 AU, Rotating=0.0281879331391068 AU (Diff: 8.67361737988404e-17)
+    Vel : Inertial(Rel)=2154657.10292643 m/s, Rotating=37523.4060639582 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.91618321255574e-24 2.59165386639753e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [640] OBT_640_Earth.txt
+    Dist: Inertial=0.0371752527905861 AU, Rotating=0.0371752527905862 AU (Diff: 1.04083408558608e-16)
+    Vel : Inertial(Rel)=1496585.08753862 m/s, Rotating=25959.6318117682 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.78357582060583e-22 2.60545448496585e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [641] OBT_641_Earth.txt
+    Dist: Inertial=0.0290115120603718 AU, Rotating=0.0290115120603718 AU (Diff: 2.42861286636753e-17)
+    Vel : Inertial(Rel)=1975145.8612873 m/s, Rotating=34400.6952869543 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.53416154234444e-22 2.61304658782873e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [642] OBT_642_Earth.txt
+    Dist: Inertial=0.0313447371753794 AU, Rotating=0.0313447371753797 AU (Diff: 2.91433543964104e-16)
+    Vel : Inertial(Rel)=1911122.49620867 m/s, Rotating=33334.9931703386 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.12737282616714e-22 2.62269277842575e-06 0
+<>                 Asteroid data converted to rotating frame
+  [649] OBT_649_Earth.txt
+    Dist: Inertial=0.0272728781714907 AU, Rotating=0.0272728781714906 AU (Diff: 1.35308431126191e-16)
+    Vel : Inertial(Rel)=1845095.52740035 m/s, Rotating=32214.9471631514 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.05444522294323e-22 1.89021933260877e-06 -1.7985975811384e-06
+<>                 Asteroid data converted to rotating frame
+  [652] OBT_652_Earth.txt
+    Dist: Inertial=0.0267607238777749 AU, Rotating=0.026760723877775 AU (Diff: 5.89805981832114e-17)
+    Vel : Inertial(Rel)=2010994.52135089 m/s, Rotating=34893.0959867883 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.16790787562203e-22 1.84298925017397e-06 -1.80771550607932e-06
+<>                 Asteroid data converted to rotating frame
+  [658] OBT_658_Earth.txt
+    Dist: Inertial=0.0268663974649719 AU, Rotating=0.0268663974649719 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=2181513.72282463 m/s, Rotating=37996.2719016854 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.64091954015207e-22 2.55005172643793e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [671] OBT_671_Earth.txt
+    Dist: Inertial=0.0288183437115263 AU, Rotating=0.0288183437115262 AU (Diff: 8.67361737988404e-17)
+    Vel : Inertial(Rel)=1579577.30438809 m/s, Rotating=27667.4859068871 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.34184204992586e-22 2.23743609598784e-06 -1.36918669345286e-06
+<>                 Asteroid data converted to rotating frame
+  [672] OBT_672_Earth.txt
+    Dist: Inertial=0.0338974917663608 AU, Rotating=0.0338974917663608 AU (Diff: 2.77555756156289e-17)
+    Vel : Inertial(Rel)=2136765.70749256 m/s, Rotating=37100.8451895507 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.23854134511581e-22 2.54337719561732e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [677] OBT_677_Earth.txt
+    Dist: Inertial=0.0346970749033427 AU, Rotating=0.0346970749033428 AU (Diff: 1.31838984174237e-16)
+    Vel : Inertial(Rel)=1254447.61053366 m/s, Rotating=22006.2551962491 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 7.7237989697139e-23 2.605297790268e-06 0
+<>                 Asteroid data converted to rotating frame
+  [679] OBT_679_Earth.txt
+    Dist: Inertial=0.0292133740655157 AU, Rotating=0.0292133740655156 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=2107173.57443433 m/s, Rotating=36754.1991151102 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.35050159696353e-22 2.60477594520755e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [693] OBT_693_Earth.txt
+    Dist: Inertial=0.0359212505850678 AU, Rotating=0.0359212505850679 AU (Diff: 7.63278329429795e-17)
+    Vel : Inertial(Rel)=1606140.40159444 m/s, Rotating=28038.0216607389 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 8.05038990883029e-23 2.62674591180791e-06 0
+<>                 Asteroid data converted to rotating frame
+  [696] OBT_696_Earth.txt
+    Dist: Inertial=0.0324692319246398 AU, Rotating=0.0324692319246397 AU (Diff: 6.24500451351651e-17)
+    Vel : Inertial(Rel)=1326154.10506109 m/s, Rotating=23318.1792716545 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.58319458012361e-22 2.58645672166464e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [700] OBT_700_Earth.txt
+    Dist: Inertial=0.0330202030834127 AU, Rotating=0.033020203083413 AU (Diff: 2.91433543964104e-16)
+    Vel : Inertial(Rel)=1952924.71240528 m/s, Rotating=34000.1591598878 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 6.26201573096784e-23 2.47244635770595e-06 -6.20819737030171e-07
+<>                 Asteroid data converted to rotating frame
+  [710] OBT_710_Earth.txt
+    Dist: Inertial=0.032825061346129 AU, Rotating=0.0328250613461289 AU (Diff: 3.46944695195361e-17)
+    Vel : Inertial(Rel)=1799057.41921111 m/s, Rotating=31444.2270373725 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -7.79721124907798e-22 1.90624641048532e-06 -1.7344454609444e-06
+<>                 Asteroid data converted to rotating frame
+  [715] OBT_715_Earth.txt
+    Dist: Inertial=0.0296525463844518 AU, Rotating=0.0296525463844518 AU (Diff: 3.46944695195361e-18)
+    Vel : Inertial(Rel)=1652007.14073422 m/s, Rotating=28919.6618215003 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.08489907215158e-22 1.97491735094882e-06 -1.64914430158945e-06
+<>                 Asteroid data converted to rotating frame
+  [727] OBT_727_Earth.txt
+    Dist: Inertial=0.0363796944062725 AU, Rotating=0.0363796944062725 AU (Diff: 0)
+    Vel : Inertial(Rel)=1795286.63790729 m/s, Rotating=31362.714922209 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -4.88605248077417e-22 2.54645744376455e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [733] OBT_733_Earth.txt
+    Dist: Inertial=0.0264200823100817 AU, Rotating=0.0264200823100817 AU (Diff: 5.20417042793042e-17)
+    Vel : Inertial(Rel)=2184010.3508857 m/s, Rotating=38055.3255940385 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.98754372799426e-23 2.54261741631197e-06 -5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [736] OBT_736_Earth.txt
+    Dist: Inertial=0.0368225424709441 AU, Rotating=0.036822542470944 AU (Diff: 5.55111512312578e-17)
+    Vel : Inertial(Rel)=1615896.35035336 m/s, Rotating=28167.9153062239 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.45221896291341e-22 2.59363547064048e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [741] OBT_741_Earth.txt
+    Dist: Inertial=0.0319880323704326 AU, Rotating=0.0319880323704325 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=1895414.67092917 m/s, Rotating=33017.6502426221 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -5.55703812922245e-22 1.84351763202964e-06 -1.80825272981752e-06
+<>                 Asteroid data converted to rotating frame
+  [747] OBT_747_Earth.txt
+    Dist: Inertial=0.0345732074933777 AU, Rotating=0.0345732074933778 AU (Diff: 8.32667268468867e-17)
+    Vel : Inertial(Rel)=1821214.84766279 m/s, Rotating=31802.7940226232 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.98684905726116e-22 2.54316182584766e-06 7.94093388050907e-23
+<>                 Asteroid data converted to rotating frame
+  [758] OBT_758_Earth.txt
+    Dist: Inertial=0.0304925552849996 AU, Rotating=0.0304925552849997 AU (Diff: 1.38777878078145e-16)
+    Vel : Inertial(Rel)=2188451.57510757 m/s, Rotating=38092.8326570561 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -7.32507206506919e-23 2.55380185272546e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [766] OBT_766_Earth.txt
+    Dist: Inertial=0.031241667979973 AU, Rotating=0.0312416679799729 AU (Diff: 1.04083408558608e-16)
+    Vel : Inertial(Rel)=2034888.93470668 m/s, Rotating=35415.2510941214 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.83910345519429e-23 2.550156829731e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [768] OBT_768_Earth.txt
+    Dist: Inertial=0.0323829909220603 AU, Rotating=0.0323829909220604 AU (Diff: 1.2490009027033e-16)
+    Vel : Inertial(Rel)=1840907.93659687 m/s, Rotating=32091.354706305 m/s
+Failed to find empty line separator in C:\WORKSPACE\Research_git\TBP\data\eph_cpp_result\OBT_RESULT_PHAs_ssmall_GR2_20251119\OBT_772_Earth.txt
+mean motion = 0.0770070355227191
+converted earth velocity = 1.0262209474486e-23 2.58047243684395e-06 0
+<>                 Asteroid data converted to rotating frame
+  [777] OBT_777_Earth.txt
+    Dist: Inertial=0.0285709229145145 AU, Rotating=0.0285709229145145 AU (Diff: 2.42861286636753e-17)
+    Vel : Inertial(Rel)=2048328.60848975 m/s, Rotating=35715.6403959949 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -4.52028355366087e-22 2.44511539359362e-06 -9.60516793250077e-07
+<>                 Asteroid data converted to rotating frame
+  [795] OBT_795_Earth.txt
+    Dist: Inertial=0.027920604171826 AU, Rotating=0.027920604171826 AU (Diff: 3.46944695195361e-18)
+    Vel : Inertial(Rel)=1906127.14633259 m/s, Rotating=33281.9197008366 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.43178175393519e-22 2.60440015205953e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [803] OBT_803_Earth.txt
+    Dist: Inertial=0.0361389605684001 AU, Rotating=0.0361389605684 AU (Diff: 1.11022302462516e-16)
+    Vel : Inertial(Rel)=1995016.49036536 m/s, Rotating=34735.669580936 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.41748377606576e-22 2.46902622230943e-06 -6.33559575533604e-07
+<>                 Asteroid data converted to rotating frame
+  [810] OBT_810_Earth.txt
+    Dist: Inertial=0.0355652278922245 AU, Rotating=0.0355652278922246 AU (Diff: 1.66533453693773e-16)
+    Vel : Inertial(Rel)=2033729.79303716 m/s, Rotating=35447.5437751042 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.61167734955966e-22 2.07727792284173e-06 -1.59598502833153e-06
+<>                 Asteroid data converted to rotating frame
+  [819] OBT_819_Earth.txt
+    Dist: Inertial=0.0314864588736193 AU, Rotating=0.0314864588736194 AU (Diff: 1.17961196366423e-16)
+    Vel : Inertial(Rel)=2068002.25896279 m/s, Rotating=36071.617696188 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -5.16285102442399e-23 2.57019171524739e-06 -1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [838] OBT_838_Earth.txt
+    Dist: Inertial=0.0289402560570662 AU, Rotating=0.0289402560570662 AU (Diff: 3.46944695195361e-18)
+    Vel : Inertial(Rel)=1782180.89215367 m/s, Rotating=30982.4462478092 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 3.75850190828782e-23 2.20041245010982e-06 -1.31082802290257e-06
+<>                 Asteroid data converted to rotating frame
+  [845] OBT_845_Earth.txt
+    Dist: Inertial=0.028731177105932 AU, Rotating=0.028731177105932 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=2005783.9797546 m/s, Rotating=35011.175223572 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 2.99077490226204e-23 2.49451881187867e-06 -8.24815760922885e-07
+<>                 Asteroid data converted to rotating frame
+  [848] OBT_848_Earth.txt
+    Dist: Inertial=0.0301567862615213 AU, Rotating=0.0301567862615216 AU (Diff: 2.98372437868011e-16)
+    Vel : Inertial(Rel)=2057213.54724875 m/s, Rotating=35867.8193905308 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -3.21734484191914e-22 2.61228607752122e-06 -2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [854] OBT_854_Earth.txt
+    Dist: Inertial=0.0262072616725297 AU, Rotating=0.0262072616725297 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=2007739.63066862 m/s, Rotating=34999.7364120653 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.3302905067151e-22 2.0604547476468e-06 -1.61298554576794e-06
+<>                 Asteroid data converted to rotating frame
+  [864] OBT_864_Earth.txt
+    Dist: Inertial=0.0349285652372387 AU, Rotating=0.0349285652372386 AU (Diff: 9.71445146547012e-17)
+    Vel : Inertial(Rel)=1877298.06509756 m/s, Rotating=32580.5488904333 m/s
+Failed to find empty line separator in C:\WORKSPACE\Research_git\TBP\data\eph_cpp_result\OBT_RESULT_PHAs_ssmall_GR2_20251119\OBT_876_Earth.txt
+mean motion = 0.0770070355227191
+converted earth velocity = -5.74089194505943e-22 1.89410675236484e-06 -1.74661511410247e-06
+<>                 Asteroid data converted to rotating frame
+  [880] OBT_880_Earth.txt
+    Dist: Inertial=0.0319426004454086 AU, Rotating=0.0319426004454086 AU (Diff: 1.38777878078145e-17)
+    Vel : Inertial(Rel)=2040324.28451706 m/s, Rotating=35576.7461552691 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.61022338460811e-22 2.55341464367903e-06 2.11758236813575e-22
+<>                 Asteroid data converted to rotating frame
+  [892] OBT_892_Earth.txt
+    Dist: Inertial=0.0306851159796109 AU, Rotating=0.030685115979611 AU (Diff: 1.04083408558608e-16)
+    Vel : Inertial(Rel)=2028637.19207003 m/s, Rotating=35309.5505272466 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.6095125262692e-22 2.47855340301578e-06 -5.97550552932827e-07
+<>                 Asteroid data converted to rotating frame
+  [902] OBT_902_Earth.txt
+    Dist: Inertial=0.0333087405668319 AU, Rotating=0.0333087405668318 AU (Diff: 8.32667268468867e-17)
+    Vel : Inertial(Rel)=1511587.67274878 m/s, Rotating=26417.8914683148 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 4.41029438158546e-22 2.61230507163891e-06 1.05879118406788e-22
+<>                 Asteroid data converted to rotating frame
+  [912] OBT_912_Earth.txt
+    Dist: Inertial=0.0318902187448827 AU, Rotating=0.0318902187448829 AU (Diff: 2.0122792321331e-16)
+    Vel : Inertial(Rel)=1955286.08144604 m/s, Rotating=34144.4370724148 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -6.58109418991164e-24 2.57616421454548e-06 -3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [926] OBT_926_Earth.txt
+    Dist: Inertial=0.0312370228767823 AU, Rotating=0.0312370228767822 AU (Diff: 8.32667268468867e-17)
+    Vel : Inertial(Rel)=2148814.92324409 m/s, Rotating=37419.0551550109 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.98684905726116e-22 2.54316182584766e-06 7.94093388050907e-23
+<>                 Asteroid data converted to rotating frame
+  [932] OBT_932_Earth.txt
+    Dist: Inertial=0.0302213841173594 AU, Rotating=0.0302213841173595 AU (Diff: 4.85722573273506e-17)
+    Vel : Inertial(Rel)=1931446.15942346 m/s, Rotating=33644.6820153043 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.42546483997615e-22 2.59599939483932e-06 3.17637355220363e-22
+<>                 Asteroid data converted to rotating frame
+  [943] OBT_943_Earth.txt
+    Dist: Inertial=0.0272037050012009 AU, Rotating=0.0272037050012009 AU (Diff: 6.59194920871187e-17)
+    Vel : Inertial(Rel)=1894143.68738713 m/s, Rotating=33053.4920805149 m/s
+Failed to find empty line separator in C:\WORKSPACE\Research_git\TBP\data\eph_cpp_result\OBT_RESULT_PHAs_ssmall_GR2_20251119\OBT_947_Earth.txt
+mean motion = 0.0770070355227191
+converted earth velocity = -2.98340782493149e-22 1.88014620879699e-06 -1.76287635014062e-06
+<>                 Asteroid data converted to rotating frame
+  [954] OBT_954_Earth.txt
+    Dist: Inertial=0.0263367258645298 AU, Rotating=0.0263367258645297 AU (Diff: 6.24500451351651e-17)
+    Vel : Inertial(Rel)=2002116.78916888 m/s, Rotating=34881.9254119211 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -4.92754075837253e-26 2.62702368723647e-06 -1.09259418989898e-07
+<>                 Asteroid data converted to rotating frame
+  [957] OBT_957_Earth.txt
+    Dist: Inertial=0.0269612864827459 AU, Rotating=0.0269612864827456 AU (Diff: 2.22044604925031e-16)
+    Vel : Inertial(Rel)=2051785.13140824 m/s, Rotating=35773.3421316618 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -2.71967938119486e-23 2.54226898541519e-06 -5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [963] OBT_963_Earth.txt
+    Dist: Inertial=0.0277463883586995 AU, Rotating=0.0277463883586996 AU (Diff: 1.56125112837913e-16)
+    Vel : Inertial(Rel)=1887169.85739941 m/s, Rotating=32923.7429321078 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = 1.55697363267501e-22 2.54460542816837e-06 5.29395592033938e-23
+<>                 Asteroid data converted to rotating frame
+  [969] OBT_969_Earth.txt
+    Dist: Inertial=0.0347252393603643 AU, Rotating=0.0347252393603643 AU (Diff: 0)
+    Vel : Inertial(Rel)=1896723.40431446 m/s, Rotating=33087.2199740369 m/s
+mean motion = 0.0770070355227191
+converted earth velocity = -1.18067107744874e-23 2.59695009262468e-06 0
+<>                 Asteroid data converted to rotating frame
+  [992] OBT_992_Earth.txt
+    Dist: Inertial=0.0351368937066589 AU, Rotating=0.035136893706659 AU (Diff: 1.66533453693773e-16)
+    Vel : Inertial(Rel)=1832408.66460282 m/s, Rotating=31838.0348608207 m/s
+
+--- Phase 2: Jacobi Integral Summary ---
+Index | Filename             | Jacobi Constant
+------+----------------------+----------------
+    2 |      OBT_2_Earth.txt | 1.624316
+    4 |      OBT_4_Earth.txt | 1.455168
+    8 |      OBT_8_Earth.txt | 2.183662
+   17 |     OBT_17_Earth.txt | 1.357676
+   21 |     OBT_21_Earth.txt | 1.957782
+   22 |     OBT_22_Earth.txt | 1.688081
+   24 |     OBT_24_Earth.txt | 1.644395
+   37 |     OBT_37_Earth.txt | 1.961801
+   38 |     OBT_38_Earth.txt | 1.546115
+   45 |     OBT_45_Earth.txt | 1.731170
+   46 |     OBT_46_Earth.txt | 1.392965
+   49 |     OBT_49_Earth.txt | 1.601989
+   59 |     OBT_59_Earth.txt | 1.623255
+   64 |     OBT_64_Earth.txt | 1.605869
+   77 |     OBT_77_Earth.txt | 2.592427
+   85 |     OBT_85_Earth.txt | 1.950612
+   86 |     OBT_86_Earth.txt | 1.593795
+  100 |    OBT_100_Earth.txt | 1.790789
+  106 |    OBT_106_Earth.txt | 1.625678
+  108 |    OBT_108_Earth.txt | 2.141143
+  111 |    OBT_111_Earth.txt | 1.948886
+  118 |    OBT_118_Earth.txt | 1.676933
+  120 |    OBT_120_Earth.txt | 1.550607
+  143 |    OBT_143_Earth.txt | 1.489011
+  149 |    OBT_149_Earth.txt | 1.740561
+  151 |    OBT_151_Earth.txt | 1.760326
+  153 |    OBT_153_Earth.txt | 2.205542
+  154 |    OBT_154_Earth.txt | 1.444470
+  163 |    OBT_163_Earth.txt | 2.037235
+  167 |    OBT_167_Earth.txt | 1.611534
+  171 |    OBT_171_Earth.txt | 1.645335
+  175 |    OBT_175_Earth.txt | 1.555776
+  178 |    OBT_178_Earth.txt | 1.911224
+  179 |    OBT_179_Earth.txt | 1.544207
+  183 |    OBT_183_Earth.txt | 1.970331
+  192 |    OBT_192_Earth.txt | 1.756865
+  196 |    OBT_196_Earth.txt | 1.424295
+  209 |    OBT_209_Earth.txt | 1.689724
+  210 |    OBT_210_Earth.txt | 2.118533
+  213 |    OBT_213_Earth.txt | 1.683409
+  216 |    OBT_216_Earth.txt | 2.175553
+  217 |    OBT_217_Earth.txt | 1.915975
+  218 |    OBT_218_Earth.txt | 1.959953
+  229 |    OBT_229_Earth.txt | 1.757657
+  231 |    OBT_231_Earth.txt | 1.830568
+  239 |    OBT_239_Earth.txt | 1.829977
+  242 |    OBT_242_Earth.txt | 1.936159
+  245 |    OBT_245_Earth.txt | 1.661594
+  260 |    OBT_260_Earth.txt | 1.342707
+  269 |    OBT_269_Earth.txt | 1.345085
+  272 |    OBT_272_Earth.txt | 1.362251
+  280 |    OBT_280_Earth.txt | 1.550687
+  292 |    OBT_292_Earth.txt | 1.751405
+  297 |    OBT_297_Earth.txt | 1.706456
+  301 |    OBT_301_Earth.txt | 1.467635
+  347 |    OBT_347_Earth.txt | 1.408976
+  349 |    OBT_349_Earth.txt | 1.454871
+  354 |    OBT_354_Earth.txt | 1.850876
+  363 |    OBT_363_Earth.txt | 1.436256
+  368 |    OBT_368_Earth.txt | 1.872817
+  370 |    OBT_370_Earth.txt | 1.362749
+  373 |    OBT_373_Earth.txt | 1.579565
+  396 |    OBT_396_Earth.txt | 1.561154
+  398 |    OBT_398_Earth.txt | 1.469137
+  412 |    OBT_412_Earth.txt | 1.640080
+  423 |    OBT_423_Earth.txt | 1.964384
+  436 |    OBT_436_Earth.txt | 1.416633
+  446 |    OBT_446_Earth.txt | 1.545717
+  454 |    OBT_454_Earth.txt | 1.472636
+  460 |    OBT_460_Earth.txt | 1.366574
+  463 |    OBT_463_Earth.txt | 1.521715
+  483 |    OBT_483_Earth.txt | 1.523332
+  502 |    OBT_502_Earth.txt | 1.476270
+  506 |    OBT_506_Earth.txt | 1.511654
+  513 |    OBT_513_Earth.txt | 1.836851
+  528 |    OBT_528_Earth.txt | 1.734767
+  530 |    OBT_530_Earth.txt | 1.874029
+  532 |    OBT_532_Earth.txt | 1.440143
+  535 |    OBT_535_Earth.txt | 1.541426
+  538 |    OBT_538_Earth.txt | 1.902925
+  549 |    OBT_549_Earth.txt | 1.694154
+  552 |    OBT_552_Earth.txt | 1.921061
+  555 |    OBT_555_Earth.txt | 1.811111
+  558 |    OBT_558_Earth.txt | 2.072597
+  559 |    OBT_559_Earth.txt | 1.795457
+  564 |    OBT_564_Earth.txt | 1.416177
+  571 |    OBT_571_Earth.txt | 1.551379
+  578 |    OBT_578_Earth.txt | 1.327650
+  582 |    OBT_582_Earth.txt | 1.351557
+  595 |    OBT_595_Earth.txt | 1.422500
+  597 |    OBT_597_Earth.txt | 1.555977
+  600 |    OBT_600_Earth.txt | 1.387933
+  603 |    OBT_603_Earth.txt | 2.100716
+  612 |    OBT_612_Earth.txt | 1.712573
+  615 |    OBT_615_Earth.txt | 1.642560
+  626 |    OBT_626_Earth.txt | 1.412996
+  640 |    OBT_640_Earth.txt | 2.240878
+  641 |    OBT_641_Earth.txt | 1.665609
+  642 |    OBT_642_Earth.txt | 1.750315
+  649 |    OBT_649_Earth.txt | 1.831757
+  652 |    OBT_652_Earth.txt | 1.627787
+  658 |    OBT_658_Earth.txt | 1.372121
+  671 |    OBT_671_Earth.txt | 2.136868
+  672 |    OBT_672_Earth.txt | 1.451711
+  677 |    OBT_677_Earth.txt | 2.455099
+  679 |    OBT_679_Earth.txt | 1.478430
+  693 |    OBT_693_Earth.txt | 2.115216
+  696 |    OBT_696_Earth.txt | 2.389194
+  700 |    OBT_700_Earth.txt | 1.698169
+  710 |    OBT_710_Earth.txt | 1.884736
+  715 |    OBT_715_Earth.txt | 2.056685
+  727 |    OBT_727_Earth.txt | 1.891500
+  733 |    OBT_733_Earth.txt | 1.369177
+  736 |    OBT_736_Earth.txt | 2.106657
+  741 |    OBT_741_Earth.txt | 1.774079
+  747 |    OBT_747_Earth.txt | 1.861546
+  758 |    OBT_758_Earth.txt | 1.366428
+  766 |    OBT_766_Earth.txt | 1.588857
+  768 |    OBT_768_Earth.txt | 1.841546
+  772 |    OBT_772_Earth.txt | INVALID: Parse failed
+  777 |    OBT_777_Earth.txt | 1.564241
+  795 |    OBT_795_Earth.txt | 1.753631
+  803 |    OBT_803_Earth.txt | 1.642222
+  810 |    OBT_810_Earth.txt | 1.585555
+  819 |    OBT_819_Earth.txt | 1.536187
+  838 |    OBT_838_Earth.txt | 1.917552
+  845 |    OBT_845_Earth.txt | 1.619204
+  848 |    OBT_848_Earth.txt | 1.552135
+  854 |    OBT_854_Earth.txt | 1.619111
+  864 |    OBT_864_Earth.txt | 1.802850
+  876 |    OBT_876_Earth.txt | INVALID: Parse failed
+  880 |    OBT_880_Earth.txt | 1.574803
+  892 |    OBT_892_Earth.txt | 1.595212
+  902 |    OBT_902_Earth.txt | 2.212496
+  912 |    OBT_912_Earth.txt | 1.686263
+  926 |    OBT_926_Earth.txt | 1.421473
+  932 |    OBT_932_Earth.txt | 1.724970
+  943 |    OBT_943_Earth.txt | 1.768887
+  947 |    OBT_947_Earth.txt | INVALID: Parse failed
+  954 |    OBT_954_Earth.txt | 1.628901
+  957 |    OBT_957_Earth.txt | 1.559624
+  963 |    OBT_963_Earth.txt | 1.779559
+  969 |    OBT_969_Earth.txt | 1.765959
+  992 |    OBT_992_Earth.txt | 1.858639
+
+Enter indices to simulate (space separated, or 'all'): 
+--- Phase 3: Simulation Execution ---
+Processing Orbit File: C:\WORKSPACE\Research_git\TBP\data\eph_cpp_result\OBT_RESULT_PHAs_ssmall_GR2_20251119\OBT_4_Earth.txt (Tag: operationtest_OBT_4)
+<> Config #1: C:\WORKSPACE\Research_git\TBP\configs\trajectory_SALI\trajectorySALI.txt
+    mu=0.00000300, Hill radius=0.010004, LU(AU)=1.000000, TU(days)=58.132354, VU(m/s)=29784.736563
+mean motion = 0.077007035522719
+converted earth velocity = 0.000000000000000 0.000002193783695 -0.000001435596205
+<>                 Asteroid data converted to rotating frame
+  Initial state (before conberting): 0.003102797967769 -0.032512376732713 0.011302101495966 -1.226545226392413 -0.099646621117579 -0.003036379495530
+  Initial state (nd): 0.975297798021057 0.023708097191120 0.004721780954189 0.819065046755221 0.894556115699598 -0.275121319189623
+ Jacobi constant: 1.455168377146623
+ Target Jacobi constant: 3.000000000000000
+ Needed delta-v to reach target Jacobi: -35725.221115646003454 m/s
+  Warning: orbit never enters Hill sphere. Using full trajectory.
+  Using samples [0, 1001] (total 1002)
+  Map tasks: 2613 (theta step 10.000000000000000 deg)
+  -> trajectory: C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/operationtest_OBT_4/operationtest_OBT_4_trajectory.csv
+  -> SALI map : C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/operationtest_OBT_4/operationtest_OBT_4_sali_map.csv
+
+All configs processed. Press Enter to close the last plot and exit...
+         line 0: warning: Skipping data file with no valid points
+
+gnuplot> plot 'C:/WORKSPACE/Research_git/TBP/data/trajectory_SALI/operationtest_OBT_4/operationtest_OBT_4_trajectory.csv' using 3:4:5 with lines title 'Trajectory' lc rgb 'blue'
+                                                                                                                                                                                 ^
+         line 0: x range is invalid
+
+
+gnuplot> replot
+         ^
+         line 0: no previous plot
+
+
+gnuplot> replot
+         ^
+         line 0: no previous plot
+

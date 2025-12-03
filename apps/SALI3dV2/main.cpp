@@ -409,42 +409,40 @@ int main() {
           vx = velocity.x;
           vy = velocity.y;
           vz = velocity.z;
+          velo_err = 0;
         } else {
           velo_err = 1;
         }
 
-        if (velo_err) {
-          completed_count++;
-          continue;
-        }
-        State<double> initial_state = {point.x, point.y, point.z, vx, vy, vz};
-        SaliState<double> sali_state;
-        sali_state.state = ConvertToCanonical(initial_state);
-        // 偏差ベクトル w1, w2 の初期化
-        sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
-        // 積分ループ (オブザーバー無し)
-        for (int step = 0; step < num_step; ++step) {
-          // 1. 積分s
-          integrator(&sali_state, CALC_TIMESTEP);
-          // 2. 正規化
-          sali_state.w1.Normalize();
-          sali_state.w2.Normalize();
+        if (velo_err == 0) {
+          State<double> initial_state = {point.x, point.y, point.z, vx, vy, vz};
+          SaliState<double> sali_state;
+          sali_state.state = ConvertToCanonical(initial_state);
+          // 偏差ベクトル w1, w2 の初期化
+          sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+          // 積分ループ (オブザーバー無し)
+          for (int step = 0; step < num_step; ++step) {
+            // 1. 積分s
+            integrator(&sali_state, CALC_TIMESTEP);
+            // 2. 正規化
+            sali_state.w1.Normalize();
+            sali_state.w2.Normalize();
 
-          // Check for collision or escape
-          double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, kMU);
-          if (r2 < FOREBIDDEN_AREA_RADIUS) {
-            collision_flag = 1;
+            // Check for collision or escape
+            double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, kMU);
+            if (r2 < FOREBIDDEN_AREA_RADIUS) {
+              collision_flag = 1;
+            }
+            if (r2 > SOI_RADIUS) {
+              escape_flag = 1;
+            }
           }
-          if (r2 > SOI_RADIUS) {
-            escape_flag = 1;
-          }
+
+          const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
+          const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
+          final_sali = std::min(norm_plus, norm_minus);
         }
-
-        const double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-        const double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-        final_sali = std::min(norm_plus, norm_minus);
-
         local_output_buffer << mesh_num << "," << final_sali << "," << point.x << "," << point.y
                             << "," << point.z << "," << vx << "," << vy << "," << vz << ","
                             << collision_flag << "," << escape_flag << "\n";
