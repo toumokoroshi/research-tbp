@@ -228,50 +228,86 @@ int main() {
         }
 
         State<double> initial_state_nd{};
+        State<double> initial_state_nd2{};
         try {
-          initial_state_nd = crtbp::ConvertInertial2Rotating____(
-              cfg.asteroid_state_helio, cfg.earth_state_helio, astro_params);
+          initial_state_nd = crtbp::ConvertInertial2Rotating(cfg.earth_state_helio,
+                                                             cfg.earth_state_helio, astro_params);
+          initial_state_nd2 = crtbp::ConvertInertial2Rotating____(
+              cfg.earth_state_helio, cfg.earth_state_helio, astro_params);
         } catch (const std::exception& e) {
           result.valid = false;
           result.error_msg = std::string("Conversion failed: ") + e.what();
           scan_results.push_back(result);
           continue;
         }
+        std::cout << "initial_state_nd = " << initial_state_nd.x << " " << initial_state_nd.y << " "
+                  << initial_state_nd.z << std::endl;
+        std::cout << "initial_state_nd2 = " << initial_state_nd2.x << " " << initial_state_nd2.y
+                  << " " << initial_state_nd2.z << std::endl;
+        std::cout << "initial_state_nd velocity = " << initial_state_nd.vx << " "
+                  << initial_state_nd.vy << " " << initial_state_nd.vz << std::endl;
+        std::cout << "initial_state_nd2 velocity = " << initial_state_nd2.vx << " "
+                  << initial_state_nd2.vy << " " << initial_state_nd2.vz << std::endl;
+        std::cout << "cfg.earth_state_helio velocity = "
+                  << std::sqrt(cfg.earth_state_helio.vx * cfg.earth_state_helio.vx +
+                               cfg.earth_state_helio.vy * cfg.earth_state_helio.vy +
+                               cfg.earth_state_helio.vz * cfg.earth_state_helio.vz)
+                  << std::endl;
+        std::cout << "initial_state_nd velocity = "
+                  << std::sqrt(initial_state_nd.vx * initial_state_nd.vx +
+                               initial_state_nd.vy * initial_state_nd.vy +
+                               initial_state_nd.vz * initial_state_nd.vz)
+                  << std::endl;
+        std::cout << "initial_state_nd2 velocity = "
+                  << std::sqrt(initial_state_nd2.vx * initial_state_nd2.vx +
+                               initial_state_nd2.vy * initial_state_nd2.vy +
+                               initial_state_nd2.vz * initial_state_nd2.vz)
+                  << std::endl;
+        utils::WaitForEnter();
 
-        // --- Debug Info Calculation ---
-        // 1. Distance
-        Vector3d<double> r_ast_h(cfg.asteroid_state_helio.x, cfg.asteroid_state_helio.y,
-                                 cfg.asteroid_state_helio.z);
-        Vector3d<double> r_ear_h(cfg.earth_state_helio.x, cfg.earth_state_helio.y,
-                                 cfg.earth_state_helio.z);
-        double dist_inertial = (r_ast_h - r_ear_h).magnitude();  // AU
+        // // --- Debug Info Calculation ---
+        // // 1. Distance
+        // Vector3d<double> r_ast_h(cfg.asteroid_state_helio.x, cfg.asteroid_state_helio.y,
+        //                          cfg.asteroid_state_helio.z);
+        // Vector3d<double> r_ear_h(cfg.earth_state_helio.x, cfg.earth_state_helio.y,
+        //                          cfg.earth_state_helio.z);
+        // double dist_inertial = (r_ast_h - r_ear_h).magnitude();  // AU
 
-        Vector3d<double> r_nd(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z);
-        // In CRTBP, Earth is at (1-mu, 0, 0).
-        // However, the ConvertInertial2Rotating____ returns state relative to barycenter in
-        // rotating frame. The distance to Earth in rotating frame: Earth pos in rotating frame:
-        // (1-mu, 0, 0)
-        Vector3d<double> r_earth_rot(1.0 - units.mu, 0.0, 0.0);
-        double dist_rotating_nd = (r_nd - r_earth_rot).magnitude();
-        double dist_rotating_au = dist_rotating_nd * units.lu_au;
+        // Vector3d<double> r_nd(initial_state_nd.x, initial_state_nd.y, initial_state_nd.z);
+        // // In CRTBP, Earth is at (1-mu, 0, 0).
+        // // However, the ConvertInertial2Rotating____ returns state relative to barycenter in
+        // // rotating frame. The distance to Earth in rotating frame: Earth pos in rotating frame:
+        // // (1-mu, 0, 0)
+        // Vector3d<double> r_earth_rot(1.0 - units.mu, 0.0, 0.0);
+        // double dist_rotating_nd = (r_nd - r_earth_rot).magnitude();
+        // double dist_rotating_au = dist_rotating_nd * units.lu_au;
 
-        // 2. Velocity
-        Vector3d<double> v_ast_h(cfg.asteroid_state_helio.vx, cfg.asteroid_state_helio.vy,
-                                 cfg.asteroid_state_helio.vz);
-        Vector3d<double> v_ear_h(cfg.earth_state_helio.vx, cfg.earth_state_helio.vy,
-                                 cfg.earth_state_helio.vz);
-        // Inertial relative velocity magnitude (AU/day)
-        double v_rel_inertial_au_day = (v_ast_h - v_ear_h).magnitude();
-        double v_rel_inertial_nd = v_rel_inertial_au_day / 365.25;
+        // // 2. Velocity
+        // Vector3d<double> v_ast_h(cfg.asteroid_state_helio.vx, cfg.asteroid_state_helio.vy,
+        //                          cfg.asteroid_state_helio.vz);
+        // Vector3d<double> v_ear_h(cfg.earth_state_helio.vx, cfg.earth_state_helio.vy,
+        //                          cfg.earth_state_helio.vz);
+        // std::cout << "v_ast_h = "
+        //           << std::sqrt(v_ast_h.x() * v_ast_h.x() + v_ast_h.y() * v_ast_h.y() +
+        //                        v_ast_h.z() * v_ast_h.z())
+        //           << std::endl;
+        // std::cout << "v_ear_h = "
+        //           << std::sqrt(v_ear_h.x() * v_ear_h.x() + v_ear_h.y() * v_ear_h.y() +
+        //                        v_ear_h.z() * v_ear_h.z())
+        //           << std::endl;
+        // // Inertial relative velocity magnitude (AU/day)
+        // double v_rel_inertial_au_day = (v_ast_h - v_ear_h).magnitude();
+        // double v_rel_inertial_nd = v_rel_inertial_au_day * 365.25;
 
-        Vector3d<double> v_nd(initial_state_nd.vx, initial_state_nd.vy, initial_state_nd.vz);
-        double v_rot_nd = v_nd.magnitude();
+        // Vector3d<double> v_nd(initial_state_nd.vx, initial_state_nd.vy, initial_state_nd.vz);
+        // double v_rot_nd = v_nd.magnitude();
 
-        std::cout << "  [" << result.index << "] " << result.filename << "\n";
-        std::cout << "    Dist: Inertial=" << dist_inertial << " AU, Rotating=" << dist_rotating_au
-                  << " AU (Diff: " << std::abs(dist_inertial - dist_rotating_au) << ")\n";
-        std::cout << "    Vel : Inertial(Rel)=" << v_rel_inertial_nd
-                  << " AU/TU, Rotating=" << v_rot_nd << " AU/TU\n";
+        // std::cout << "  [" << result.index << "] " << result.filename << "\n";
+        // std::cout << "    Dist: Inertial=" << dist_inertial << " AU, Rotating=" <<
+        // dist_rotating_au
+        //           << " AU (Diff: " << std::abs(dist_inertial - dist_rotating_au) << ")\n";
+        // std::cout << "    Vel : Inertial(Rel)=" << v_rel_inertial_nd
+        //           << " AU/TU, Rotating=" << v_rot_nd << " AU/TU\n";
 
         result.jacobi = crtbp::calc_jacobi_integral(initial_state_nd, units.mu);
         result.valid = true;

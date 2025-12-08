@@ -78,7 +78,7 @@ class Vector3d {
   Vector3d operator+(const Vector3d& other) const {
     return Vector3d(x_ + other.x_, y_ + other.y_, z_ + other.z_);
   }
-
+  Vector3d operator-() const { return Vector3d(-x_, -y_, -z_); }
   Vector3d operator-(const Vector3d& other) const {
     return Vector3d(x_ - other.x_, y_ - other.y_, z_ - other.z_);
   }

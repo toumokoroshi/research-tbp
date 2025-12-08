@@ -224,7 +224,20 @@ constexpr double kMinDistanceSq = 1e-16;
 constexpr double kSecondsPerDay = 86400.0;
 
 using namespace my_type;
+template <typename ScalarType>
+constexpr Matrix3x3<ScalarType> matrix_times(const Matrix3x3<ScalarType>& lhs,
+                                             const Matrix3x3<ScalarType>& rhs) {
+  Matrix3x3<ScalarType> result{};  // ゼロ初期化
 
+  for (int i = 0; i < 3; ++i) {      // 行
+    for (int j = 0; j < 3; ++j) {    // 列
+      for (int k = 0; k < 3; ++k) {  // 内積の和
+        result[i][j] += lhs[i][k] * rhs[k][j];
+      }
+    }
+  }
+  return result;
+}
 /**
  * @brief Create a frame conversion matrix object
  * @param unit_n 規格化された回転軸
@@ -531,6 +544,9 @@ const State<ScalarType> ConvertInertial2Rotating____(
   Vector3d<ScalarType> G_x{1.0, 0.0, 0.0};
   Vector3d<ScalarType> G_y{0.0, 1.0, 0.0};
   Vector3d<ScalarType> G_z{0.0, 0.0, 1.0};
+  std::cout << "init_p2_state_G_velocity = " << init_p2_state_G[1].x() << " "
+            << init_p2_state_G[1].y() << " " << init_p2_state_G[1].z() << std::endl;
+  std::cout << "init_p2_state_G[1].magnitude() = " << init_p2_state_G[1].magnitude() << std::endl;
 
   /*x軸を一致させる中間座標系rot1と移す  */
   // 慣性系から見た地球ベクトルと慣性系のx軸がなす角度を計算
@@ -576,10 +592,11 @@ const State<ScalarType> ConvertInertial2Rotating____(
   ScalarType ND_time_ref =
       std::sqrt(astro_params.au * astro_params.au / astro_params.gm_sun);  // Non-Dimensionaltime
   ScalarType mean_motion = 1 / ND_time_ref;
-  std::cout << "mean motion = " << mean_motion << std::endl;
   // conbert AU/day to Non-Dimensional
-  Vector3d<ScalarType> ND_init_e_velo_G = n_plane.gaiseki(init_p2_state_G[0]).normalise() *
-                                          init_p2_state_G[1].magnitude() * ND_time_ref / 86400.;
+  Vector3d<ScalarType> ND_init_e_velo_G = init_p2_state_G[1] * 365.25;
+  std::cout << "ND_init_e_velo_G = " << ND_init_e_velo_G.magnitude() << std::endl;
+  // Vector3d<ScalarType> ND_init_e_velo_G = n_plane.gaiseki(init_p2_state_G[0]).normalise() *
+  //                                         init_p2_state_G[1].magnitude() * ND_time_ref / 86400.;
 
   ScalarType e_G_x = init_p2_state_G[0].x();
   ScalarType e_G_y = init_p2_state_G[0].y();
@@ -673,6 +690,184 @@ const State<ScalarType> ConvertInertial2Rotating____(
                             ast_vel_R.y(), ast_vel_R.z())};
 }
 
+// template <typename ScalarType>
+// const State<ScalarType> ConvertInertial2Rotating(const State<ScalarType>& ast_state,
+//                                                  const State<ScalarType>& p2_state,
+//                                                  const AstroConstants<ScalarType>& astro_params)
+//                                                  {
+//   std::array<Vector3d<ScalarType>, 2> init_ast_state_G;
+//   std::array<Vector3d<ScalarType>, 2> init_p2_state_G;
+//   init_ast_state_G = {{Vector3d<ScalarType>(ast_state.x, ast_state.y, ast_state.z),
+//                        Vector3d<ScalarType>(ast_state.vx, ast_state.vy, ast_state.vz)}};
+//   init_p2_state_G = {{Vector3d<ScalarType>(p2_state.x, p2_state.y, p2_state.z),
+//                       Vector3d<ScalarType>(p2_state.vx, p2_state.vy, p2_state.vz)}};
+//   const ScalarType mu =
+//       astro_params.gm_earth / (astro_params.gm_sun + astro_params.gm_earth);  // 質量比
+//   // 慣性座標系での基底ベクトル
+//   Vector3d<ScalarType> G_x{1.0, 0.0, 0.0};
+//   Vector3d<ScalarType> G_y{0.0, 1.0, 0.0};
+//   Vector3d<ScalarType> G_z{0.0, 0.0, 1.0};
+//   std::cout << "init_p2_state_G_velocity = " << init_p2_state_G[1].x() << " "
+//             << init_p2_state_G[1].y() << " " << init_p2_state_G[1].z() << std::endl;
+//   std::cout << "init_p2_state_G[1].magnitude() = " << init_p2_state_G[1].magnitude() <<
+//   std::endl;
+
+//   /*x軸を一致させる中間座標系rot1と移す  */
+//   // 慣性系から見た地球ベクトルと慣性系のx軸がなす角度を計算
+//   ScalarType theta1 =
+//       std::atan2(init_p2_state_G[0].gaiseki(G_x).magnitude(), init_p2_state_G[0].naiseki(G_x));
+//   std::cout << std::setprecision(15);
+
+//   // 回転軸を決定
+//   Vector3d<ScalarType> rotax1 = G_x.gaiseki(init_p2_state_G[0]).normalise();
+//   // 変換行列を生成
+//   std::array<std::array<ScalarType, 3>, 3> convert_G_to_R1 =
+//       create_rodrigues_matrix(rotax1, -theta1);
+//   std::array<std::array<ScalarType, 3>, 3> rotate1 = create_rodrigues_matrix(rotax1, theta1);
+
+//   /* 地球の軌道面の法線ベクトルと中間座標系rot1のz軸を一致させ目的の回転座標系rot2へ移す
+//    */
+//   // 地球の軌道面の法線ベクトル
+//   Vector3d<ScalarType> n_plane = init_p2_state_G[0].gaiseki(init_p2_state_G[1]).normalise();
+
+//   // 慣性系から見た中間座標系rot1のz軸
+//   Vector3d<ScalarType> rot1_z = ApplyMatrix(rotate1, G_z);
+
+//   //
+//   慣性座標系から見た地球軌道面の法線ベクトルと慣性系から見た中間座標系rot1のz軸がなす角度を計算
+//   ScalarType theta2 = std::atan2(n_plane.gaiseki(rot1_z).magnitude(), n_plane.naiseki(rot1_z));
+//   Vector3d<ScalarType> rotax2 = {1.0, 0.0, 0.0};
+
+//   // 変換行列を生成
+//   std::array<std::array<ScalarType, 3>, 3> convert_R1_to_R2 =
+//       create_rodrigues_matrix(rotax2, -theta2);
+//   std::array<std::array<ScalarType, 3>, 3> rotate2 = create_rodrigues_matrix(rotax2, theta2);
+//   // 小惑星の位置を回転座標系に変換
+//   Vector3d<ScalarType> ast_pos_R1 = ApplyMatrix(convert_G_to_R1, init_ast_state_G[0]);
+//   // Vector3d<ScalarType> epos_R1 = ApplyMatrix(convert_G_to_R1, init_p2_state_G[0]);
+//   Vector3d<ScalarType> ast_pos_R2_ = ApplyMatrix(convert_R1_to_R2, ast_pos_R1);
+//   std::cout << "ast_pos_R2_ = " << ast_pos_R2_.x() << " " << ast_pos_R2_.y() << " "
+//             << ast_pos_R2_.z() << std::endl;
+//   // Vector3d<ScalarType> epos_R2 = ApplyMatrix(convert_R1_to_R2, epos_R1);
+//   // Vector3d<ScalarType> ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - mu, ast_pos_R2.y(),
+//   //                                ast_pos_R2.z()};
+//   Matrix3x3<double> convert_G_to_R2_matrix = matrix_times(convert_R1_to_R2, convert_G_to_R1);
+//   // Matrix3x3<double> convert_G_to_R2_matrix = matrix_times(convert_G_to_R1, convert_R1_to_R2);
+//   Vector3d<ScalarType> ast_pos_R2 = ApplyMatrix(convert_G_to_R2_matrix, init_ast_state_G[0]);
+//   std::cout << "ast_pos_R2 = " << ast_pos_R2.x() << " " << ast_pos_R2.y() << " " <<
+//   ast_pos_R2.z()
+//             << std::endl;
+//   Vector3d<ScalarType> epos_R2 = ApplyMatrix(convert_G_to_R2_matrix, init_p2_state_G[0]);
+//   Vector3d<ScalarType> ast_pos_R{ast_pos_R2.x() + 1.0 - epos_R2.x() - mu, ast_pos_R2.y(),
+//                                  ast_pos_R2.z()};
+
+//   /* calc the velocity of rotating frame */
+//   Vector3d<ScalarType> e_vel_G_nd = init_p2_state_G[1] * 365.25;
+//   Vector3d<ScalarType> instant_omega_nd = init_p2_state_G[0].gaiseki(e_vel_G_nd).normalise() /
+//                                           init_p2_state_G[0].magnitude() *
+//                                           init_p2_state_G[0].magnitude();
+//   Matrix3x3<double> instant_omega_cross_matrix_nd = {
+//       {{{0.0, instant_omega_nd.z(), -instant_omega_nd.y()}},
+//        {{-instant_omega_nd.z(), 0.0, instant_omega_nd.x()}},
+//        {{instant_omega_nd.y(), -instant_omega_nd.x(), 0.0}}}};
+
+//   ScalarType length_nd_unit = init_p2_state_G[1].magnitude();
+//   Vector3d<ScalarType> ast_pos_G_nd = init_ast_state_G[0] / length_nd_unit;
+//   Vector3d<ScalarType> ast_velo_G_nd = init_ast_state_G[1] * 365.25;
+//   Matrix3x3<double> convert_G_to_R2_matrix_dot =
+//       matrix_times(instant_omega_cross_matrix_nd, convert_G_to_R2_matrix);
+
+//   Vector3d<ScalarType> ast_vel_G_nd = -ApplyMatrix(convert_G_to_R2_matrix_dot, ast_pos_G_nd) +
+//                                       ApplyMatrix(convert_G_to_R2_matrix, ast_velo_G_nd);
+
+//   return {State<ScalarType>(ast_pos_R.x(), ast_pos_R.y(), ast_pos_R.z(), ast_vel_G_nd.x(),
+//                             ast_vel_G_nd.y(), ast_vel_G_nd.z())};
+// }
+
+/**
+ * @brief j2000慣性座標系から円制限三体問題系の回転座標系に変換する関数
+ * @detail j2000慣性座標系の状態量はAU, AU/day単位で与えられる
+ *         円制限三体問題系の回転座標系の状態量はG(M_sun+M_earth) = 1として扱う
+ *
+ *
+ */
+template <typename ScalarType>
+const State<ScalarType> ConvertInertial2Rotating(const State<ScalarType>& ast_state,
+                                                 const State<ScalarType>& p2_state,
+                                                 const AstroConstants<ScalarType>& astro_params) {
+  // --- 1. 定数の準備 ---
+  // 地球(P2)と小惑星(Ast)の慣性系(J2000)における位置・速度
+  Vector3d<ScalarType> r_e_G(p2_state.x, p2_state.y, p2_state.z);
+  Vector3d<ScalarType> v_e_G(p2_state.vx, p2_state.vy, p2_state.vz);
+  Vector3d<ScalarType> r_a_G(ast_state.x, ast_state.y, ast_state.z);
+  Vector3d<ScalarType> v_a_G(ast_state.vx, ast_state.vy, ast_state.vz);
+
+  // 重力定数と質量比
+  const ScalarType gm_total = astro_params.gm_sun + astro_params.gm_earth;
+  const ScalarType mu = astro_params.gm_earth / gm_total;
+
+  // 特性長さ L* (瞬時の太陽-地球距離) [AU]
+  const ScalarType L_star = r_e_G.magnitude();
+
+  // 平均運動 n (角速度) [rad/day]
+  // 瞬時の距離に基づく円軌道近似の角速度
+  const ScalarType n = std::sqrt(gm_total / (L_star * L_star * L_star));
+
+  // 特性速度 V* [AU/day]
+  const ScalarType V_star = L_star * n;
+
+  // --- 2. 回転座標系の基底ベクトル (DCM) の生成 ---
+  // x軸: 太陽 -> 地球
+  Vector3d<ScalarType> u_x = r_e_G.normalise();
+  // z軸: 公転面法線 (位置 x 速度)
+  Vector3d<ScalarType> u_z = r_e_G.gaiseki(v_e_G).normalise();
+  // y軸: z x x (右手系)
+  Vector3d<ScalarType> u_y = u_z.gaiseki(u_x).normalise();
+
+  // 回転行列 (Inertial -> Rotating)
+  // 行ベクトルに基底を並べることで、投影(内積)を行う行列となる
+  Matrix3x3<ScalarType> RotMat = {{{{u_x.x(), u_x.y(), u_x.z()}},
+                                   {{u_y.x(), u_y.y(), u_y.z()}},
+                                   {{u_z.x(), u_z.y(), u_z.z()}}}};
+
+  // --- 3. 重心(Barycenter)基準への移動 ---
+  // 太陽を原点と仮定した場合、系全体の重心位置・速度を計算
+  // R_bary = mu * r_earth
+  Vector3d<ScalarType> R_bary_G = r_e_G * mu;
+  Vector3d<ScalarType> V_bary_G = v_e_G * mu;
+
+  // 慣性系における、重心から見た相対位置・相対速度
+  Vector3d<ScalarType> r_rel_G = r_a_G - R_bary_G;
+  Vector3d<ScalarType> v_rel_G = v_a_G - V_bary_G;
+  Vector3d<ScalarType> r_rel_e_G = r_e_G - R_bary_G;
+  Vector3d<ScalarType> v_rel_e_G = v_e_G - V_bary_G;
+
+  // --- 4. 位置の変換 (Position) ---
+  // 回転行列を適用して、回転系での成分表現に変換（次元あり）
+  Vector3d<ScalarType> r_rot_dim = ApplyMatrix(RotMat, r_rel_G);
+
+  // 正規化 (L* で割る)
+  Vector3d<ScalarType> r_rot_nd = r_rot_dim / L_star;
+
+  // --- 5. 速度の変換 (Velocity) ---
+
+  // 射影 (Project Inertial Velocity to Rotating Basis)
+  Vector3d<ScalarType> v_proj = ApplyMatrix(RotMat, v_rel_G);
+
+  Vector3d<ScalarType> earth_n_j2000 = r_rel_e_G.gaiseki(v_rel_e_G);
+  Matrix3x3<ScalarType> omega_cross_matrix = {{{{0.0, -earth_n_j2000.z(), earth_n_j2000.y()}},
+                                               {{earth_n_j2000.z(), 0.0, -earth_n_j2000.x()}},
+                                               {{-earth_n_j2000.y(), earth_n_j2000.x(), 0.0}}}};
+  Matrix3x3<ScalarType> omega_cross_matrix_dot = matrix_times(omega_cross_matrix, RotMat);
+  Vector3d<ScalarType> v_rot_dim = -ApplyMatrix(omega_cross_matrix_dot, r_rel_G) + v_proj;
+
+  // // 正規化 (V* で割る)
+  Vector3d<ScalarType> v_rot_nd = v_rot_dim / V_star;
+
+  // --- 6. 結果の返却 ---
+  return {State<ScalarType>(r_rot_nd.x(), r_rot_nd.y(), r_rot_nd.z(), v_rot_nd.x(), v_rot_nd.y(),
+                            v_rot_nd.z())};
+}
 /**
  * @brief J2000慣性系（太陽中心, AU, AU/day）の状態ベクトルを、
  * 太陽-P2回転座標系（共通重心中心, 無次元）に変換
@@ -1694,17 +1889,17 @@ ScalarType ComputeGALI(std::span<const CanonicalState<ScalarType>> deviation_vec
 template <typename ScalarType>
 ScalarType ComputeGALI(const std::vector<CanonicalState<ScalarType>>& deviation_vectors,
                        ScalarType zero_threshold = static_cast<ScalarType>(1e-12)) {
-  return ComputeGALI<ScalarType>(
-      std::span<const CanonicalState<ScalarType>>(deviation_vectors.data(), deviation_vectors.size()),
-      zero_threshold);
+  return ComputeGALI<ScalarType>(std::span<const CanonicalState<ScalarType>>(
+                                     deviation_vectors.data(), deviation_vectors.size()),
+                                 zero_threshold);
 }
 
 template <typename ScalarType, std::size_t N>
 ScalarType ComputeGALI(const std::array<CanonicalState<ScalarType>, N>& deviation_vectors,
                        ScalarType zero_threshold = static_cast<ScalarType>(1e-12)) {
-  return ComputeGALI<ScalarType>(
-      std::span<const CanonicalState<ScalarType>>(deviation_vectors.data(), deviation_vectors.size()),
-      zero_threshold);
+  return ComputeGALI<ScalarType>(std::span<const CanonicalState<ScalarType>>(
+                                     deviation_vectors.data(), deviation_vectors.size()),
+                                 zero_threshold);
 }
 
 template <typename ScalarType>
@@ -1899,10 +2094,11 @@ using my_type::State3d;
  */
 template <typename ScalarType>
 struct Elements {
-  ScalarType mu;                   ///< Mass parameter m2/(m1+m2)
-  ScalarType eccentricity;         ///< Orbital eccentricity (0 <= e < 1)
-  ScalarType mean_motion = static_cast<ScalarType>(1);    ///< Mean motion (rad / time unit)
-  ScalarType semi_major_axis = static_cast<ScalarType>(1);  ///< Relative semi-major axis of the primaries
+  ScalarType mu;                                        ///< Mass parameter m2/(m1+m2)
+  ScalarType eccentricity;                              ///< Orbital eccentricity (0 <= e < 1)
+  ScalarType mean_motion = static_cast<ScalarType>(1);  ///< Mean motion (rad / time unit)
+  ScalarType semi_major_axis =
+      static_cast<ScalarType>(1);  ///< Relative semi-major axis of the primaries
 
   Elements() = default;
   Elements(ScalarType mu_in, ScalarType e_in, ScalarType n_in = static_cast<ScalarType>(1),
@@ -1965,14 +2161,14 @@ PrimariesState<ScalarType> ComputePrimariesEphemeris(const Elements<ScalarType>&
 
   const ScalarType one_minus_e2 =
       static_cast<ScalarType>(1) - elements.eccentricity * elements.eccentricity;
-  const ScalarType sqrt_one_minus_e2 = std::sqrt(std::max(static_cast<ScalarType>(0), one_minus_e2));
+  const ScalarType sqrt_one_minus_e2 =
+      std::sqrt(std::max(static_cast<ScalarType>(0), one_minus_e2));
   const ScalarType denom = static_cast<ScalarType>(1) - elements.eccentricity * cos_E;
 
   // Relative m1->m2 state in perifocal (pericenter aligned with +x).
   const ScalarType rel_x = elements.semi_major_axis * (cos_E - elements.eccentricity);
   const ScalarType rel_y = elements.semi_major_axis * sqrt_one_minus_e2 * sin_E;
-  const ScalarType rel_vx =
-      -elements.semi_major_axis * elements.mean_motion * sin_E / denom;
+  const ScalarType rel_vx = -elements.semi_major_axis * elements.mean_motion * sin_E / denom;
   const ScalarType rel_vy =
       elements.semi_major_axis * elements.mean_motion * sqrt_one_minus_e2 * cos_E / denom;
 
@@ -2010,8 +2206,7 @@ inline ScalarType calc_r2(const State<ScalarType>& state,
 
 template <typename ScalarType>
 ScalarType calc_potential_U(const State<ScalarType>& state,
-                            const PrimariesState<ScalarType>& primaries,
-                            ScalarType mu) {
+                            const PrimariesState<ScalarType>& primaries, ScalarType mu) {
   const ScalarType r1 = calc_r1(state, primaries);
   const ScalarType r2 = calc_r2(state, primaries);
   if (r1 == 0.0 || r2 == 0.0) {
@@ -2022,8 +2217,7 @@ ScalarType calc_potential_U(const State<ScalarType>& state,
 
 template <typename ScalarType>
 ScalarType calc_mechanical_energy(const State<ScalarType>& state,
-                                  const PrimariesState<ScalarType>& primaries,
-                                  ScalarType mu) {
+                                  const PrimariesState<ScalarType>& primaries, ScalarType mu) {
   const ScalarType v_sq = state.vx * state.vx + state.vy * state.vy + state.vz * state.vz;
   return static_cast<ScalarType>(0.5) * v_sq + calc_potential_U(state, primaries, mu);
 }
@@ -2057,8 +2251,7 @@ class EquationOfMotion {
     const ScalarType inv_r2_3 = static_cast<ScalarType>(1) / (dist2 * dist2 * dist2);
 
     const ScalarType mu1 = static_cast<ScalarType>(1) - elements_.mu;
-    const Vector3d<ScalarType> accel =
-        r1 * (-mu1 * inv_r1_3) + r2 * (-elements_.mu * inv_r2_3);
+    const Vector3d<ScalarType> accel = r1 * (-mu1 * inv_r1_3) + r2 * (-elements_.mu * inv_r2_3);
 
     State<ScalarType> dxdt;
     dxdt.x = state.vx;
