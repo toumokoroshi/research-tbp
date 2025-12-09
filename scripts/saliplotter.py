@@ -228,6 +228,21 @@ class SALIContourApp:
             hill_frame, text="離脱(Escape)を表示", variable=self.show_escape
         ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=2)
 
+        # --- プロットモード選択 ---
+        plot_mode_frame = ttk.LabelFrame(control_frame, text="プロットモード")
+        plot_mode_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.plot_mode = tk.StringVar(value="SALI")
+        ttk.Radiobutton(
+            plot_mode_frame, text="SALI", variable=self.plot_mode, value="SALI"
+        ).pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(
+            plot_mode_frame,
+            text="閾値到達時間 (lower_limit_reach_time)",
+            variable=self.plot_mode,
+            value="ReachTime",
+        ).pack(anchor=tk.W, pady=2)
+
         # --- スケール設定 ---
         scale_frame = ttk.LabelFrame(control_frame, text="SALIスケール設定")
         scale_frame.pack(fill=tk.X, pady=(0, 10))
@@ -240,45 +255,32 @@ class SALIContourApp:
             scale_frame, text="対数 (Log10)", variable=self.scale_mode, value="Log10"
         ).pack(anchor=tk.W, pady=2)
 
-        # --- Z値スライス (スライダーに変更) ---
+        # --- Z値スライス (Combobox選択式に変更) ---
         ttk.Label(control_frame, text="Z値スライス (AU):").pack(
             anchor=tk.W, pady=(0, 5)
         )
 
-        self.z_value = tk.DoubleVar(value=0.0)
-        self.z_tolerance = tk.DoubleVar(value=0.1)
+        # ユニークなZ値を保持する配列（load_dataで更新）
+        self.z_values_unique = []
+        self.z_value = tk.StringVar(value="")
 
-        # スライダー用のフレーム
-        slider_frame = ttk.Frame(control_frame)
-        slider_frame.pack(fill=tk.X, pady=(0, 5))
+        # Z値選択用のフレーム
+        z_select_frame = ttk.Frame(control_frame)
+        z_select_frame.pack(fill=tk.X, pady=(0, 10))
 
-        ttk.Label(slider_frame, text="Z =").pack(side=tk.LEFT)
-        # スライダーの値表示ラベル
-        self.z_label = ttk.Label(
-            slider_frame, text=f"{self.z_value.get():.3f}", width=6
+        ttk.Label(z_select_frame, text="Z =").pack(side=tk.LEFT)
+        self.z_combo = ttk.Combobox(
+            z_select_frame,
+            textvariable=self.z_value,
+            values=[],
+            state="readonly",
+            width=15,
         )
-        self.z_label.pack(side=tk.LEFT, padx=5)
+        self.z_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
 
-        self.z_slider = ttk.Scale(
-            slider_frame,
-            from_=0.0,
-            to=0.0,  # 範囲はload_dataで設定
-            variable=self.z_value,
-            orient=tk.HORIZONTAL,
-            command=self.update_z_label,
-            state=tk.DISABLED,
-        )  # 初期状態は無効
-        self.z_slider.pack(side=tk.LEFT, fill=tk.X, expand=True)
-
-        # 許容範囲 (±) 用のフレーム
-        tolerance_frame = ttk.Frame(control_frame)
-        tolerance_frame.pack(fill=tk.X, pady=(0, 10))
-
-        ttk.Label(tolerance_frame, text="許容範囲 ±").pack(side=tk.LEFT)
-        ttk.Entry(tolerance_frame, textvariable=self.z_tolerance, width=10).pack(
-            side=tk.LEFT, padx=5
-        )
-        ttk.Label(tolerance_frame, text="AU").pack(side=tk.LEFT)
+        # Z値の数を表示するラベル
+        self.z_count_label = ttk.Label(z_select_frame, text="(0 層)")
+        self.z_count_label.pack(side=tk.LEFT)
         # --- 変更ここまで ---
 
         # 実行ボタン
@@ -303,28 +305,35 @@ class SALIContourApp:
         self.canvas = FigureCanvasTkAgg(self.figure, master=plot_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    def update_z_label(self, val):
-        """スライダーの値が変更されたときにラベルを更新"""
-        self.z_label.config(text=f"{float(val):.3f}")
+        # マウス座標表示用のラベル
+        self.coord_label = ttk.Label(
+            plot_frame, text="X: ---, Y: ---", font=("Consolas", 10)
+        )
+        self.coord_label.pack(anchor=tk.W, pady=(5, 0))
 
-    def update_slider_resolution(self, *args):
-        """許容範囲(z_tolerance)の変更をスライダーの解像度(resolution)に反映"""
-        try:
-            # 許容範囲に入力された値を取得
-            resolution = self.z_tolerance.get()
+        # マウス移動イベントを接続
+        self.canvas.mpl_connect("motion_notify_event", self.on_mouse_move)
 
-            if resolution <= 0:
-                # 解像度が0または負の値になるとエラーになるため、
-                # その場合は非常に小さな値（ほぼ連続）にフォールバック
-                resolution = 1e-9
+    def on_mouse_move(self, event):
+        """マウス移動時に座標を表示"""
+        if event.inaxes == self.ax:
+            self.coord_label.config(text=f"X: {event.xdata:.6f}, Y: {event.ydata:.6f}")
+        else:
+            self.coord_label.config(text="X: ---, Y: ---")
 
-            if hasattr(self, "z_slider"):  # z_sliderが作成された後か確認
-                self.z_slider.config(resolution=resolution)
-
-        except (tk.TclError, ValueError):
-            # Entryが一時的に空（""）になったり、不正な値（"abc"）になると
-            # get() が失敗することがあるため、例外を無視します。
-            pass
+    def update_z_combo(self):
+        """Z値のComboboxを更新"""
+        if len(self.z_values_unique) > 0:
+            # Z値を文字列リストに変換
+            z_str_list = [f"{z:.15f}" for z in self.z_values_unique]
+            self.z_combo.config(values=z_str_list)
+            # デフォルトで最初の値を選択W
+            self.z_value.set(z_str_list[0])
+            self.z_count_label.config(text=f"({len(self.z_values_unique)} 層)")
+        else:
+            self.z_combo.config(values=[])
+            self.z_value.set("")
+            self.z_count_label.config(text="(0 層)")
 
     def browse_file(self):
         filename = filedialog.askopenfilename(
@@ -426,7 +435,21 @@ class SALIContourApp:
 
             num_cols = temp_df.shape[1]
 
-            if num_cols == 10:
+            if num_cols == 11:
+                col_names = [
+                    "meshnum",
+                    "SALI",
+                    "x",
+                    "y",
+                    "z",
+                    "vx",
+                    "vy",
+                    "vz",
+                    "collision",
+                    "escape",
+                    "lower_limit_reach_time",
+                ]
+            elif num_cols == 10:
                 col_names = [
                     "meshnum",
                     "SALI",
@@ -467,19 +490,12 @@ class SALIContourApp:
                 self.data["collision"] = 0
             if "escape" not in self.data.columns:
                 self.data["escape"] = 0
+            if "lower_limit_reach_time" not in self.data.columns:
+                self.data["lower_limit_reach_time"] = -1  # 未到達を示すデフォルト値
 
-            # --- スライダー設定の更新 ---
-            z_min = self.data["z"].min()
-            z_max = self.data["z"].max()
-
-            # スライダーの範囲と状態を更新
-            self.z_slider.config(from_=z_min, to=z_max, state=tk.NORMAL)
-            self.update_slider_resolution()
-
-            # スライダーの初期値をZ範囲の中央に設定
-            default_z = (z_min + z_max) / 2
-            self.z_value.set(default_z)
-            self.update_z_label(default_z)  # ラベルも更新
+            # --- Z値のユニーク値を抽出・ソート ---
+            self.z_values_unique = np.sort(self.data["z"].unique())
+            self.update_z_combo()
             # --- 更新ここまで ---
 
             # データ情報表示
@@ -500,6 +516,17 @@ class SALIContourApp:
                 info += f"Jacobi integral (C): {self.jacobi_constant:.6f}\n"
             else:
                 info += "Jacobi integral (C): N/A\n"
+
+            # lower_limit_reach_time の範囲情報
+            if "lower_limit_reach_time" in self.data.columns:
+                valid_reach_time = self.data[self.data["lower_limit_reach_time"] >= 0][
+                    "lower_limit_reach_time"
+                ]
+                if len(valid_reach_time) > 0:
+                    info += f"\n閾値到達時間範囲: [{valid_reach_time.min():.4f}, {valid_reach_time.max():.4f}]\n"
+                    info += f"(閾値到達データ数: {len(valid_reach_time)})\n"
+                else:
+                    info += "\n閾値到達時間データ: なし\n"
 
             self.info_text.delete(1.0, tk.END)
             self.info_text.insert(1.0, info)
@@ -610,94 +637,150 @@ class SALIContourApp:
             return
 
         try:
-            # Z値でスライス
-            z_target = self.z_value.get()
-            z_tol = self.z_tolerance.get()
+            # Z値でスライス（選択したZ値に完全一致するデータを取得）
+            z_str = self.z_value.get()
+            if not z_str:
+                messagebox.showerror("エラー", "Z値を選択してください")
+                return
 
+            z_target = float(z_str)
+
+            # 浮動小数点精度の問題を回避するため np.isclose を使用
             sliced_data = self.data[
-                (self.data["z"] >= z_target - z_tol)
-                & (self.data["z"] <= z_target + z_tol)
+                np.isclose(self.data["z"], z_target, rtol=1e-9, atol=1e-12)
             ].copy()
 
             if len(sliced_data) == 0:
-                messagebox.showerror(
-                    "エラー", f"Z = {z_target} ± {z_tol} の範囲にデータがありません"
-                )
+                messagebox.showerror("エラー", f"Z = {z_target} のデータがありません")
                 return
 
             self.figure.clear()
             self.ax = self.figure.add_subplot(1, 1, 1)
 
-            # --- SALI値の処理 ---
-            # SALI = -1 (計算不可) を分離
-            invalid_sali_mask = sliced_data["SALI"] == -1
-            valid_sali_mask = ~invalid_sali_mask
+            # プロットモードの取得
+            plot_mode = self.plot_mode.get()
 
-            valid_data = sliced_data[valid_sali_mask]
-            invalid_data = sliced_data[invalid_sali_mask]
-
-            # スケールモード
-            scale_mode = self.scale_mode.get()
-
-            # カラーマップ作成 (補色: 赤(0) <-> シアン(sqrt(2)))
-            # 0(Chaos) -> Red, sqrt(2)(Order) -> Cyan
-            colors = ["#ffffff", "#ff0000"]
-            cmap = LinearSegmentedColormap.from_list(
-                "sali_complementary", colors, N=256
-            )
-
-            plot_values = valid_data["SALI"].values
-            vmin = 0
-            vmax = np.sqrt(2)
-
-            if scale_mode == "Log10":
-                # Logスケールの場合、0以下の値は扱えないため、小さな値にクリップするかマスクする
-                # SALIは理論上0以上。0の場合は非常に小さな値として扱う
-                eps = 1e-16
-                plot_values = np.log10(np.maximum(plot_values, eps))
-                vmin = np.log10(eps)
-                vmax = np.log10(np.sqrt(2))
-                label_str = "Log10(SALI)"
-            else:
-                label_str = "SALI"
-
-            # --- プロット ---
-
-            # 1. 無効なSALI (-1) -> 白 (背景と同化させるため、プロットしないか、白でプロット)
-            if len(invalid_data) > 0:
-                self.ax.scatter(
-                    invalid_data["x"],
-                    invalid_data["y"],
-                    c="blue",
-                    s=20,
-                    marker="s",
-                    edgecolors="none",
-                    zorder=1,
-                    label="Undefined (SALI=-1)",
-                )
-
-            # 2. 有効なSALI -> カラーマップ
-            if len(valid_data) > 0:
-                scatter = self.ax.scatter(
-                    valid_data["x"],
-                    valid_data["y"],
-                    c=plot_values,
-                    cmap=cmap,
-                    vmin=vmin,
-                    vmax=vmax,
-                    s=20,
-                    marker="s",
-                    edgecolors="none",
-                    zorder=2,
-                )
-
-                # カラーバー
-                self.colorbar = self.figure.colorbar(scatter, ax=self.ax)
-                self.colorbar.set_label(label_str, fontsize=12)
-
-            # 3. 衝突・離脱のオーバーレイ
             legend_handles = []
 
+            if plot_mode == "ReachTime":
+                # --- 閾値到達時間モード ---
+                # lower_limit_reach_time >= 0 のデータのみ有効
+                valid_mask = sliced_data["lower_limit_reach_time"] >= 0
+                valid_data = sliced_data[valid_mask]
+                invalid_data = sliced_data[~valid_mask]
+
+                # カラーマップ: viridis (青->緑->黄, 時間が長いほど明るい)
+                cmap = "viridis"
+
+                if len(valid_data) > 0:
+                    plot_values = valid_data["lower_limit_reach_time"].values
+                    vmin = plot_values.min()
+                    vmax = plot_values.max()
+                    label_str = "閾値到達時間 (無次元時間)"
+
+                    scatter = self.ax.scatter(
+                        valid_data["x"],
+                        valid_data["y"],
+                        c=plot_values,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=2,
+                    )
+
+                    # カラーバー
+                    self.colorbar = self.figure.colorbar(scatter, ax=self.ax)
+                    self.colorbar.set_label(label_str, fontsize=12)
+
+                # 未到達データ（lower_limit_reach_time < 0）をグレーで表示
+                if len(invalid_data) > 0:
+                    self.ax.scatter(
+                        invalid_data["x"],
+                        invalid_data["y"],
+                        c="lightgray",
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=1,
+                        label="未到達 (閾値未達成)",
+                    )
+
+                title_str = f"閾値到達時間 カラーコンター (Z = {z_target:.6f} AU)"
+
+            else:
+                # --- SALIモード（デフォルト）---
+                # SALI = -1 (計算不可) を分離
+                invalid_sali_mask = sliced_data["SALI"] == -1
+                valid_sali_mask = ~invalid_sali_mask
+
+                valid_data = sliced_data[valid_sali_mask]
+                invalid_data = sliced_data[invalid_sali_mask]
+
+                # スケールモード
+                scale_mode = self.scale_mode.get()
+
+                # カラーマップ作成 (補色: 赤(0) <-> シアン(sqrt(2)))
+                # 0(Chaos) -> Red, sqrt(2)(Order) -> Cyan
+                colors = ["#ffffff", "#ff0000"]
+                cmap = LinearSegmentedColormap.from_list(
+                    "sali_complementary", colors, N=256
+                )
+
+                plot_values = valid_data["SALI"].values
+                vmin = 0
+                vmax = np.sqrt(2)
+
+                if scale_mode == "Log10":
+                    # Logスケールの場合、0以下の値は扱えないため、小さな値にクリップするかマスクする
+                    # SALIは理論上0以上。0の場合は非常に小さな値として扱う
+                    eps = 1e-16
+                    plot_values = np.log10(np.maximum(plot_values, eps))
+                    vmin = np.log10(eps)
+                    vmax = np.log10(np.sqrt(2))
+                    label_str = "Log10(SALI)"
+                else:
+                    label_str = "SALI"
+
+                # --- プロット ---
+
+                # 1. 無効なSALI (-1) -> 白 (背景と同化させるため、プロットしないか、白でプロット)
+                if len(invalid_data) > 0:
+                    self.ax.scatter(
+                        invalid_data["x"],
+                        invalid_data["y"],
+                        c="blue",
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=1,
+                        label="Undefined (SALI=-1)",
+                    )
+
+                # 2. 有効なSALI -> カラーマップ
+                if len(valid_data) > 0:
+                    scatter = self.ax.scatter(
+                        valid_data["x"],
+                        valid_data["y"],
+                        c=plot_values,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=2,
+                    )
+
+                    # カラーバー
+                    self.colorbar = self.figure.colorbar(scatter, ax=self.ax)
+                    self.colorbar.set_label(label_str, fontsize=12)
+
+                title_str = f"SALI カラーコンター (Z = {z_target:.6f} AU)"
+
+            # 3. 衝突・離脱のオーバーレイ
             if self.show_collision.get():
                 collision_data = sliced_data[sliced_data["collision"] == 1]
                 if len(collision_data) > 0:
@@ -731,10 +814,7 @@ class SALIContourApp:
             # --- 装飾 ---
             self.ax.set_xlabel("X (AU)", fontsize=12)
             self.ax.set_ylabel("Y (AU)", fontsize=12)
-            self.ax.set_title(
-                f"SALI カラーコンター (Z = {z_target:.3f} ± {z_tol:.3f} AU)",
-                fontsize=14,
-            )
+            self.ax.set_title(title_str, fontsize=14)
             self.ax.set_aspect("equal")
             self.ax.grid(True, alpha=0.3)
 
