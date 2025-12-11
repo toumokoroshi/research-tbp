@@ -1962,44 +1962,44 @@ class SaliFileObserver {
 // Additional high-order symplectic schemes (state and SALI variants)
 // ---------------------------------------------------------------------------
 
-/**
- * @brief Blanes-Moan 4th-order symmetric (ABAH4/SS4) with reduced error constant.
- */
-template <typename ScalarType>
-State<ScalarType> SymplecticStep4thOrderBM(const ScalarType mu, const State<ScalarType>& state,
-                                           ScalarType h) {
-  constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
-  constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
-  constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
-  constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
-  constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
-  constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
-  constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
+// /**
+//  * @brief Blanes-Moan 4th-order symmetric (ABAH4/SS4) with reduced error constant.
+//  */
+// template <typename ScalarType>
+// State<ScalarType> SymplecticStep4thOrderBM(const ScalarType mu, const State<ScalarType>& state,
+//                                            ScalarType h) {
+//   constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
+//   constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
+//   constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
+//   constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
+//   constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
+//   constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
+//   constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
 
-  CanonicalState<ScalarType> cs = ConvertToCanonical(state);
-  auto A = [&](ScalarType dt) {
-    ApplyDrift(&cs, dt / 2.0);
-    ApplyKick(mu, &cs, dt);
-    ApplyDrift(&cs, dt / 2.0);
-  };
-  auto B = [&](ScalarType dt) { ApplyRotation(&cs, dt); };
+//   CanonicalState<ScalarType> cs = ConvertToCanonical(state);
+//   auto A = [&](ScalarType dt) {
+//     ApplyDrift(&cs, dt / 2.0);
+//     ApplyKick(mu, &cs, dt);
+//     ApplyDrift(&cs, dt / 2.0);
+//   };
+//   auto B = [&](ScalarType dt) { ApplyRotation(&cs, dt); };
 
-  A(a1 * h);
-  B(b1 * h);
-  A(a2 * h);
-  B(b2 * h);
-  A(a3 * h);
-  B(b3 * h);
-  A(a4 * h);
-  B(b3 * h);
-  A(a3 * h);
-  B(b2 * h);
-  A(a2 * h);
-  B(b1 * h);
-  A(a1 * h);
+//   A(a1 * h);
+//   B(b1 * h);
+//   A(a2 * h);
+//   B(b2 * h);
+//   A(a3 * h);
+//   B(b3 * h);
+//   A(a4 * h);
+//   B(b3 * h);
+//   A(a3 * h);
+//   B(b2 * h);
+//   A(a2 * h);
+//   B(b1 * h);
+//   A(a1 * h);
 
-  return ConvertToPhysical(cs);
-}
+//   return ConvertToPhysical(cs);
+// }
 
 /**
  * @brief 6th-order Yoshida (1990) using 7-fold composition of the 2nd-order Strang step.
@@ -2020,40 +2020,41 @@ State<ScalarType> SymplecticStep6thOrder(const ScalarType mu, const State<Scalar
   return s;
 }
 
-/**
- * @brief Blanes-Moan 4th order for SALI (same coefficients as SymplecticStep4thOrderBM).
- */
-template <typename ScalarType>
-void SymplecticStep4thOrderBMSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType h) {
-  constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
-  constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
-  constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
-  constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
-  constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
-  constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
-  constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
+// /**
+//  * @brief Blanes-Moan 4th order for SALI (same coefficients as SymplecticStep4thOrderBM).
+//  */
+// template <typename ScalarType>
+// void SymplecticStep4thOrderBMSALI(const ScalarType mu, SaliState<ScalarType>* state, ScalarType
+// h) {
+//   constexpr ScalarType a1 = static_cast<ScalarType>(0.0792036964311957);
+//   constexpr ScalarType a2 = static_cast<ScalarType>(0.353172906049774);
+//   constexpr ScalarType a3 = static_cast<ScalarType>(-0.0420650803577195);
+//   constexpr ScalarType a4 = static_cast<ScalarType>(1.0 - 2.0 * (a1 + a2 + a3));
+//   constexpr ScalarType b1 = static_cast<ScalarType>(0.209515106613362);
+//   constexpr ScalarType b2 = static_cast<ScalarType>(-0.143851773179818);
+//   constexpr ScalarType b3 = static_cast<ScalarType>(0.434336666566456);
 
-  auto A = [&](ScalarType dt) {
-    ApplyDriftSALI(state, dt / 2.0);
-    ApplyKickSALI(mu, state, dt);
-    ApplyDriftSALI(state, dt / 2.0);
-  };
-  auto B = [&](ScalarType dt) { ApplyRotationSALI(state, dt); };
+//   auto A = [&](ScalarType dt) {
+//     ApplyDriftSALI(state, dt / 2.0);
+//     ApplyKickSALI(mu, state, dt);
+//     ApplyDriftSALI(state, dt / 2.0);
+//   };
+//   auto B = [&](ScalarType dt) { ApplyRotationSALI(state, dt); };
 
-  A(a1 * h);
-  B(b1 * h);
-  A(a2 * h);
-  B(b2 * h);
-  A(a3 * h);
-  B(b3 * h);
-  A(a4 * h);
-  B(b3 * h);
-  A(a3 * h);
-  B(b2 * h);
-  A(a2 * h);
-  B(b1 * h);
-  A(a1 * h);
-}
+//   A(a1 * h);
+//   B(b1 * h);
+//   A(a2 * h);
+//   B(b2 * h);
+//   A(a3 * h);
+//   B(b3 * h);
+//   A(a4 * h);
+//   B(b3 * h);
+//   A(a3 * h);
+//   B(b2 * h);
+//   A(a2 * h);
+//   B(b1 * h);
+//   A(a1 * h);
+// }
 
 /**
  * @brief 6th-order Yoshida for SALI (7-fold composition of 2nd-order step).

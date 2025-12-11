@@ -15,8 +15,8 @@ d_tau = 0.05  # 無次元時間刻み
 
 # 初期状態: [theta1, omega1, theta2, omega2]
 # omega_dim = omega_phys * sqrt(L1/g))
-init_state = [0.01, 0.0, 0.001, 0.0]
-# init_state = [np.pi / 2 + 0.01, 0.0, np.pi + 0.001, 0.0]
+# init_state = [0.01, 0.0, 0.001, 0.0]
+init_state = [np.pi / 2 - 0.3, 0.0, np.pi - 0.1, 0.0]
 
 
 # --- 運動方程式  ---

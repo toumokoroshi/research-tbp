@@ -354,8 +354,8 @@ int main() {
     // ---------出力ファイル設定---------
     std::string output_base_path = OUTPUT_DIR;
     // シミュレーション終了時刻が同じでもファイル名が被らないようにする
-    std::string filename = output_base_path + "/3D_crtbp_SALI_v3/configdata_" +
-                           std::to_string(configdata_num) + "_" + getcurrent_date() + ".dat";
+    std::string filename = output_base_path + "/3D_crtbp_SALI_v3/" + getcurrent_date() +
+                           "_configdata_" + std::to_string(configdata_num) + ".dat";
     std::ofstream ofs1(filename);
     if (!ofs1) {
       std::filesystem::path filepath(filename);
@@ -593,7 +593,7 @@ bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
     fields.push_back(token);
   }
 
-  if (fields.size() != 10) {
+  if (fields.size() != 11) {
     return false;
   }
 
@@ -680,7 +680,7 @@ bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
   for (const auto& row : rows) {
     output << row.mesh_num << "," << row.sali << "," << row.x << "," << row.y << "," << row.z << ","
            << row.vx << "," << row.vy << "," << row.vz << "," << row.collision << "," << row.escape
-           << "\n";
+           << "," << row.lower_limit_reach_time << "\n";
   }
 
   *sorted_output_filename = sorted_path.string();
