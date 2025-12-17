@@ -19,6 +19,8 @@
 #include <concepts>
 #include <iomanip>
 #include <iostream>
+#include <limits>
+#include <numbers>
 #include <span>
 #include <stdexcept>
 #include <vector3d.hpp>
@@ -202,6 +204,173 @@ template <typename ScalarType>
 SaliState<ScalarType> operator*(ScalarType scalar, const SaliState<ScalarType>& state) {
   return state * scalar;
 }
+
+/**
+ * @brief GALI計算に必要な全ての状態を保持するテンプレート構造体
+ * @details 主軌道とK個の偏差ベクトルを含む
+ * @tparam ScalarType スカラー型 (double等)
+ * @tparam K 偏差ベクトルの数 (2, 4, 6等)
+ */
+template <typename ScalarType, size_t K>
+struct GaliState {
+  static_assert(K >= 2 && K <= 6, "K must be between 2 and 6 for CR3BP");
+
+  CanonicalState<ScalarType> state;             ///< 主軌道の状態 (q, p)
+  std::array<CanonicalState<ScalarType>, K> w;  ///< K個の偏差ベクトル
+
+  GaliState() = default;
+
+  // 演算子
+  GaliState<ScalarType, K> operator+(const GaliState<ScalarType, K>& other) const {
+    GaliState<ScalarType, K> result;
+    result.state = state + other.state;
+    for (size_t i = 0; i < K; ++i) {
+      result.w[i] = w[i] + other.w[i];
+    }
+    return result;
+  }
+
+  GaliState<ScalarType, K> operator*(ScalarType scalar) const {
+    GaliState<ScalarType, K> result;
+    result.state = state * scalar;
+    for (size_t i = 0; i < K; ++i) {
+      result.w[i] = w[i] * scalar;
+    }
+    return result;
+  }
+
+  GaliState<ScalarType, K>& operator+=(const GaliState<ScalarType, K>& other) {
+    state += other.state;
+    for (size_t i = 0; i < K; ++i) {
+      w[i] += other.w[i];
+    }
+    return *this;
+  }
+
+  /**
+   * @brief 全偏差ベクトルを正規化する
+   */
+  void NormalizeDeviationVectors() {
+    for (size_t i = 0; i < K; ++i) {
+      w[i].Normalize();
+    }
+  }
+
+  /**
+   * @brief GALI値を計算する (SVD/グラム行列ベース)
+   * @details K個の正規化済み偏差ベクトルが張る平行多面体の体積を計算
+   *          GALI_k = sqrt(det(V^T V)) (V: 6×K行列, 列は正規化済みベクトル)
+   *          ベクトルの向きを変えるGram-Schmidt直交化は使用しない
+   * @return GALI_K値 (0〜1の間、カオス時は急速に0へ減衰)
+   */
+  ScalarType ComputeGALI() const {
+    // 正規化済みベクトルのコピーを作成
+    std::array<CanonicalState<ScalarType>, K> w_normalized;
+    for (size_t i = 0; i < K; ++i) {
+      w_normalized[i] = w[i];
+      w_normalized[i].Normalize();
+    }
+
+    // グラム行列 G = V^T * V を計算 (K×K行列)
+    // G[i][j] = w_i · w_j (正規化済みベクトル間の内積)
+    std::array<std::array<ScalarType, K>, K> gram_matrix{};
+    for (size_t i = 0; i < K; ++i) {
+      for (size_t j = i; j < K; ++j) {
+        ScalarType dot = w_normalized[i].Dot(w_normalized[j]);
+        gram_matrix[i][j] = dot;
+        gram_matrix[j][i] = dot;  // 対称行列
+      }
+    }
+
+    // グラム行列の行列式を計算 (LU分解)
+    // GALI = sqrt(det(G))
+    ScalarType det = ComputeDeterminant(gram_matrix);
+
+    // 行列式が負になる場合は数値誤差なので0とみなす
+    if (det <= static_cast<ScalarType>(0)) {
+      return static_cast<ScalarType>(0);
+    }
+
+    return std::sqrt(det);
+  }
+
+ private:
+  /**
+   * @brief K×K行列の行列式を計算 (LU分解なしの直接計算)
+   */
+  static ScalarType ComputeDeterminant(const std::array<std::array<ScalarType, K>, K>& matrix) {
+    if constexpr (K == 2) {
+      return matrix[0][0] * matrix[1][1] - matrix[0][1] * matrix[1][0];
+    } else if constexpr (K == 3) {
+      return matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1]) -
+             matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0]) +
+             matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
+    } else if constexpr (K == 4) {
+      // 4×4行列式 (ラプラス展開)
+      ScalarType det = 0;
+      for (size_t j = 0; j < 4; ++j) {
+        std::array<std::array<ScalarType, 3>, 3> minor{};
+        for (size_t mi = 1; mi < 4; ++mi) {
+          size_t mj_target = 0;
+          for (size_t mj = 0; mj < 4; ++mj) {
+            if (mj == j) continue;
+            minor[mi - 1][mj_target++] = matrix[mi][mj];
+          }
+        }
+        ScalarType minor_det =
+            minor[0][0] * (minor[1][1] * minor[2][2] - minor[1][2] * minor[2][1]) -
+            minor[0][1] * (minor[1][0] * minor[2][2] - minor[1][2] * minor[2][0]) +
+            minor[0][2] * (minor[1][0] * minor[2][1] - minor[1][1] * minor[2][0]);
+        det += ((j % 2 == 0) ? 1 : -1) * matrix[0][j] * minor_det;
+      }
+      return det;
+    } else if constexpr (K == 5 || K == 6) {
+      // LU分解による行列式計算
+      std::array<std::array<ScalarType, K>, K> lu = matrix;
+      ScalarType det = 1;
+      for (size_t i = 0; i < K; ++i) {
+        // ピボット選択
+        size_t max_row = i;
+        for (size_t k = i + 1; k < K; ++k) {
+          if (std::abs(lu[k][i]) > std::abs(lu[max_row][i])) {
+            max_row = k;
+          }
+        }
+        if (max_row != i) {
+          std::swap(lu[i], lu[max_row]);
+          det = -det;
+        }
+        if (std::abs(lu[i][i]) < 1e-16) {
+          return static_cast<ScalarType>(0);
+        }
+        det *= lu[i][i];
+        for (size_t k = i + 1; k < K; ++k) {
+          lu[k][i] /= lu[i][i];
+          for (size_t j = i + 1; j < K; ++j) {
+            lu[k][j] -= lu[k][i] * lu[i][j];
+          }
+        }
+      }
+      return det;
+    }
+    return static_cast<ScalarType>(0);
+  }
+};
+
+// Allow scalar * GaliState for Boost.Odeint vector_space_algebra
+template <typename ScalarType, size_t K>
+GaliState<ScalarType, K> operator*(ScalarType scalar, const GaliState<ScalarType, K>& state) {
+  return state * scalar;
+}
+
+// 型エイリアス (よく使うK値)
+template <typename ScalarType>
+using Gali2State = GaliState<ScalarType, 2>;  ///< SALI相当 (K=2)
+template <typename ScalarType>
+using Gali4State = GaliState<ScalarType, 4>;  ///< 高速検出用 (K=4)
+template <typename ScalarType>
+using Gali6State = GaliState<ScalarType, 6>;  ///< 最大自由度 (K=6)
+
 };  // namespace my_type
 
 namespace param {
@@ -437,6 +606,165 @@ ScalarType calc_jacobi_integral(const State<ScalarType>& state, const ScalarType
 
   const ScalarType U_star = calc_potential_U(state.x, state.y, state.z, mu);
   return 2.0 * U_star - v_sq;
+}
+
+/**
+ * @brief 接触軌道要素を格納する構造体
+ * @details CRTBPの回転座標系において第二天体(m2)周りの接触ケプラー軌道要素を表す
+ */
+template <typename ScalarType>
+struct OrbitalElements {
+  ScalarType a;      ///< 長半径 (無次元)
+  ScalarType e;      ///< 離心率
+  ScalarType i;      ///< 軌道傾斜角 [rad]
+  ScalarType Omega;  ///< 昇交点赤経 [rad]
+  ScalarType omega;  ///< 近点引数 [rad]
+  ScalarType nu;     ///< 真近点離角 [rad]
+
+  OrbitalElements() = default;
+  OrbitalElements(ScalarType a, ScalarType e, ScalarType i, ScalarType Omega, ScalarType omega,
+                  ScalarType nu)
+      : a(a), e(e), i(i), Omega(Omega), omega(omega), nu(nu) {}
+};
+
+/**
+ * @brief CRTBPの回転座標系での状態から第二天体(m2)周りの接触軌道要素を計算
+ * @param state 回転座標系での状態ベクトル (x, y, z, vx, vy, vz)
+ * @param mu 質量比 mu = m2/(m1+m2) (太陽-地球系では地球質量/全質量)
+ * @return 接触軌道要素
+ * @note 無次元化された座標系を仮定 (長さ: 主天体間距離, 時間: 1/角速度)
+ *       muが第二天体の重力定数の無次元値となる (GM_2 = mu)
+ */
+template <typename ScalarType>
+OrbitalElements<ScalarType> ConvertToOrbitalElements(const State<ScalarType>& state,
+                                                     const ScalarType mu) {
+  constexpr ScalarType kSmallValue = 1e-12;
+
+  // 第二天体(m2)を原点とした位置・速度に変換
+  // 回転座標系でのm2の位置は (1-mu, 0, 0)
+  ScalarType rx = state.x - (1.0 - mu);
+  ScalarType ry = state.y;
+  ScalarType rz = state.z;
+
+  // 回転座標系での速度をm2中心慣性系での速度に変換
+  // v_inertial = v_rot + omega × r (回転角速度 omega = 1)
+  // ただし、接触軌道要素では回転座標系の速度をそのまま使用
+  ScalarType vx = state.vx;
+  ScalarType vy = state.vy;
+  ScalarType vz = state.vz;
+
+  // 距離と速度の大きさ
+  ScalarType r = std::sqrt(rx * rx + ry * ry + rz * rz);
+  ScalarType v = std::sqrt(vx * vx + vy * vy + vz * vz);
+
+  if (r < kSmallValue) {
+    // 中心天体と衝突
+    return OrbitalElements<ScalarType>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+  }
+
+  // 角運動量ベクトル h = r × v
+  ScalarType hx = ry * vz - rz * vy;
+  ScalarType hy = rz * vx - rx * vz;
+  ScalarType hz = rx * vy - ry * vx;
+  ScalarType h = std::sqrt(hx * hx + hy * hy + hz * hz);
+
+  // 軌道傾斜角 i
+  ScalarType inc = 0.0;
+  if (h > kSmallValue) {
+    inc = std::acos(hz / h);
+  }
+
+  // 節線ベクトル n = z × h (z方向ベクトル: (0, 0, 1))
+  ScalarType nx = -hy;
+  ScalarType ny = hx;
+  ScalarType n = std::sqrt(nx * nx + ny * ny);
+
+  // 昇交点赤経 Omega
+  ScalarType Omega = 0.0;
+  if (n > kSmallValue) {
+    Omega = std::acos(nx / n);
+    if (ny < 0.0) {
+      Omega = 2.0 * std::numbers::pi_v<ScalarType> - Omega;
+    }
+  }
+
+  // 離心率ベクトル e_vec = ((v² - mu/r)r - (r·v)v) / mu
+  ScalarType rdotv = rx * vx + ry * vy + rz * vz;
+  ScalarType v_sq = v * v;
+  ScalarType coeff1 = (v_sq - mu / r) / mu;
+  ScalarType coeff2 = rdotv / mu;
+
+  ScalarType ex = coeff1 * rx - coeff2 * vx;
+  ScalarType ey = coeff1 * ry - coeff2 * vy;
+  ScalarType ez = coeff1 * rz - coeff2 * vz;
+  ScalarType ecc = std::sqrt(ex * ex + ey * ey + ez * ez);
+
+  // 長半径 a = h² / (mu * (1 - e²)) (楕円軌道の場合)
+  ScalarType sma = 0.0;
+  ScalarType one_minus_e_sq = 1.0 - ecc * ecc;
+  if (std::abs(one_minus_e_sq) > kSmallValue && h > kSmallValue) {
+    sma = h * h / (mu * std::abs(one_minus_e_sq));
+    if (one_minus_e_sq < 0) {
+      sma = -sma;  // 双曲線軌道
+    }
+  } else {
+    // 放物線軌道に近い
+    sma = std::numeric_limits<ScalarType>::infinity();
+  }
+
+  // 近点引数 omega
+  ScalarType omega = 0.0;
+  if (n > kSmallValue && ecc > kSmallValue) {
+    ScalarType n_dot_e = nx * ex + ny * ey;
+    ScalarType cos_omega = n_dot_e / (n * ecc);
+    // クランプして acos の定義域エラーを防止
+    cos_omega =
+        std::max(static_cast<ScalarType>(-1.0), std::min(static_cast<ScalarType>(1.0), cos_omega));
+    omega = std::acos(cos_omega);
+    if (ez < 0.0) {
+      omega = 2.0 * std::numbers::pi_v<ScalarType> - omega;
+    }
+  } else if (ecc > kSmallValue) {
+    // 傾斜角が0の場合、離心率ベクトルのx-y平面での角度
+    omega = std::atan2(ey, ex);
+    if (omega < 0.0) {
+      omega += 2.0 * std::numbers::pi_v<ScalarType>;
+    }
+  }
+
+  // 真近点離角 nu
+  ScalarType nu = 0.0;
+  if (ecc > kSmallValue) {
+    ScalarType e_dot_r = ex * rx + ey * ry + ez * rz;
+    ScalarType cos_nu = e_dot_r / (ecc * r);
+    // クランプ
+    cos_nu =
+        std::max(static_cast<ScalarType>(-1.0), std::min(static_cast<ScalarType>(1.0), cos_nu));
+    nu = std::acos(cos_nu);
+    if (rdotv < 0.0) {
+      nu = 2.0 * std::numbers::pi_v<ScalarType> - nu;
+    }
+  } else {
+    // 円軌道の場合
+    if (n > kSmallValue) {
+      ScalarType n_dot_r = nx * rx + ny * ry;
+      ScalarType cos_u = n_dot_r / (n * r);
+      cos_u =
+          std::max(static_cast<ScalarType>(-1.0), std::min(static_cast<ScalarType>(1.0), cos_u));
+      nu = std::acos(cos_u);
+      if (rz < 0.0) {
+        nu = 2.0 * std::numbers::pi_v<ScalarType> - nu;
+      }
+    } else {
+      // 傾斜角0、円軌道
+      nu = std::atan2(ry, rx);
+      if (nu < 0.0) {
+        nu += 2.0 * std::numbers::pi_v<ScalarType>;
+      }
+    }
+  }
+
+  return OrbitalElements<ScalarType>{sma, ecc, inc, Omega, omega, nu};
 }
 
 template <typename ScalarType>
@@ -1822,12 +2150,12 @@ class StateBufferObserver {
 /**
  * @brief GALI (Generalized Alignment Index) を偏差ベクトル集合から計算するユーティリティ.
  *
- * @details 入力ベクトルは自動的に正規化され、修正グラム・シュミット法で
- *          k体並進体積を求める. GALI_k = ||\hat{w}_1 \wedge ... \wedge \hat{w}_k||
- *          の定義と等価であり、値が急減するかどうかで軌道のカオス性を評価できる.
+ * @details 入力ベクトルは自動的に正規化され、グラム行列の行列式から
+ *          k体並進体積を求める. GALI_k = sqrt(det(V^T V))
+ *          ベクトルの向きを変えるGram-Schmidt直交化は使用しない.
  *
  * @param deviation_vectors 正規化前でもよい偏差ベクトル群 (2 <= k <= 6 を想定)
- * @param zero_threshold 正規直交化の途中で線形独立性を失ったと見做す閾値
+ * @param zero_threshold 体積がこの値以下なら0を返す
  * @return ScalarType GALI_k の値 (k = deviation_vectors.size())
  *
  * @throws std::invalid_argument 入力が空、または次元上限を超える場合に送出
@@ -1847,43 +2175,57 @@ ScalarType ComputeGALI(std::span<const CanonicalState<ScalarType>> deviation_vec
     throw std::invalid_argument("ComputeGALI expects a strictly positive threshold.");
   }
 
-  std::vector<CanonicalState<ScalarType>> orthonormal_basis;
-  orthonormal_basis.reserve(k);
-
-  ScalarType gali = static_cast<ScalarType>(1);
-  for (const auto& deviation : deviation_vectors) {
-    CanonicalState<ScalarType> v = deviation;
-    v.Normalize();
-
-    for (const auto& basis_vec : orthonormal_basis) {
-      const ScalarType projection = v.Dot(basis_vec);
-      v.qx -= projection * basis_vec.qx;
-      v.qy -= projection * basis_vec.qy;
-      v.qz -= projection * basis_vec.qz;
-      v.px -= projection * basis_vec.px;
-      v.py -= projection * basis_vec.py;
-      v.pz -= projection * basis_vec.pz;
-    }
-
-    const ScalarType orth_norm = v.Norm();
-    if (orth_norm < zero_threshold) {
-      return static_cast<ScalarType>(0);
-    }
-
-    gali *= orth_norm;
-
-    const ScalarType inv_norm = static_cast<ScalarType>(1) / orth_norm;
-    v.qx *= inv_norm;
-    v.qy *= inv_norm;
-    v.qz *= inv_norm;
-    v.px *= inv_norm;
-    v.py *= inv_norm;
-    v.pz *= inv_norm;
-
-    orthonormal_basis.push_back(v);
+  // 正規化済みベクトルのコピーを作成
+  std::vector<CanonicalState<ScalarType>> w_normalized(k);
+  for (std::size_t i = 0; i < k; ++i) {
+    w_normalized[i] = deviation_vectors[i];
+    w_normalized[i].Normalize();
   }
 
-  return gali;
+  // グラム行列 G = V^T * V を計算 (k×k行列)
+  // 動的サイズなので2次元配列で
+  std::vector<std::vector<ScalarType>> gram_matrix(k, std::vector<ScalarType>(k));
+  for (std::size_t i = 0; i < k; ++i) {
+    for (std::size_t j = i; j < k; ++j) {
+      ScalarType dot = w_normalized[i].Dot(w_normalized[j]);
+      gram_matrix[i][j] = dot;
+      gram_matrix[j][i] = dot;  // 対称行列
+    }
+  }
+
+  // LU分解による行列式計算
+  std::vector<std::vector<ScalarType>> lu = gram_matrix;
+  ScalarType det = static_cast<ScalarType>(1);
+  for (std::size_t i = 0; i < k; ++i) {
+    // ピボット選択
+    std::size_t max_row = i;
+    for (std::size_t r = i + 1; r < k; ++r) {
+      if (std::abs(lu[r][i]) > std::abs(lu[max_row][i])) {
+        max_row = r;
+      }
+    }
+    if (max_row != i) {
+      std::swap(lu[i], lu[max_row]);
+      det = -det;
+    }
+    if (std::abs(lu[i][i]) < zero_threshold) {
+      return static_cast<ScalarType>(0);
+    }
+    det *= lu[i][i];
+    for (std::size_t r = i + 1; r < k; ++r) {
+      lu[r][i] /= lu[i][i];
+      for (std::size_t c = i + 1; c < k; ++c) {
+        lu[r][c] -= lu[r][i] * lu[i][c];
+      }
+    }
+  }
+
+  // 行列式が負になる場合は数値誤差なので0とみなす
+  if (det <= static_cast<ScalarType>(0)) {
+    return static_cast<ScalarType>(0);
+  }
+
+  return std::sqrt(det);
 }
 
 template <typename ScalarType>
@@ -2069,6 +2411,150 @@ void SymplecticStep6thOrderSALI(const ScalarType mu, SaliState<ScalarType>* stat
 
   for (auto c : weights) {
     SymplecticStepSALI(mu, state, c * h);
+  }
+}
+
+// ============================================================================
+// GALI用シンプレクティック積分器
+// ============================================================================
+
+/**
+ * @brief H_B（コリオリ項）の流れをGaliState全体に適用
+ */
+template <typename ScalarType, size_t K>
+void RotateStateGALI(GaliState<ScalarType, K>* state, ScalarType angle) {
+  ScalarType cos_a = std::cos(angle);
+  ScalarType sin_a = std::sin(angle);
+
+  // 主軌道
+  auto rotateCanonical = [cos_a, sin_a](CanonicalState<ScalarType>& s) {
+    ScalarType qx_new = cos_a * s.qx + sin_a * s.qy;
+    ScalarType qy_new = -sin_a * s.qx + cos_a * s.qy;
+    ScalarType px_new = cos_a * s.px + sin_a * s.py;
+    ScalarType py_new = -sin_a * s.px + cos_a * s.py;
+    s.qx = qx_new;
+    s.qy = qy_new;
+    s.px = px_new;
+    s.py = py_new;
+  };
+
+  rotateCanonical(state->state);
+  for (size_t i = 0; i < K; ++i) {
+    rotateCanonical(state->w[i]);
+  }
+}
+
+/**
+ * @brief H_A（Drift）の流れをGaliState全体に適用
+ */
+template <typename ScalarType, size_t K>
+void UpdatePositionGALI(GaliState<ScalarType, K>* state, ScalarType dt) {
+  // 主軌道
+  state->state.qx += dt * state->state.px;
+  state->state.qy += dt * state->state.py;
+  state->state.qz += dt * state->state.pz;
+
+  // 偏差ベクトル（線形化：dq' = dt * dp）
+  for (size_t i = 0; i < K; ++i) {
+    state->w[i].qx += dt * state->w[i].px;
+    state->w[i].qy += dt * state->w[i].py;
+    state->w[i].qz += dt * state->w[i].pz;
+  }
+}
+
+/**
+ * @brief H_A（Kick）の流れをGaliState全体に適用
+ */
+template <typename ScalarType, size_t K>
+void UpdateMomentumGALI(const ScalarType mu, GaliState<ScalarType, K>* state, ScalarType dt) {
+  const ScalarType qx = state->state.qx;
+  const ScalarType qy = state->state.qy;
+  const ScalarType qz = state->state.qz;
+
+  const ScalarType x1 = qx + mu;
+  const ScalarType x2 = qx - (1.0 - mu);
+
+  const ScalarType r1_sq = x1 * x1 + qy * qy + qz * qz + kMinDistanceSq;
+  const ScalarType r2_sq = x2 * x2 + qy * qy + qz * qz + kMinDistanceSq;
+
+  const ScalarType inv_r1_3 = 1.0 / (r1_sq * std::sqrt(r1_sq));
+  const ScalarType inv_r2_3 = 1.0 / (r2_sq * std::sqrt(r2_sq));
+  const ScalarType inv_r1_5 = inv_r1_3 / r1_sq;
+  const ScalarType inv_r2_5 = inv_r2_3 / r2_sq;
+
+  // 主軌道の加速度
+  const ScalarType ax = -(1.0 - mu) * x1 * inv_r1_3 - mu * x2 * inv_r2_3;
+  const ScalarType ay = -(1.0 - mu) * qy * inv_r1_3 - mu * qy * inv_r2_3;
+  const ScalarType az = -(1.0 - mu) * qz * inv_r1_3 - mu * qz * inv_r2_3;
+
+  state->state.px += dt * ax;
+  state->state.py += dt * ay;
+  state->state.pz += dt * az;
+
+  // ヘッセ行列成分の計算（偏差ベクトル用）
+  const ScalarType Uxx = (1.0 - mu) * (3.0 * x1 * x1 * inv_r1_5 - inv_r1_3) +
+                         mu * (3.0 * x2 * x2 * inv_r2_5 - inv_r2_3);
+  const ScalarType Uyy = (1.0 - mu) * (3.0 * qy * qy * inv_r1_5 - inv_r1_3) +
+                         mu * (3.0 * qy * qy * inv_r2_5 - inv_r2_3);
+  const ScalarType Uzz = (1.0 - mu) * (3.0 * qz * qz * inv_r1_5 - inv_r1_3) +
+                         mu * (3.0 * qz * qz * inv_r2_5 - inv_r2_3);
+  const ScalarType Uxy = (1.0 - mu) * 3.0 * x1 * qy * inv_r1_5 + mu * 3.0 * x2 * qy * inv_r2_5;
+  const ScalarType Uxz = (1.0 - mu) * 3.0 * x1 * qz * inv_r1_5 + mu * 3.0 * x2 * qz * inv_r2_5;
+  const ScalarType Uyz = (1.0 - mu) * 3.0 * qy * qz * inv_r1_5 + mu * 3.0 * qy * qz * inv_r2_5;
+
+  // 全偏差ベクトルを更新
+  for (size_t i = 0; i < K; ++i) {
+    const ScalarType dqx = state->w[i].qx;
+    const ScalarType dqy = state->w[i].qy;
+    const ScalarType dqz = state->w[i].qz;
+
+    state->w[i].px += dt * (Uxx * dqx + Uxy * dqy + Uxz * dqz);
+    state->w[i].py += dt * (Uxy * dqx + Uyy * dqy + Uyz * dqz);
+    state->w[i].pz += dt * (Uxz * dqx + Uyz * dqy + Uzz * dqz);
+  }
+}
+
+/**
+ * @brief GALI用2次シンプレクティックステップ (Strang splitting)
+ */
+template <typename ScalarType, size_t K>
+void SymplecticStepGALI(const ScalarType mu, GaliState<ScalarType, K>* state, ScalarType h) {
+  const ScalarType half_h = h * 0.5;
+  RotateStateGALI(state, half_h);
+  UpdatePositionGALI(state, half_h);
+  UpdateMomentumGALI(mu, state, h);
+  UpdatePositionGALI(state, half_h);
+  RotateStateGALI(state, half_h);
+}
+
+/**
+ * @brief GALI用4次シンプレクティックステップ (Yoshida)
+ */
+template <typename ScalarType, size_t K>
+void SymplecticStep4thOrderGALI(const ScalarType mu, GaliState<ScalarType, K>* state,
+                                ScalarType tau) {
+  constexpr ScalarType kX1 = static_cast<ScalarType>(1.3512071919596576);
+  constexpr ScalarType kX0 = static_cast<ScalarType>(-1.7024143839193153);
+
+  SymplecticStepGALI(mu, state, kX1 * tau);
+  SymplecticStepGALI(mu, state, kX0 * tau);
+  SymplecticStepGALI(mu, state, kX1 * tau);
+}
+
+/**
+ * @brief GALI用6次シンプレクティックステップ (7-fold Yoshida)
+ */
+template <typename ScalarType, size_t K>
+void SymplecticStep6thOrderGALI(const ScalarType mu, GaliState<ScalarType, K>* state,
+                                ScalarType h) {
+  constexpr ScalarType w1 = static_cast<ScalarType>(0.784513610477560);
+  constexpr ScalarType w2 = static_cast<ScalarType>(0.235573213359357);
+  constexpr ScalarType w3 = static_cast<ScalarType>(-1.17767998417887);
+  constexpr ScalarType w4 = static_cast<ScalarType>(1.31518632068391);
+  constexpr ScalarType weights[7] = {w1, w2, w3, w4, w3, w2, w1};
+
+  for (auto c : weights) {
+    SymplecticStepGALI(mu, state, c * h);
   }
 }
 
@@ -2309,5 +2795,355 @@ using ::crtbp::Integrate;
 using ::crtbp::RungeKutta4Step;
 
 }  // namespace ertbp
+
+// =============================================================================
+// Frequency Map Analysis (Laskar's Method) for Chaos Detection
+// =============================================================================
+namespace freq_analysis {
+
+using namespace my_type;
+
+/**
+ * @brief 周波数解析の結果を格納する構造体
+ */
+template <typename ScalarType>
+struct FrequencyResult {
+  ScalarType nu1;          ///< 前半区間の主周波数
+  ScalarType nu2;          ///< 後半区間の主周波数
+  ScalarType diffusion_D;  ///< 周波数拡散指標 D = |nu2 - nu1| / |nu1|
+  ScalarType log10_D;      ///< log10(D) カオス性の指標
+  bool is_chaotic;         ///< カオス判定 (log10_D > threshold)
+
+  /**
+   * @brief カオス性を判定
+   * @param threshold log10(D)の閾値（デフォルト: -6.0）
+   * @return log10(D) > threshold ならカオス
+   */
+  bool JudgeChaos(ScalarType threshold = -6.0) const { return log10_D > threshold; }
+};
+
+/**
+ * @brief 軌道時系列データを保持・管理するクラス
+ * @details シンプレクティック積分器のState<T>出力から直接構築可能
+ */
+template <typename ScalarType>
+class TrajectoryBuffer {
+ public:
+  std::vector<ScalarType> time;  ///< 時刻
+  std::vector<ScalarType> x;     ///< x座標時系列
+  std::vector<ScalarType> y;     ///< y座標時系列
+  std::vector<ScalarType> z;     ///< z座標時系列
+  std::vector<ScalarType> vx;    ///< vx時系列
+  std::vector<ScalarType> vy;    ///< vy時系列
+  std::vector<ScalarType> vz;    ///< vz時系列
+
+  TrajectoryBuffer() = default;
+
+  /**
+   * @brief データ点の予約
+   */
+  void Reserve(size_t n) {
+    time.reserve(n);
+    x.reserve(n);
+    y.reserve(n);
+    z.reserve(n);
+    vx.reserve(n);
+    vy.reserve(n);
+    vz.reserve(n);
+  }
+
+  /**
+   * @brief State<T>から時刻と状態を追加
+   */
+  void Push(ScalarType t, const State<ScalarType>& state) {
+    time.push_back(t);
+    x.push_back(state.x);
+    y.push_back(state.y);
+    z.push_back(state.z);
+    vx.push_back(state.vx);
+    vy.push_back(state.vy);
+    vz.push_back(state.vz);
+  }
+
+  /**
+   * @brief CanonicalState<T>から時刻と状態を追加
+   */
+  void PushCanonical(ScalarType t, const CanonicalState<ScalarType>& state) {
+    time.push_back(t);
+    x.push_back(state.qx);
+    y.push_back(state.qy);
+    z.push_back(state.qz);
+    vx.push_back(state.px);
+    vy.push_back(state.py);
+    vz.push_back(state.pz);
+  }
+
+  size_t Size() const { return time.size(); }
+
+  void Clear() {
+    time.clear();
+    x.clear();
+    y.clear();
+    z.clear();
+    vx.clear();
+    vy.clear();
+    vz.clear();
+  }
+};
+
+/**
+ * @brief Hanning窓関数を適用
+ * @param data 入力データ（インプレースで変更）
+ */
+template <typename ScalarType>
+void ApplyHanningWindow(std::vector<ScalarType>& data) {
+  const size_t N = data.size();
+  constexpr ScalarType pi = std::numbers::pi_v<ScalarType>;
+  for (size_t i = 0; i < N; ++i) {
+    ScalarType w = 0.5 * (1.0 - std::cos(2.0 * pi * i / (N - 1)));
+    data[i] *= w;
+  }
+}
+
+/**
+ * @brief 簡易DFTで指定周波数の振幅を計算
+ * @param data 時系列データ
+ * @param dt サンプリング間隔
+ * @param freq 周波数
+ * @return 複素振幅の絶対値
+ */
+template <typename ScalarType>
+ScalarType ComputeDFTAmplitude(const std::vector<ScalarType>& data, ScalarType dt,
+                               ScalarType freq) {
+  const size_t N = data.size();
+  constexpr ScalarType two_pi = 2.0 * std::numbers::pi_v<ScalarType>;
+  ScalarType real_sum = 0.0;
+  ScalarType imag_sum = 0.0;
+  for (size_t i = 0; i < N; ++i) {
+    ScalarType phase = -two_pi * freq * (i * dt);
+    real_sum += data[i] * std::cos(phase);
+    imag_sum += data[i] * std::sin(phase);
+  }
+  return std::sqrt(real_sum * real_sum + imag_sum * imag_sum);
+}
+
+/**
+ * @brief 主周波数を探索（ピーク探索＋精密化）
+ * @param data 時系列データ（窓関数適用済みを推奨）
+ * @param dt サンプリング間隔
+ * @param freq_min 周波数探索の最小値
+ * @param freq_max 周波数探索の最大値
+ * @param n_coarse 粗探索の分割数
+ * @param n_refine 精密化の反復回数
+ * @return 主周波数
+ */
+template <typename ScalarType>
+ScalarType FindMainFrequency(const std::vector<ScalarType>& data, ScalarType dt,
+                             ScalarType freq_min = 0.0, ScalarType freq_max = -1.0,
+                             int n_coarse = 512, int n_refine = 10) {
+  const size_t N = data.size();
+  if (N < 2) return 0.0;
+
+  // Nyquist周波数
+  ScalarType nyquist = 0.5 / dt;
+  if (freq_max < 0) freq_max = nyquist;
+  freq_max = std::min(freq_max, nyquist);
+
+  // 粗探索: 周波数グリッドでピークを探す
+  ScalarType best_freq = freq_min;
+  ScalarType best_amp = 0.0;
+  ScalarType df = (freq_max - freq_min) / n_coarse;
+
+  for (int i = 0; i <= n_coarse; ++i) {
+    ScalarType freq = freq_min + i * df;
+    ScalarType amp = ComputeDFTAmplitude(data, dt, freq);
+    if (amp > best_amp) {
+      best_amp = amp;
+      best_freq = freq;
+    }
+  }
+
+  // 精密化: 黄金分割探索でピークを精密化
+  ScalarType search_range = df;
+  constexpr ScalarType golden_ratio = 0.618033988749895;
+
+  for (int iter = 0; iter < n_refine; ++iter) {
+    ScalarType f1 = best_freq - search_range * golden_ratio;
+    ScalarType f2 = best_freq + search_range * golden_ratio;
+    f1 = std::max(f1, freq_min);
+    f2 = std::min(f2, freq_max);
+
+    ScalarType amp1 = ComputeDFTAmplitude(data, dt, f1);
+    ScalarType amp2 = ComputeDFTAmplitude(data, dt, f2);
+
+    if (amp1 > amp2) {
+      best_freq = f1;
+      best_amp = amp1;
+    } else {
+      best_freq = f2;
+      best_amp = amp2;
+    }
+    search_range *= golden_ratio;
+  }
+
+  return best_freq;
+}
+
+/**
+ * @brief 周波数解析を実行 (Laskar's Frequency Map Analysis)
+ * @param data 時系列データ（位相空間の1成分、例: x(t)）
+ * @param dt サンプリング間隔
+ * @param chaos_threshold カオス判定閾値 (log10(D)、デフォルト: -6.0)
+ * @return 周波数解析結果
+ */
+template <typename ScalarType>
+FrequencyResult<ScalarType> AnalyzeFrequency(const std::vector<ScalarType>& data, ScalarType dt,
+                                             ScalarType chaos_threshold = -6.0) {
+  FrequencyResult<ScalarType> result{};
+  const size_t N = data.size();
+  if (N < 4) {
+    result.nu1 = 0.0;
+    result.nu2 = 0.0;
+    result.diffusion_D = 0.0;
+    result.log10_D = -20.0;  // 非常に小さい値
+    result.is_chaotic = false;
+    return result;
+  }
+
+  // 前半と後半に分割
+  size_t half = N / 2;
+  std::vector<ScalarType> first_half(data.begin(), data.begin() + half);
+  std::vector<ScalarType> second_half(data.begin() + half, data.end());
+
+  // 窓関数を適用
+  ApplyHanningWindow(first_half);
+  ApplyHanningWindow(second_half);
+
+  // 各区間で主周波数を探索
+  result.nu1 = FindMainFrequency(first_half, dt);
+  result.nu2 = FindMainFrequency(second_half, dt);
+
+  // 周波数拡散指標を計算
+  if (std::abs(result.nu1) > 1e-12) {
+    result.diffusion_D = std::abs(result.nu2 - result.nu1) / std::abs(result.nu1);
+  } else {
+    result.diffusion_D = 0.0;
+  }
+
+  // log10(D)
+  if (result.diffusion_D > 1e-20) {
+    result.log10_D = std::log10(result.diffusion_D);
+  } else {
+    result.log10_D = -20.0;
+  }
+
+  // カオス判定
+  result.is_chaotic = result.log10_D > chaos_threshold;
+
+  return result;
+}
+
+/**
+ * @brief 軌道バッファから周波数解析を実行
+ * @param buffer 軌道時系列データ
+ * @param component 解析する成分 ("x", "y", "z", "r", "xy_complex")
+ * @param chaos_threshold カオス判定閾値
+ * @return 周波数解析結果
+ */
+template <typename ScalarType>
+FrequencyResult<ScalarType> AnalyzeFromBuffer(const TrajectoryBuffer<ScalarType>& buffer,
+                                              const std::string& component = "x",
+                                              ScalarType chaos_threshold = -6.0) {
+  if (buffer.Size() < 4) {
+    return FrequencyResult<ScalarType>{0, 0, 0, -20.0, false};
+  }
+
+  // サンプリング間隔
+  ScalarType dt = buffer.time[1] - buffer.time[0];
+
+  std::vector<ScalarType> data;
+  data.reserve(buffer.Size());
+
+  if (component == "x") {
+    data = buffer.x;
+  } else if (component == "y") {
+    data = buffer.y;
+  } else if (component == "z") {
+    data = buffer.z;
+  } else if (component == "r") {
+    // 動径成分 r = sqrt(x^2 + y^2 + z^2)
+    for (size_t i = 0; i < buffer.Size(); ++i) {
+      ScalarType r = std::sqrt(buffer.x[i] * buffer.x[i] + buffer.y[i] * buffer.y[i] +
+                               buffer.z[i] * buffer.z[i]);
+      data.push_back(r);
+    }
+  } else if (component == "xy") {
+    // xy平面での動径 r_xy = sqrt(x^2 + y^2)
+    for (size_t i = 0; i < buffer.Size(); ++i) {
+      ScalarType r_xy = std::sqrt(buffer.x[i] * buffer.x[i] + buffer.y[i] * buffer.y[i]);
+      data.push_back(r_xy);
+    }
+  } else {
+    // デフォルトはx成分
+    data = buffer.x;
+  }
+
+  return AnalyzeFrequency(data, dt, chaos_threshold);
+}
+
+/**
+ * @brief 周波数マップ解析のヘルパー関数
+ * @details シンプレクティック積分器と組み合わせて使用
+ *
+ * 使用例:
+ * @code
+ * freq_analysis::TrajectoryBuffer<double> buffer;
+ * buffer.Reserve(num_steps);
+ *
+ * State<double> state = initial_state;
+ * double t = 0.0;
+ * for (int i = 0; i < num_steps; ++i) {
+ *     buffer.Push(t, state);
+ *     state = crtbp::SymplecticStep6thOrder(mu, state, dt);
+ *     t += dt;
+ * }
+ *
+ * auto result = freq_analysis::AnalyzeFromBuffer(buffer, "x");
+ * std::cout << "log10(D) = " << result.log10_D << std::endl;
+ * std::cout << "Is chaotic: " << (result.is_chaotic ? "YES" : "NO") << std::endl;
+ * @endcode
+ */
+
+/**
+ * @brief 複数成分の周波数解析を同時実行
+ * @param buffer 軌道時系列データ
+ * @param chaos_threshold カオス判定閾値
+ * @return 各成分(x,y,z)の解析結果を格納した配列
+ */
+template <typename ScalarType>
+std::array<FrequencyResult<ScalarType>, 3> AnalyzeAllComponents(
+    const TrajectoryBuffer<ScalarType>& buffer, ScalarType chaos_threshold = -6.0) {
+  return {AnalyzeFromBuffer(buffer, "x", chaos_threshold),
+          AnalyzeFromBuffer(buffer, "y", chaos_threshold),
+          AnalyzeFromBuffer(buffer, "z", chaos_threshold)};
+}
+
+/**
+ * @brief カオス指標の判定基準を文字列で返す
+ */
+template <typename ScalarType>
+std::string GetChaosLevelString(ScalarType log10_D) {
+  if (log10_D < -10.0) {
+    return "Highly Regular (Quasi-periodic)";
+  } else if (log10_D < -6.0) {
+    return "Regular (Quasi-periodic)";
+  } else if (log10_D < -3.0) {
+    return "Weakly Chaotic";
+  } else {
+    return "Strongly Chaotic";
+  }
+}
+
+}  // namespace freq_analysis
 }  // namespace rtbp
 #endif  // RTBP_HPP

@@ -42,6 +42,14 @@ enum class IntegratorType {
 };
 
 /**
+ * @brief カオス指標の種類
+ */
+enum class ChaosIndexType {
+  SALI,  ///< SALI (K=2) - デフォルト
+  GALI   ///< GALI (K可変)
+};
+
+/**
  * @brief 設定パラメータ構造体
  */
 struct TrajectorySaliConfig {
@@ -54,8 +62,10 @@ struct TrajectorySaliConfig {
   double dv_step = 0.002;          ///< 減速ステップ（無次元）
   int phase_step = 1;              ///< 軌道位相の間引き（1=全て使用）
   IntegratorType integrator = IntegratorType::kSymplectic6th;
-  double sali_lower_limit = 1e-8;       ///< SALI閾値
-  bool output_sali_timeseries = false;  ///< SALI時系列出力フラグ
+  double sali_lower_limit = 1e-8;                          ///< SALI閾値
+  bool output_sali_timeseries = false;                     ///< SALI時系列出力フラグ
+  ChaosIndexType chaos_index_type = ChaosIndexType::SALI;  ///< カオス指標の種類
+  int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
 };
 
 /**
@@ -126,6 +136,20 @@ bool LoadTrajectorySaliConfig(const std::string& filepath, TrajectorySaliConfig*
       config->sali_lower_limit = std::stod(value);
     } else if (key == "OUTPUT_SALI_TIMESERIES") {
       config->output_sali_timeseries = (value == "1" || value == "true" || value == "TRUE");
+    } else if (key == "CHAOS_INDEX") {
+      if (value == "SALI" || value == "sali") {
+        config->chaos_index_type = ChaosIndexType::SALI;
+        config->gali_k = 2;
+      } else if (value == "GALI2" || value == "gali2") {
+        config->chaos_index_type = ChaosIndexType::GALI;
+        config->gali_k = 2;
+      } else if (value == "GALI4" || value == "gali4") {
+        config->chaos_index_type = ChaosIndexType::GALI;
+        config->gali_k = 4;
+      } else if (value == "GALI6" || value == "gali6") {
+        config->chaos_index_type = ChaosIndexType::GALI;
+        config->gali_k = 6;
+      }
     }
   }
   return true;
@@ -252,7 +276,7 @@ void GenerateSaliContourPlots(const std::string& csv_path, const std::string& ou
   gp << "\n";
 
   // sali_final カラーコンタ (EPS)
-  gp << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
+  gp << "set terminal postscript eps enhanced color font 'Arial,14'\n";
   gp << "set output '" << eps_sali << "'\n";
   gp << "set xlabel 'Phase Index'\n";
   gp << "set ylabel 'Delta-V (non-dim)'\n";
@@ -266,13 +290,13 @@ void GenerateSaliContourPlots(const std::string& csv_path, const std::string& ou
   gp << "\n";
 
   // sali_final カラーコンタ (PNG)
-  gp << "set terminal pngcairo enhanced font 'Helvetica,14' size 1200,900\n";
+  gp << "set terminal pngcairo enhanced font 'Arial,14' size 1200,900\n";
   gp << "set output '" << png_sali << "'\n";
   gp << "replot\n";
   gp << "\n";
 
   // sali_threshold_time カラーコンタ (EPS)
-  gp << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
+  gp << "set terminal postscript eps enhanced color font 'Arial,14'\n";
   gp << "set output '" << eps_time << "'\n";
   gp << "set xlabel 'Phase Index'\n";
   gp << "set ylabel 'Delta-V (non-dim)'\n";
@@ -285,7 +309,7 @@ void GenerateSaliContourPlots(const std::string& csv_path, const std::string& ou
   gp << "\n";
 
   // sali_threshold_time カラーコンタ (PNG)
-  gp << "set terminal pngcairo enhanced font 'Helvetica,14' size 1200,900\n";
+  gp << "set terminal pngcairo enhanced font 'Arial,14' size 1200,900\n";
   gp << "set output '" << png_time << "'\n";
   gp << "replot\n";
   gp << "\n";
@@ -339,7 +363,7 @@ void GenerateSaliTimeSeriesPlot(const std::string& csv_path, const std::string& 
   gp << "\n";
 
   // EPS出力
-  gp << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
+  gp << "set terminal postscript eps enhanced color font 'Arial,14'\n";
   gp << "set output '" << eps_path << "'\n";
   gp << "set xlabel 'Time (non-dim)'\n";
   gp << "set ylabel 'SALI'\n";
@@ -353,7 +377,7 @@ void GenerateSaliTimeSeriesPlot(const std::string& csv_path, const std::string& 
   gp << "\n";
 
   // PNG出力
-  gp << "set terminal pngcairo enhanced font 'Helvetica,14' size 1200,600\n";
+  gp << "set terminal pngcairo enhanced font 'Arial,14' size 1200,600\n";
   gp << "set output '" << png_path << "'\n";
   gp << "replot\n";
 
@@ -417,6 +441,16 @@ int main() {
   std::cout << "<>    SALI_LOWER_LIMIT: " << config.sali_lower_limit << std::endl;
   std::cout << "<>    OUTPUT_SALI_TIMESERIES: " << (config.output_sali_timeseries ? "ON" : "OFF")
             << std::endl;
+  std::string chaos_index_str;
+  switch (config.chaos_index_type) {
+    case ChaosIndexType::SALI:
+      chaos_index_str = "SALI";
+      break;
+    case ChaosIndexType::GALI:
+      chaos_index_str = "GALI" + std::to_string(config.gali_k);
+      break;
+  }
+  std::cout << "<>    CHAOS_INDEX: " << chaos_index_str << std::endl;
   std::cout << "<>" << std::endl;
   std::cout << "<>    Velocity deceleration steps: "
             << static_cast<int>(config.dv_max / config.dv_step) + 1 << std::endl;
@@ -441,14 +475,38 @@ int main() {
   std::cout << "<>    Using " << omp_threads << " threads" << std::endl;
   std::cout << "<>" << std::endl;
 
-  // 積分器ラムダ選択
-  auto integrator = [&](SaliState<double>* state, double h) {
+  // SALI積分器ラムダ
+  auto sali_integrator = [&](SaliState<double>* state, double h) {
     switch (config.integrator) {
       case IntegratorType::kSymplectic6th:
         SymplecticStep6thOrderSALI(kMU, state, h);
         break;
       case IntegratorType::kSymplectic4th:
         SymplecticStep4thOrderSALI(kMU, state, h);
+        break;
+    }
+  };
+
+  // GALI4積分器ラムダ
+  auto gali4_integrator = [&](GaliState<double, 4>* state, double h) {
+    switch (config.integrator) {
+      case IntegratorType::kSymplectic6th:
+        SymplecticStep6thOrderGALI(kMU, state, h);
+        break;
+      case IntegratorType::kSymplectic4th:
+        SymplecticStep4thOrderGALI(kMU, state, h);
+        break;
+    }
+  };
+
+  // GALI6積分器ラムダ
+  auto gali6_integrator = [&](GaliState<double, 6>* state, double h) {
+    switch (config.integrator) {
+      case IntegratorType::kSymplectic6th:
+        SymplecticStep6thOrderGALI(kMU, state, h);
+        break;
+      case IntegratorType::kSymplectic4th:
+        SymplecticStep4thOrderGALI(kMU, state, h);
         break;
     }
   };
@@ -462,23 +520,28 @@ int main() {
   // 全体時間計測
   auto start_total = std::chrono::system_clock::now();
 
+  // シミュレーション開始時刻のタイムスタンプを生成（全軌道ファイル共通）
+  std::time_t start_time_t = std::chrono::system_clock::to_time_t(start_total);
+  std::tm start_local_tm;
+#ifdef _WIN32
+  localtime_s(&start_local_tm, &start_time_t);
+#else
+  localtime_r(&start_time_t, &start_local_tm);
+#endif
+  std::ostringstream sim_timestamp_ss;
+  sim_timestamp_ss << std::put_time(&start_local_tm, "%y_%m%d_%H%M") << "_run";
+  std::string sim_output_dir = output_base_dir + "/" + sim_timestamp_ss.str();
+  fs::create_directories(sim_output_dir);
+  std::cout << "<>    Simulation output folder: " << sim_output_dir << std::endl;
+  std::cout << "<>" << std::endl;
+
   // 各軌道ファイルをループ
   for (size_t file_idx = 0; file_idx < orbit_files.size(); ++file_idx) {
     const std::string& orbit_file = orbit_files[file_idx];
     std::string file_basename = fs::path(orbit_file).stem().string();
 
-    // タイムスタンプ付き出力ディレクトリ作成（YYYYMMDD_HHMMSS_ファイル名）
-    auto now = std::chrono::system_clock::now();
-    std::time_t now_time = std::chrono::system_clock::to_time_t(now);
-    std::tm local_tm;
-#ifdef _WIN32
-    localtime_s(&local_tm, &now_time);
-#else
-    localtime_r(&now_time, &local_tm);
-#endif
-    std::ostringstream timestamp_ss;
-    timestamp_ss << std::put_time(&local_tm, "%Y%m%d_%H%M%S");
-    std::string output_dir = output_base_dir + "/" + timestamp_ss.str() + "_" + file_basename;
+    // 軌道ファイルごとのサブフォルダをシミュレーションフォルダ内に作成
+    std::string output_dir = sim_output_dir + "/" + file_basename;
     fs::create_directories(output_dir);
 
     // SALI時系列データ用サブディレクトリ
@@ -555,14 +618,35 @@ int main() {
         modified_state.vy += dv_y;
         modified_state.vz += dv_z;
 
-        // SALI計算初期化
+        // カオス指標計算用の状態初期化
         SaliState<double> sali_state;
-        sali_state.state = ConvertToCanonical(modified_state);
-        sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-        sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+        GaliState<double, 4> gali4_state;
+        GaliState<double, 6> gali6_state;
+        CanonicalState<double> canonical_state = ConvertToCanonical(modified_state);
 
-        double sali_final = -1.0;
-        double sali_threshold_time = config.calc_duration_nd;
+        if (config.chaos_index_type == ChaosIndexType::SALI ||
+            (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 2)) {
+          sali_state.state = canonical_state;
+          sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+        } else if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 4) {
+          gali4_state.state = canonical_state;
+          gali4_state.w[0] = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          gali4_state.w[1] = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+          gali4_state.w[2] = CanonicalState<double>{0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
+          gali4_state.w[3] = CanonicalState<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+        } else if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 6) {
+          gali6_state.state = canonical_state;
+          gali6_state.w[0] = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          gali6_state.w[1] = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+          gali6_state.w[2] = CanonicalState<double>{0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
+          gali6_state.w[3] = CanonicalState<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+          gali6_state.w[4] = CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+          gali6_state.w[5] = CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+        }
+
+        double chaos_final = -1.0;
+        double chaos_threshold_time = config.calc_duration_nd;
         int escape_flag = 0;
         int collision_flag = 0;
         bool threshold_reached = false;
@@ -570,42 +654,60 @@ int main() {
         // 初期ヤコビ積分
         double jacobi = calc_jacobi_integral(modified_state, kMU);
 
-        // SALI時系列データを記録するベクトル
-        std::vector<std::pair<double, double>> sali_timeseries;
-        sali_timeseries.reserve(num_steps);
+        // カオス指標時系列データを記録するベクトル
+        std::vector<std::pair<double, double>> chaos_timeseries;
+        chaos_timeseries.reserve(num_steps);
 
         // 積分ループ
         for (int step = 0; step < num_steps; ++step) {
-          integrator(&sali_state, config.calc_timestep_nd);
+          CanonicalState<double>* current_state = nullptr;
 
-          // 偏差ベクトル正規化
-          sali_state.w1.Normalize();
-          sali_state.w2.Normalize();
-
-          // SALI計算
-          double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-          double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-          sali_final = std::min(norm_plus, norm_minus);
+          if (config.chaos_index_type == ChaosIndexType::SALI ||
+              (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 2)) {
+            sali_integrator(&sali_state, config.calc_timestep_nd);
+            sali_state.w1.Normalize();
+            sali_state.w2.Normalize();
+            double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
+            double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
+            chaos_final = std::min(norm_plus, norm_minus);
+            current_state = &sali_state.state;
+          } else if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 4) {
+            gali4_integrator(&gali4_state, config.calc_timestep_nd);
+            gali4_state.NormalizeDeviationVectors();
+            chaos_final = gali4_state.ComputeGALI();
+            current_state = &gali4_state.state;
+          } else if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 6) {
+            gali6_integrator(&gali6_state, config.calc_timestep_nd);
+            gali6_state.NormalizeDeviationVectors();
+            chaos_final = gali6_state.ComputeGALI();
+            current_state = &gali6_state.state;
+          }
 
           // 時系列データを記録
           double current_time = (step + 1) * config.calc_timestep_nd;
-          sali_timeseries.emplace_back(current_time, sali_final);
+          chaos_timeseries.emplace_back(current_time, chaos_final);
 
           // 閾値到達判定
-          if (!threshold_reached && sali_final < config.sali_lower_limit) {
-            sali_threshold_time = current_time;
+          if (!threshold_reached && chaos_final < config.sali_lower_limit) {
+            chaos_threshold_time = current_time;
             threshold_reached = true;
           }
 
           // 衝突・エスケープ判定
-          double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, kMU);
-          if (r2 < config.forbidden_radius) {
-            collision_flag = 1;
-          }
-          if (r2 > config.escape_judge_hill) {
-            escape_flag = 1;
+          if (current_state != nullptr) {
+            double r2 = calc_r2(current_state->qx, current_state->qy, current_state->qz, kMU);
+            if (r2 < config.forbidden_radius) {
+              collision_flag = 1;
+            }
+            if (r2 > config.escape_judge_hill) {
+              escape_flag = 1;
+            }
           }
         }
+
+        // 後方互換のためsali_final, sali_threshold_timeに設定
+        double sali_final = chaos_final;
+        double sali_threshold_time = chaos_threshold_time;
 
         // SALI時系列CSVファイル出力（設定で有効な場合のみ）
         if (config.output_sali_timeseries) {
@@ -621,7 +723,7 @@ int main() {
               ts_ofs << "# phase_idx=" << phase_idx << ", dv_mag=" << dv_mag << "\n";
               ts_ofs << "# Source: " << orbit_file << "\n";
               ts_ofs << "time_nd,sali\n";
-              for (const auto& ts_point : sali_timeseries) {
+              for (const auto& ts_point : chaos_timeseries) {
                 ts_ofs << ts_point.first << "," << ts_point.second << "\n";
               }
               ts_ofs.close();

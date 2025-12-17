@@ -51,6 +51,14 @@ enum class MeshCenter {
   kEARTH = 1,
 };
 
+/**
+ * @brief カオス指標の種類
+ */
+enum class ChaosIndexType {
+  SALI,  ///< SALI (K=2) - デフォルト
+  GALI   ///< GALI (K可変)
+};
+
 int main() {
   using namespace param;
   using namespace crtbp;
@@ -227,19 +235,35 @@ int main() {
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
   std::ifstream ifs;
-  // 積分器
-  auto integrator = [&](SaliState<double>* state_ptr, double h) {
+  // SALI積分器
+  auto sali_integrator = [&](SaliState<double>* state_ptr, double h) {
     SymplecticStep6thOrderSALI(kMU, state_ptr, h);
   };
-  int configdata_num = 0;
+  // GALI4積分器
+  auto gali4_integrator = [&](GaliState<double, 4>* state_ptr, double h) {
+    SymplecticStep6thOrderGALI(kMU, state_ptr, h);
+  };
+  // GALI6積分器
+  auto gali6_integrator = [&](GaliState<double, 6>* state_ptr, double h) {
+    SymplecticStep6thOrderGALI(kMU, state_ptr, h);
+  };
   //  実行時間の計測
   auto start_ofall = std::chrono::system_clock::now();
+
+  // 実行ごとのセッション出力ディレクトリを作成
+  std::string output_base_path = OUTPUT_DIR;
+  std::string session_output_dir = output_base_path + "/3D_crtbp_SALI_v3/" + getcurrent_date();
+  if (!fs::exists(session_output_dir)) {
+    fs::create_directories(session_output_dir);
+  }
+  std::cout << "<>" << std::endl;
+  std::cout << "<>    Session output directory: " << session_output_dir << std::endl;
+  std::cout << "<>" << std::endl;
 
   // --------  configファイルの数だけSALI計算全体を繰り返す-----------------------
   // while (ifs) {
   for (const auto& configfilepath : config_file_list) {
     std::cout << "<>        Next config file : " << configfilepath << std::endl;
-    configdata_num++;
     ifs.open(configfilepath);
     if (!ifs) {
       std::cerr << "<> !err! config : " << configfilepath << " does NOT EXIST" << std::endl;
@@ -265,6 +289,8 @@ int main() {
     double OMEGA = 0;
     double THETA = 0;
     double SALI_LOWER_LIMIT = 1e-8;
+    ChaosIndexType chaos_index_type = ChaosIndexType::SALI;
+    int gali_k = 2;
     while (std::getline(ifs, str)) {
       if (str.find("MESH CENTER") != std::string::npos) {
         MESH_CENTER = std::stoi(str.substr(str.find("=") + 1));
@@ -313,6 +339,30 @@ int main() {
         THETA = THETA * std::acos(-1) / 180.;
       } else if (str.find("SALI LOWER LIMIT") != std::string::npos) {
         SALI_LOWER_LIMIT = std::stod(str.substr(str.find("=") + 1));
+      } else if (str.find("CHAOS_INDEX") != std::string::npos ||
+                 str.find("CHAOS INDEX") != std::string::npos) {
+        std::string value = str.substr(str.find("=") + 1);
+        // 空白除去
+        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+          value.erase(0, 1);
+        }
+        while (!value.empty() &&
+               (value.back() == ' ' || value.back() == '\t' || value.back() == '\r')) {
+          value.pop_back();
+        }
+        if (value == "SALI" || value == "sali") {
+          chaos_index_type = ChaosIndexType::SALI;
+          gali_k = 2;
+        } else if (value == "GALI2" || value == "gali2") {
+          chaos_index_type = ChaosIndexType::GALI;
+          gali_k = 2;
+        } else if (value == "GALI4" || value == "gali4") {
+          chaos_index_type = ChaosIndexType::GALI;
+          gali_k = 4;
+        } else if (value == "GALI6" || value == "gali6") {
+          chaos_index_type = ChaosIndexType::GALI;
+          gali_k = 6;
+        }
       }
     }
     ifs.close();
@@ -331,6 +381,16 @@ int main() {
     std::cout << "<>        LONGTITUDE(deg) : " << OMEGA << std::endl;
     std::cout << "<>        DEGREE FROM TANGENT(deg) : " << THETA << std::endl;
     std::cout << "<>        SALI LOWER LIMIT : " << SALI_LOWER_LIMIT << std::endl;
+    std::string chaos_index_str;
+    switch (chaos_index_type) {
+      case ChaosIndexType::SALI:
+        chaos_index_str = "SALI";
+        break;
+      case ChaosIndexType::GALI:
+        chaos_index_str = "GALI" + std::to_string(gali_k);
+        break;
+    }
+    std::cout << "<>        CHAOS INDEX : " << chaos_index_str << std::endl;
     std::cout << "<>    config file read successfully\n" << std::endl;
     if (is_continuous == 0) {
       WaitForEnter();
@@ -352,10 +412,9 @@ int main() {
     std::cout << "<>        Start calclation" << std::endl;
 
     // ---------出力ファイル設定---------
-    std::string output_base_path = OUTPUT_DIR;
-    // シミュレーション終了時刻が同じでもファイル名が被らないようにする
-    std::string filename = output_base_path + "/3D_crtbp_SALI_v3/" + getcurrent_date() +
-                           "_configdata_" + std::to_string(configdata_num) + ".dat";
+    // configファイル名からベース名を取得
+    std::string config_basename = fs::path(configfilepath).stem().string();
+    std::string filename = session_output_dir + "/" + config_basename + ".dat";
     std::ofstream ofs1(filename);
     if (!ofs1) {
       std::filesystem::path filepath(filename);
@@ -391,6 +450,10 @@ int main() {
     int totalIterations = meshPoints.size();
     // 進捗カウンタ
     int completed_count = 0;
+    // 進捗表示間隔（ループ外で計算してオーバーヘッド削減）
+    int display_interval = std::max(totalIterations / 100, 1);
+    // ファイル書き込み間隔（大きくしてcritical削減）
+    constexpr int kWriteInterval = 1000;
 
 // OpenMP並列化ループ
 #pragma omp parallel shared(meshPoints, completed_count, totalIterations, progress, ofs1)
@@ -425,32 +488,77 @@ int main() {
 
         if (velo_err == 0) {
           State<double> initial_state = {point.x, point.y, point.z, vx, vy, vz};
+          CanonicalState<double> canonical_state = ConvertToCanonical(initial_state);
+
+          // 使用するstateポインタ（衝突/脱出判定用）
+          CanonicalState<double>* current_state_ptr = nullptr;
+
+          // SALI/GALI状態の初期化
           SaliState<double> sali_state;
-          sali_state.state = ConvertToCanonical(initial_state);
-          // 偏差ベクトル w1, w2 の初期化
-          sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-          sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+          GaliState<double, 4> gali4_state;
+          GaliState<double, 6> gali6_state;
+
+          if (chaos_index_type == ChaosIndexType::SALI ||
+              (chaos_index_type == ChaosIndexType::GALI && gali_k == 2)) {
+            sali_state.state = canonical_state;
+            sali_state.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            sali_state.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            current_state_ptr = &sali_state.state;
+          } else if (chaos_index_type == ChaosIndexType::GALI && gali_k == 4) {
+            gali4_state.state = canonical_state;
+            gali4_state.w[0] = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            gali4_state.w[1] = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            gali4_state.w[2] = CanonicalState<double>{0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
+            gali4_state.w[3] = CanonicalState<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+            current_state_ptr = &gali4_state.state;
+          } else if (chaos_index_type == ChaosIndexType::GALI && gali_k == 6) {
+            gali6_state.state = canonical_state;
+            gali6_state.w[0] = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            gali6_state.w[1] = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+            gali6_state.w[2] = CanonicalState<double>{0.0, 0.0, 1.0, 0.0, 0.0, 0.0};
+            gali6_state.w[3] = CanonicalState<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+            gali6_state.w[4] = CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+            gali6_state.w[5] = CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+            current_state_ptr = &gali6_state.state;
+          }
+
           // 積分ループ (オブザーバー無し)
           for (int step = 0; step < num_step; ++step) {
-            // 1. 積分s
-            integrator(&sali_state, CALC_TIMESTEP);
-            // 2. 正規化
-            sali_state.w1.Normalize();
-            sali_state.w2.Normalize();
-            double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
-            double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
-            sali = std::min(norm_plus, norm_minus);
+            if (chaos_index_type == ChaosIndexType::SALI ||
+                (chaos_index_type == ChaosIndexType::GALI && gali_k == 2)) {
+              sali_integrator(&sali_state, CALC_TIMESTEP);
+              sali_state.w1.Normalize();
+              sali_state.w2.Normalize();
+              double norm_plus = (sali_state.w1 + sali_state.w2).Norm();
+              double norm_minus = (sali_state.w1 - sali_state.w2).Norm();
+              sali = std::min(norm_plus, norm_minus);
+              current_state_ptr = &sali_state.state;
+            } else if (chaos_index_type == ChaosIndexType::GALI && gali_k == 4) {
+              gali4_integrator(&gali4_state, CALC_TIMESTEP);
+              gali4_state.NormalizeDeviationVectors();
+              sali = gali4_state.ComputeGALI();
+              current_state_ptr = &gali4_state.state;
+            } else if (chaos_index_type == ChaosIndexType::GALI && gali_k == 6) {
+              gali6_integrator(&gali6_state, CALC_TIMESTEP);
+              gali6_state.NormalizeDeviationVectors();
+              sali = gali6_state.ComputeGALI();
+              current_state_ptr = &gali6_state.state;
+            }
+
             if ((sali < SALI_LOWER_LIMIT) && lower_limit_reach_flag == 0) {
               lower_limit_reach_time = step * CALC_TIMESTEP;
               lower_limit_reach_flag = 1;
             }
             // Check for collision or escape
-            double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, kMU);
-            if (r2 < FOREBIDDEN_AREA_RADIUS) {
-              collision_flag = 1;
-            }
-            if (r2 > SOI_RADIUS) {
-              escape_flag = 1;
+            if (current_state_ptr != nullptr) {
+              double r2 =
+                  calc_r2(current_state_ptr->qx, current_state_ptr->qy, current_state_ptr->qz, kMU);
+              if (r2 < FOREBIDDEN_AREA_RADIUS) {
+                collision_flag = 1;
+              }
+              if (r2 > SOI_RADIUS) {
+                escape_flag = 1;
+              }
             }
           }
         }
@@ -459,23 +567,22 @@ int main() {
                             << collision_flag << "," << escape_flag << "," << lower_limit_reach_time
                             << "\n";
         // 一定件数ごとにバッファをファイルに書き込む (排他制御)
-        if (idx % 100 == 0 || idx == totalIterations - 1) {
-#pragma omp critical
+        if (idx % kWriteInterval == 0) {
+#pragma omp critical(file_write)
           {
             ofs1 << local_output_buffer.str();
             local_output_buffer.str("");  // バッファをクリア
+            local_output_buffer.clear();  // ストリーム状態もクリア
           }
         }
 #pragma omp atomic
         completed_count++;
 
-#pragma omp critical
-        {
-          int display_interval = std::max(totalIterations / 100, 1);
-          if (completed_count % display_interval == 0 || completed_count == totalIterations) {
+        // スレッド0のみが進捗表示（criticalを回避）
+        if (omp_get_thread_num() == 0) {
+          if (completed_count % display_interval == 0 ||
+              completed_count >= totalIterations - OMP_Fmax) {
             double current_progress = static_cast<double>(completed_count) / totalIterations;
-
-            // (注: この関数が内部で std::cout を使う前提)
             displayProgressBarThreadSafe(current_progress);
           }
         }

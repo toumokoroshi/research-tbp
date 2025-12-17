@@ -373,26 +373,84 @@ class SALIContourApp:
                     continue
         return 0
 
-    def extract_jacobi_constant(self, filepath, header_lines):
-        """ヘッダーに記されたヤコビ積分を抽出"""
+    def extract_header_info(self, filepath, header_lines):
+        """ヘッダーから全ての情報を抽出"""
+        header_info = {}
         if header_lines and header_lines > 0:
             lines_to_check = header_lines + 5
         else:
             lines_to_check = 30
         try:
             with open(filepath, "r") as f:
+                raw_header_lines = []
                 for idx, line in enumerate(f):
                     if lines_to_check and idx >= lines_to_check:
                         break
+                    raw_header_lines.append(line.strip())
+
+                    # Jacobi積分を抽出
                     match = JACOBI_PATTERN.search(line)
                     if match:
                         try:
-                            return float(match.group(1))
+                            header_info["jacobi_constant"] = float(match.group(1))
                         except ValueError:
-                            continue
+                            pass
+
+                    # KEY=VALUE または KEY: VALUE の形式を抽出
+                    if "=" in line or ":" in line:
+                        # コメント記号(#)の後を除去
+                        clean_line = line.lstrip("#").strip()
+                        for sep in ["=", ":"]:
+                            if sep in clean_line:
+                                parts = clean_line.split(sep, 1)
+                                if len(parts) == 2:
+                                    key = parts[0].strip().upper()
+                                    value = parts[1].strip()
+                                    # 既知のキーに対応
+                                    if (
+                                        "JACOBI" in key
+                                        and "jacobi_constant" not in header_info
+                                    ):
+                                        try:
+                                            header_info["jacobi_constant"] = float(
+                                                value
+                                            )
+                                        except ValueError:
+                                            pass
+                                    elif "TIMESTEP" in key or "CALC_TIMESTEP" in key:
+                                        header_info["timestep"] = value
+                                    elif "TIME" in key and "THRESHOLD" in key:
+                                        header_info["time_threshold"] = value
+                                    elif "MESH" in key and (
+                                        "NUM" in key or "COUNT" in key or "SIZE" in key
+                                    ):
+                                        header_info["mesh_info"] = value
+                                    elif "MU" in key and key.replace(" ", "") in [
+                                        "MU",
+                                        "MUPARAMETER",
+                                    ]:
+                                        header_info["mu"] = value
+                                    elif "CHAOS" in key or "INDEX" in key:
+                                        header_info["chaos_index"] = value
+                                    elif "SALI" in key and "LOWER" in key:
+                                        header_info["sali_lower_limit"] = value
+                                    elif "INCLINATION" in key:
+                                        header_info["inclination"] = value
+                                    elif "CONFIG" in key:
+                                        header_info["config_file"] = value
+                                break
+
+                header_info["raw_header"] = raw_header_lines[
+                    : min(15, len(raw_header_lines))
+                ]
         except OSError:
-            return None
-        return None
+            pass
+        return header_info
+
+    def extract_jacobi_constant(self, filepath, header_lines):
+        """ヘッダーに記されたヤコビ積分を抽出（後方互換）"""
+        info = self.extract_header_info(filepath, header_lines)
+        return info.get("jacobi_constant")
 
     def load_data(self):
         if not self.file_path.get():
@@ -400,6 +458,7 @@ class SALIContourApp:
             return
 
         self.jacobi_constant = None
+        self.header_info = {}
         try:
             delimiter = self.get_delimiter()
 
@@ -410,9 +469,11 @@ class SALIContourApp:
             else:
                 header_lines = self.header_lines.get()
 
-            self.jacobi_constant = self.extract_jacobi_constant(
+            # ヘッダ情報を抽出
+            self.header_info = self.extract_header_info(
                 self.file_path.get(), header_lines
             )
+            self.jacobi_constant = self.header_info.get("jacobi_constant")
 
             # 列名の決定（自動判別）
             # まず1行だけ読んで列数を確認
@@ -500,8 +561,29 @@ class SALIContourApp:
 
             # データ情報表示
             info = f"データ読み込み成功\n\n"
+            info += f"=== ヘッダ情報 ===\n"
+            if self.jacobi_constant is not None:
+                info += f"Jacobi積分: {self.jacobi_constant:.6f}\n"
+            if self.header_info.get("timestep"):
+                info += f"タイムステップ: {self.header_info['timestep']}\n"
+            if self.header_info.get("time_threshold"):
+                info += f"積分時間: {self.header_info['time_threshold']}\n"
+            if self.header_info.get("chaos_index"):
+                info += f"カオス指標: {self.header_info['chaos_index']}\n"
+            if self.header_info.get("sali_lower_limit"):
+                info += f"SALI下限: {self.header_info['sali_lower_limit']}\n"
+            if self.header_info.get("mu"):
+                info += f"μ: {self.header_info['mu']}\n"
+            if self.header_info.get("inclination"):
+                info += f"傾斜角: {self.header_info['inclination']}\n"
+            if self.header_info.get("mesh_info"):
+                info += f"メッシュ: {self.header_info['mesh_info']}\n"
+            if self.header_info.get("config_file"):
+                info += f"設定ファイル: {self.header_info['config_file']}\n"
+
+            info += f"\n=== データ統計 ===\n"
             info += f"総データ数: {len(self.data)}\n"
-            info += f"ヘッダ行数: {header_lines}\n\n"
+            info += f"ヘッダ行数: {header_lines}\n"
             info += f"SALI範囲: [{self.data['SALI'].min():.4f}, {self.data['SALI'].max():.4f}]\n"
             info += (
                 f"X範囲: [{self.data['x'].min():.4f}, {self.data['x'].max():.4f}] AU\n"
@@ -512,10 +594,6 @@ class SALIContourApp:
             info += (
                 f"Z範囲: [{self.data['z'].min():.4f}, {self.data['z'].max():.4f}] AU\n"
             )
-            if self.jacobi_constant is not None:
-                info += f"Jacobi integral (C): {self.jacobi_constant:.6f}\n"
-            else:
-                info += "Jacobi integral (C): N/A\n"
 
             # lower_limit_reach_time の範囲情報
             if "lower_limit_reach_time" in self.data.columns:
@@ -525,8 +603,6 @@ class SALIContourApp:
                 if len(valid_reach_time) > 0:
                     info += f"\n閾値到達時間範囲: [{valid_reach_time.min():.4f}, {valid_reach_time.max():.4f}]\n"
                     info += f"(閾値到達データ数: {len(valid_reach_time)})\n"
-                else:
-                    info += "\n閾値到達時間データ: なし\n"
 
             self.info_text.delete(1.0, tk.END)
             self.info_text.insert(1.0, info)
@@ -869,6 +945,14 @@ class SALIContourApp:
 def main():
     root = tk.Tk()
     app = SALIContourApp(root)
+
+    def on_closing():
+        """ウィンドウ閉じるときにアプリケーションを終了"""
+        plt.close("all")  # matplotlibの全ウィンドウを閉じる
+        root.destroy()
+        root.quit()
+
+    root.protocol("WM_DELETE_WINDOW", on_closing)
     root.mainloop()
 
 

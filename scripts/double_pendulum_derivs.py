@@ -4,213 +4,204 @@ import matplotlib.animation as animation
 from scipy.integrate import odeint
 
 # --- 無次元パラメータ設定 ---
-# 物理パラメータの「比率」のみが重要になります
 l = 1.0  # 長さの比 (L2 / L1)
-mu = 1.0  # 質の比 (m2 / m1)
+mu = 1.0  # 質量の比 (m2 / m1)
 
 # シミュレーション設定
-# 時間は無次元時間 tau = t * sqrt(g/L1)
-tau_max = 500.0  # 無次元シミュレーション時間
-d_tau = 0.05  # 無次元時間刻み
+tau_max = 200.0  # カオスを見るため少し長めに
+d_tau = 0.05
+t_eval = np.arange(0, tau_max, d_tau)
 
-# 初期状態: [theta1, omega1, theta2, omega2]
-# omega_dim = omega_phys * sqrt(L1/g))
-# init_state = [0.01, 0.0, 0.001, 0.0]
-init_state = [np.pi / 2 - 0.3, 0.0, np.pi - 0.1, 0.0]
+# init_state = [0.0, 0.0, 0.1, 0.0]
+init_state = [np.pi / 2 + 0.0001, 0, np.pi / 4, 0.0]
+
+# 次元数
+N_DIM = 4
 
 
-# --- 運動方程式  ---
+# --- 運動方程式 (Hamiltonian系に由来) ---
 def double_pendulum_derivs_dimensionless(state, tau, l, mu):
     th1, w1, th2, w2 = state
-
-    # g = 1, L1 = 1, m1 = 1 として扱える
-    # m2 -> mu, L2 -> l と置き換える
-
     delta = th2 - th1
     cos_delta = np.cos(delta)
     sin_delta = np.sin(delta)
 
-    # 分母の計算
-    # den1 = (m1 + m2)*L1 - m2*L1*cos^2(delta)
-    #      -> (1 + mu) - mu * cos^2(delta)
-    den1 = (1 + mu) - mu * cos_delta * cos_delta
+    den1 = (1 + mu) - mu * cos_delta**2
     den2 = l * den1
 
     dydt = np.zeros_like(state)
     dydt[0] = w1
     dydt[2] = w2
 
-    # 分子1 (theta1の加速度に対応)
-    # g -> 1, L1 -> 1, m2 -> mu, L2 -> l
     num1 = (
         mu * w1**2 * sin_delta * cos_delta
-        + mu * 1 * np.sin(th2) * cos_delta  # g=1
+        + mu * np.sin(th2) * cos_delta
         + mu * l * w2**2 * sin_delta
-        - (1 + mu) * 1 * np.sin(th1)  # g=1
+        - (1 + mu) * np.sin(th1)
     )
     dydt[1] = num1 / den1
 
-    # 分子2 (theta2の加速度に対応)
     num2 = -mu * l * w2**2 * sin_delta * cos_delta + (1 + mu) * (
-        1 * np.sin(th1) * cos_delta  # g=1
-        - 1 * w1**2 * sin_delta  # L1=1
-        - 1 * np.sin(th2)  # g=1
+        np.sin(th1) * cos_delta - w1**2 * sin_delta - np.sin(th2)
     )
     dydt[3] = num2 / den2
 
     return dydt
 
 
-# --- Tangent Dynamics (MLE & SALI用) ---
-def tangent_dynamics_dim(augmented_state, tau, l, mu):
-    state = augmented_state[:4]
-    v1 = augmented_state[4:8]
-    v2 = augmented_state[8:12]
+# --- Tangent Dynamics ---
+def tangent_dynamics(augmented_state, tau, l, mu, n_vectors):
+    state = augmented_state[:N_DIM]
+    vectors = [
+        augmented_state[N_DIM + i * N_DIM : N_DIM + (i + 1) * N_DIM]
+        for i in range(n_vectors)
+    ]
 
-    # 1. Base dynamics
     dstate = double_pendulum_derivs_dimensionless(state, tau, l, mu)
 
-    # 2. Finite Difference Approximation for Tangent Vectors
+    # 有限差分で接ベクトルを計算 (線形化方程式の代用)
     eps = 1e-8
+    d_vectors = []
+    for v in vectors:
+        state_p = state + eps * v
+        dstate_p = double_pendulum_derivs_dimensionless(state_p, tau, l, mu)
+        dv = (dstate_p - dstate) / eps
+        d_vectors.append(dv)
 
-    # For vector v1
-    state_p1 = state + eps * v1
-    dstate_p1 = double_pendulum_derivs_dimensionless(state_p1, tau, l, mu)
-    dv1 = (dstate_p1 - dstate) / eps
-
-    # For vector v2
-    state_p2 = state + eps * v2
-    dstate_p2 = double_pendulum_derivs_dimensionless(state_p2, tau, l, mu)
-    dv2 = (dstate_p2 - dstate) / eps
-
-    return np.concatenate([dstate, dv1, dv2])
+    return np.concatenate([dstate] + d_vectors)
 
 
-# --- Main Simulation Loop ---
-print("Simulating (Dimensionless)...")
+# --- Helper: GALI Calculation ---
+def compute_gali_svd(vectors):
+    """特異値分解を用いて平行六面体の体積(GALI)を計算"""
+    V = np.column_stack(vectors)
+    # 特異値を計算
+    s = np.linalg.svd(V, compute_uv=False)
+    # GALI = 特異値の積
+    return np.prod(s)
 
-t_eval = np.arange(0, tau_max, d_tau)
-n_steps = len(t_eval)
 
-# Initialize vectors
-v1_init = np.random.randn(4)
-v1_init /= np.linalg.norm(v1_init)
+# --- Main Simulation ---
+print("Simulating Chaos...")
 
-v2_init = np.random.randn(4)
-v2_init -= np.dot(v2_init, v1_init) * v1_init
-v2_init /= np.linalg.norm(v2_init)
+# 追跡する偏差ベクトルの数 (GALI4まで見るので4本)
+N_VECTORS = 4
 
-current_aug_state = np.concatenate([init_state, v1_init, v2_init])
+# ランダムな初期偏差ベクトル (正規化のみ)
+vectors_curr = []
+for i in range(N_VECTORS):
+    v = np.random.randn(N_DIM)
+    v /= np.linalg.norm(v)
+    vectors_curr.append(v)
 
+current_aug_state = np.concatenate([init_state] + vectors_curr)
+
+# 履歴格納用
 state_history = [init_state]
 mle_history = []
 sali_history = []
+gali4_history = []
 time_points = []
+
 cum_log_norm = 0.0
 
-for i in range(n_steps - 1):
+for i in range(len(t_eval) - 1):
     t_curr = t_eval[i]
     t_next = t_eval[i + 1]
 
+    # 1ステップ積分
     sol = odeint(
-        tangent_dynamics_dim, current_aug_state, [t_curr, t_next], args=(l, mu)
+        tangent_dynamics, current_aug_state, [t_curr, t_next], args=(l, mu, N_VECTORS)
     )
     next_aug = sol[-1]
 
-    state_next = next_aug[:4]
-    v1_next = next_aug[4:8]
-    v2_next = next_aug[8:12]
+    state_next = next_aug[:N_DIM]
+    vectors_next = [
+        next_aug[N_DIM + j * N_DIM : N_DIM + (j + 1) * N_DIM] for j in range(N_VECTORS)
+    ]
 
-    # MLE
-    norm_v1 = np.linalg.norm(v1_next)
-    cum_log_norm += np.log(norm_v1)
-    mle = cum_log_norm / t_next
-    v1_next /= norm_v1
+    # --- ここが修正点 ---
+    # 直交化(Gram-Schmidt)はせず、正規化(Normalize)だけ行う
+    # ※ 直交化するとベクトルが強制的に開いてしまい、SALI/GALIが下がらなくなる
 
-    # SALI
-    norm_v2 = np.linalg.norm(v2_next)
-    v2_next /= norm_v2
-    diff_norm = np.linalg.norm(v1_next - v2_next)
-    sum_norm = np.linalg.norm(v1_next + v2_next)
+    vectors_normalized = []
+    for j, v in enumerate(vectors_next):
+        norm_v = np.linalg.norm(v)
+
+        # MLEの計算 (1本目のベクトルの伸び率)
+        if j == 0:
+            cum_log_norm += np.log(norm_v)
+            mle = cum_log_norm / t_next
+
+        # オーバーフロー防止のための正規化 (向きは変えない！)
+        if norm_v > 0:
+            v_normed = v / norm_v
+        else:
+            v_normed = v
+        vectors_normalized.append(v_normed)
+
+    # SALI 計算 (v1 と v2 の平行度)
+    v1 = vectors_normalized[0]
+    v2 = vectors_normalized[1]
+    diff_norm = np.linalg.norm(v1 - v2)
+    sum_norm = np.linalg.norm(v1 + v2)
     sali = min(diff_norm, sum_norm)
 
+    # GALI4 計算 (4本の相関)
+    gali4 = compute_gali_svd(vectors_normalized[:4])
+
+    # 履歴保存
     state_history.append(state_next)
     mle_history.append(mle)
     sali_history.append(sali)
+    gali4_history.append(gali4)
     time_points.append(t_next)
 
-    current_aug_state = np.concatenate([state_next, v1_next, v2_next])
+    # 次のステップへ
+    current_aug_state = np.concatenate([state_next] + vectors_normalized)
 
+# --- Plotting ---
 state_history = np.array(state_history)
-th1 = state_history[:, 0]
-w1 = state_history[:, 1]
-th2 = state_history[:, 2]
-w2 = state_history[:, 3]
+th1, w1, th2, w2 = state_history.T
 
-# 座標変換 (長さは L1=1 で正規化されているためそのまま使用)
+# 座標変換
 x1 = np.sin(th1)
 y1 = -np.cos(th1)
 x2 = x1 + l * np.sin(th2)
 y2 = y1 - l * np.cos(th2)
 
-# --- Plotting ---
 fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-ax_real = axes[0, 0]
-ax_phase = axes[0, 1]
-ax_mle = axes[1, 0]
-ax_sali = axes[1, 1]
 
-# 1. Real Space (Normalized Lengths)
-ax_real.set_title("Real Space (Normalized by $L_1$)")
-ax_real.set_xlabel("$x / L_1$")
-ax_real.set_ylabel("$y / L_1$")
-# 範囲は l (L2/L1) に依存
-limit = (1.0 + l) * 1.1
-ax_real.set_xlim(-limit, limit)
-ax_real.set_ylim(-limit, limit)
+# 1. Real Space Trajectory
+ax_real = axes[0, 0]
+ax_real.set_title(f"Real Space Trajectory (L={l}, mu={mu})")
+ax_real.plot(x2, y2, lw=0.5, color="black", alpha=0.6)
 ax_real.set_aspect("equal")
 ax_real.grid()
-(line,) = ax_real.plot([], [], "o-", lw=2, color="black")
-(trace,) = ax_real.plot([], [], "-", lw=0.5, color="gray", alpha=0.5)
 
-# 2. Phase Space
-ax_phase.set_title("Phase Space")
-ax_phase.set_xlabel(r"Angle $\theta$")
-ax_phase.set_ylabel(r"Dim-less Angular Velocity $\dot{\theta}$")
-ax_phase.plot(th1, w1, lw=0.5, alpha=0.6, label=r"$\theta_1$")
-ax_phase.plot(th2, w2, lw=0.5, alpha=0.6, label=r"$\theta_2$")
-ax_phase.legend()
-ax_phase.grid()
-
-# 3. MLE
-ax_mle.set_title("MLE (Dimensionless)")
-ax_mle.set_xlabel(r"Dimensionless Time $\tau$")
+# 2. MLE
+ax_mle = axes[0, 1]
+ax_mle.set_title("MLE (Lyapunov Exponent)")
+ax_mle.plot(time_points, mle_history, color="green")
+ax_mle.set_xlabel("Time")
 ax_mle.set_ylabel("MLE")
-ax_mle.plot(time_points, mle_history, color="green", lw=1.5)
 ax_mle.grid()
 
-# 4. SALI
-ax_sali.set_title("SALI")
-ax_sali.set_xlabel(r"Dimensionless Time $\tau$")
-ax_sali.set_ylabel("SALI (log scale)")
-ax_sali.set_yscale("log")
-ax_sali.plot(time_points, sali_history, color="purple", lw=1.5)
+# 3. SALI (Log Scale)
+ax_sali = axes[1, 0]
+ax_sali.set_title("SALI (Log Scale)")
+ax_sali.semilogy(time_points, sali_history, color="purple")
+ax_sali.set_xlabel("Time")
+ax_sali.set_ylabel("SALI")
 ax_sali.grid()
 
+# 4. GALI4 (Log Scale)
+ax_gali = axes[1, 1]
+ax_gali.set_title("GALI 4 (Log Scale)")
+ax_gali.semilogy(time_points, gali4_history, color="red")
+ax_gali.set_xlabel("Time")
+ax_gali.set_ylabel("GALI 4")
+ax_gali.grid()
+
 plt.tight_layout()
-
-
-# Animation Function
-def update(i):
-    thisx = [0, x1[i], x2[i]]
-    thisy = [0, y1[i], y2[i]]
-    line.set_data(thisx, thisy)
-
-    history_len = 200
-    start_idx = max(0, i - history_len)
-    trace.set_data(x2[start_idx:i], y2[start_idx:i])
-    return line, trace
-
-
-ani = animation.FuncAnimation(fig, update, frames=len(t_eval), interval=30, blit=True)
 plt.show()
