@@ -2,3 +2,5 @@ build/
 scripts/.venv/
 data/
 configs/3D_crtbp_SALI/3DSALIconfig_*.txt
+test/configs/
+test/data/
