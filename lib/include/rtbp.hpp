@@ -1246,14 +1246,25 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
                                                    const State<ScalarType>& p2_state,
                                                    const AstroConstants<ScalarType>& astro_params) {
   // --- 定数定義 ---
-  constexpr ScalarType k_SEC_IN_DAY = 86400.0;
-  const ScalarType AU_TO_M = astro_params.au;  // [m/AU]
+  constexpr ScalarType k_DAYS_PER_YEAR = 365.25;
+  constexpr ScalarType k_TWO_PI = 2.0 * std::numbers::pi_v<ScalarType>;
+  // AU/Day → AU/T* (無次元時間) の変換係数
+  // T* は 1年 = 2π となる無次元時間系
+  // v[AU/T*] = v[AU/Day] * (365.25 Day/Year) / (2π T*/Year)
+  constexpr ScalarType k_AU_DAY_TO_ND = k_DAYS_PER_YEAR / k_TWO_PI;  // ≈ 58.13
 
   // --- 1. 状態量の取得 (J2000 Helio-centric) ---
-  Vector3d<ScalarType> r_e_j2000(p2_state.x, p2_state.y, p2_state.z);        // [AU]
-  Vector3d<ScalarType> v_e_j2000(p2_state.vx, p2_state.vy, p2_state.vz);     // [AU/day]
-  Vector3d<ScalarType> r_a_j2000(ast_state.x, ast_state.y, ast_state.z);     // [AU]
-  Vector3d<ScalarType> v_a_j2000(ast_state.vx, ast_state.vy, ast_state.vz);  // [AU/day]
+  // 位置: 両方とも [AU]
+  Vector3d<ScalarType> r_e_j2000(p2_state.x, p2_state.y, p2_state.z);     // [AU]
+  Vector3d<ScalarType> r_a_j2000(ast_state.x, ast_state.y, ast_state.z);  // [AU]
+
+  // 速度: 単位系が異なる
+  // 地球速度: [AU/Day] (JPL DE ephemeris) → [AU/T*] に変換
+  Vector3d<ScalarType> v_e_j2000_day(p2_state.vx, p2_state.vy, p2_state.vz);  // [AU/Day]
+  Vector3d<ScalarType> v_e_j2000 = v_e_j2000_day * k_AU_DAY_TO_ND;            // [AU/T*]
+
+  // 小惑星速度: 既に [AU/T*] (無次元時間系)
+  Vector3d<ScalarType> v_a_j2000(ast_state.vx, ast_state.vy, ast_state.vz);  // [AU/T*]
 
   // --- 2. 特性物理量の計算 ---
   const ScalarType gm_total = astro_params.gm_sun + astro_params.gm_earth;
@@ -1261,19 +1272,16 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
 
   // 特性長さ L* [AU]
   const ScalarType L_star = r_e_j2000.magnitude();
-  const ScalarType L_star_m = L_star * AU_TO_M;
 
-  // 瞬時角速度ベクトル omega (慣性系表現) [rad/day]
+  // 瞬時角速度ベクトル omega (慣性系表現) [rad/T*]
   // omega = (r x v) / |r|^2
   Vector3d<ScalarType> h_vec = r_e_j2000.gaiseki(v_e_j2000);  // 比角運動量
   const ScalarType r2 = L_star * L_star;
   Vector3d<ScalarType> omega_vec_j2000 = h_vec / r2;
 
-  // スカラー角速度 n [rad/day] (正規化用)
-  const ScalarType n_rad_d = omega_vec_j2000.magnitude();
-
-  // 特性速度 V* [AU/day] (無次元化用)
-  const ScalarType V_star = L_star * n_rad_d;
+  // スカラー角速度 n [rad/T*] (正規化用)
+  // 円軌道の場合 n ≈ 2π (1年で1周)
+  const ScalarType n_rad_nd = omega_vec_j2000.magnitude();
 
   // --- 3. 重心基準 (Barycentric) への移動 (慣性系) ---
   // 太陽から重心までのベクトル R_bary = mu * r_earth
@@ -1308,14 +1316,21 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
   Vector3d<ScalarType> v_inertial_proj = ApplyMatrix(RotMat, v_a_bary);
 
   // コリオリ項/遠心項の除去 (omega x r)
-  // ここでの omega はスカラー値 n_rad_d を使用 (z軸周り回転のため)
-  Vector3d<ScalarType> omega_cross_r = {-n_rad_d * r_rot_dim.y(), n_rad_d * r_rot_dim.x(), 0.0};
+  // ここでの omega はスカラー値 n_rad_nd を使用 (z軸周り回転のため)
+  Vector3d<ScalarType> omega_cross_r = {-n_rad_nd * r_rot_dim.y(), n_rad_nd * r_rot_dim.x(), 0.0};
 
   Vector3d<ScalarType> v_rot_dim = v_inertial_proj - omega_cross_r;
 
   // --- 7. 無次元化 (Normalization) ---
+  // 位置: L* で無次元化
   Vector3d<ScalarType> r_rot_nd = r_rot_dim / L_star;
-  Vector3d<ScalarType> v_rot_nd = v_rot_dim / V_star;
+
+  // 速度: 小惑星速度は既に [AU/T*] なので、追加の無次元化は不要
+  // ただし、CRTBPの無次元系では V* = L* × n = L* × 2π/年 で無次元化するが、
+  // 入力が既に T* (1年 = 2π) で無次元化されているため、
+  // 最終的な無次元速度は v_rot_dim を n で割る必要がある
+  // v_nd = v[AU/T*] / (L* × n / L*) = v[AU/T*] / n
+  Vector3d<ScalarType> v_rot_nd = v_rot_dim / n_rad_nd;
 
   return {State<ScalarType>(r_rot_nd.x(), r_rot_nd.y(), r_rot_nd.z(), v_rot_nd.x(), v_rot_nd.y(),
                             v_rot_nd.z())};

@@ -1,6 +1,10 @@
 add_executable(coordtest main.cpp)
+add_executable(test_v2 test_v2.cpp)
+add_executable(test_v2_realdata test_v2_realdata.cpp)
 
 target_link_libraries(coordtest PRIVATE my_lib)
+target_link_libraries(test_v2 PRIVATE my_lib)
+target_link_libraries(test_v2_realdata PRIVATE my_lib)
 
 # OpenMPの設定
 if(OpenMP_CXX_FOUND)

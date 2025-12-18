@@ -58,6 +58,7 @@ struct TrajectoryConfig {
   ChaosIndexType chaos_index_type = ChaosIndexType::NONE;  ///< カオス指標の種類
   int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
   IntegratorType integrator_type = IntegratorType::kSymplectic6th;  ///< 数値積分法
+  bool enable_freq_analysis = false;                                ///< 周波数解析を有効にするか
 };
 
 /**
@@ -158,6 +159,15 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
         config->integrator_type = IntegratorType::kDormandPrince;
       } else if (value == "RK4" || value == "rk4" || value == "RUNGEKUTTA4") {
         config->integrator_type = IntegratorType::kRungeKutta4th;
+      }
+    }
+    // FREQ_ANALYSIS (周波数解析)
+    else if (line.find("FREQ_ANALYSIS") != std::string::npos) {
+      std::string value = TrimString(line.substr(line.find("=") + 1));
+      if (value == "1" || value == "true" || value == "TRUE" || value == "on" || value == "ON") {
+        config->enable_freq_analysis = true;
+      } else {
+        config->enable_freq_analysis = false;
       }
     }
   }
@@ -356,6 +366,8 @@ int main() {
         break;
     }
     std::cout << "<>        INTEGRATOR: " << integrator_str << std::endl;
+    std::cout << "<>        FREQ_ANALYSIS: "
+              << (config.enable_freq_analysis ? "ENABLED" : "DISABLED") << std::endl;
 
     // 計算のステップ数
     int num_steps = static_cast<int>(config.time_threshold / config.calc_timestep);
@@ -777,63 +789,64 @@ int main() {
       }
 
       // ========== 周波数解析 (Laskar's Frequency Map Analysis) ==========
-      // if (freq_buffer.Size() >= 100) {  // 十分なデータがある場合のみ解析
-      //   std::cout << "<>        Performing Frequency Analysis..." << std::endl;
+      if (config.enable_freq_analysis) {
+        if (freq_buffer.Size() >= 100) {  // 十分なデータがある場合のみ解析
+          std::cout << "<>        Performing Frequency Analysis..." << std::endl;
 
-      //   // x, y, z成分の周波数解析
-      //   auto freq_result_x = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "x");
-      //   auto freq_result_y = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "y");
-      //   auto freq_result_r = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "r");
+          // x, y, z成分の周波数解析
+          auto freq_result_x = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "x");
+          auto freq_result_y = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "y");
+          auto freq_result_r = rtbp::freq_analysis::AnalyzeFromBuffer(freq_buffer, "r");
 
-      //   // 結果をコンソールに出力
-      //   std::cout << "<>        [Frequency Analysis Result]" << std::endl;
-      //   std::cout << "<>          X-component: nu1=" << std::scientific << std::setprecision(6)
-      //             << freq_result_x.nu1 << ", nu2=" << freq_result_x.nu2
-      //             << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_x.log10_D
-      //             << std::endl;
-      //   std::cout << "<>          Y-component: nu1=" << std::scientific << std::setprecision(6)
-      //             << freq_result_y.nu1 << ", nu2=" << freq_result_y.nu2
-      //             << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_y.log10_D
-      //             << std::endl;
-      //   std::cout << "<>          R-component: nu1=" << std::scientific << std::setprecision(6)
-      //             << freq_result_r.nu1 << ", nu2=" << freq_result_r.nu2
-      //             << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_r.log10_D
-      //             << std::endl;
-      //   std::cout << "<>          Chaos level (X): "
-      //             << rtbp::freq_analysis::GetChaosLevelString(freq_result_x.log10_D) <<
-      //             std::endl;
+          // 結果をコンソールに出力
+          std::cout << "<>        [Frequency Analysis Result]" << std::endl;
+          std::cout << "<>          X-component: nu1=" << std::scientific << std::setprecision(6)
+                    << freq_result_x.nu1 << ", nu2=" << freq_result_x.nu2
+                    << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_x.log10_D
+                    << std::endl;
+          std::cout << "<>          Y-component: nu1=" << std::scientific << std::setprecision(6)
+                    << freq_result_y.nu1 << ", nu2=" << freq_result_y.nu2
+                    << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_y.log10_D
+                    << std::endl;
+          std::cout << "<>          R-component: nu1=" << std::scientific << std::setprecision(6)
+                    << freq_result_r.nu1 << ", nu2=" << freq_result_r.nu2
+                    << ", log10(D)=" << std::fixed << std::setprecision(3) << freq_result_r.log10_D
+                    << std::endl;
+          std::cout << "<>          Chaos level (X): "
+                    << rtbp::freq_analysis::GetChaosLevelString(freq_result_x.log10_D) << std::endl;
 
-      //   // 周波数解析結果をCSVに出力
-      //   std::string freq_csv_path = config_output_dir + "/" + base_name + "_freq_analysis_traj" +
-      //                               std::to_string(coord_idx + 1) + ".csv";
-      //   std::ofstream freq_ofs(freq_csv_path);
-      //   if (freq_ofs) {
-      //     freq_ofs << std::setprecision(15) << std::fixed;
-      //     freq_ofs << "# Frequency Map Analysis Result - Trajectory " << (coord_idx + 1) << "\n";
-      //     freq_ofs << "# Method: Laskar's Frequency Map Analysis\n";
-      //     freq_ofs << "# Integration time: " << config.time_threshold << "\n";
-      //     freq_ofs << "# Timestep: " << config.calc_timestep << "\n";
-      //     freq_ofs << "# Number of data points: " << freq_buffer.Size() << "\n";
-      //     freq_ofs << "component,nu1,nu2,diffusion_D,log10_D,is_chaotic,chaos_level\n";
-      //     freq_ofs << "x," << freq_result_x.nu1 << "," << freq_result_x.nu2 << ","
-      //              << freq_result_x.diffusion_D << "," << freq_result_x.log10_D << ","
-      //              << (freq_result_x.is_chaotic ? "1" : "0") << ","
-      //              << rtbp::freq_analysis::GetChaosLevelString(freq_result_x.log10_D) << "\n";
-      //     freq_ofs << "y," << freq_result_y.nu1 << "," << freq_result_y.nu2 << ","
-      //              << freq_result_y.diffusion_D << "," << freq_result_y.log10_D << ","
-      //              << (freq_result_y.is_chaotic ? "1" : "0") << ","
-      //              << rtbp::freq_analysis::GetChaosLevelString(freq_result_y.log10_D) << "\n";
-      //     freq_ofs << "r," << freq_result_r.nu1 << "," << freq_result_r.nu2 << ","
-      //              << freq_result_r.diffusion_D << "," << freq_result_r.log10_D << ","
-      //              << (freq_result_r.is_chaotic ? "1" : "0") << ","
-      //              << rtbp::freq_analysis::GetChaosLevelString(freq_result_r.log10_D) << "\n";
-      //     freq_ofs.close();
-      //     std::cout << "<>        Frequency analysis CSV: " << freq_csv_path << std::endl;
-      //   }
-      // } else {
-      //   std::cout << "<>        Skipping frequency analysis (insufficient data points: "
-      //             << freq_buffer.Size() << ")" << std::endl;
-      // }
+          // 周波数解析結果をCSVに出力
+          std::string freq_csv_path = config_output_dir + "/" + base_name + "_freq_analysis_traj" +
+                                      std::to_string(coord_idx + 1) + ".csv";
+          std::ofstream freq_ofs(freq_csv_path);
+          if (freq_ofs) {
+            freq_ofs << std::setprecision(15) << std::fixed;
+            freq_ofs << "# Frequency Map Analysis Result - Trajectory " << (coord_idx + 1) << "\n";
+            freq_ofs << "# Method: Laskar's Frequency Map Analysis\n";
+            freq_ofs << "# Integration time: " << config.time_threshold << "\n";
+            freq_ofs << "# Timestep: " << config.calc_timestep << "\n";
+            freq_ofs << "# Number of data points: " << freq_buffer.Size() << "\n";
+            freq_ofs << "component,nu1,nu2,diffusion_D,log10_D,is_chaotic,chaos_level\n";
+            freq_ofs << "x," << freq_result_x.nu1 << "," << freq_result_x.nu2 << ","
+                     << freq_result_x.diffusion_D << "," << freq_result_x.log10_D << ","
+                     << (freq_result_x.is_chaotic ? "1" : "0") << ","
+                     << rtbp::freq_analysis::GetChaosLevelString(freq_result_x.log10_D) << "\n";
+            freq_ofs << "y," << freq_result_y.nu1 << "," << freq_result_y.nu2 << ","
+                     << freq_result_y.diffusion_D << "," << freq_result_y.log10_D << ","
+                     << (freq_result_y.is_chaotic ? "1" : "0") << ","
+                     << rtbp::freq_analysis::GetChaosLevelString(freq_result_y.log10_D) << "\n";
+            freq_ofs << "r," << freq_result_r.nu1 << "," << freq_result_r.nu2 << ","
+                     << freq_result_r.diffusion_D << "," << freq_result_r.log10_D << ","
+                     << (freq_result_r.is_chaotic ? "1" : "0") << ","
+                     << rtbp::freq_analysis::GetChaosLevelString(freq_result_r.log10_D) << "\n";
+            freq_ofs.close();
+            std::cout << "<>        Frequency analysis CSV: " << freq_csv_path << std::endl;
+          }
+        } else {
+          std::cout << "<>        Skipping frequency analysis (insufficient data points: "
+                    << freq_buffer.Size() << ")" << std::endl;
+        }
+      }
 
       // 経過時間
       auto end = std::chrono::system_clock::now();

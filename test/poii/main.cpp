@@ -59,22 +59,6 @@ int main(void) {
   std::cout << "asteroid state(after) : " << asteroid_state_nd.x << " " << asteroid_state_nd.y
             << " " << asteroid_state_nd.z << " " << asteroid_state_nd.vx << " "
             << asteroid_state_nd.vy << " " << asteroid_state_nd.vz << std::endl;
-  std::cout << "asteroid velo(before:au/day) "
-            << std::sqrt(asteroid_state_helio.vx * asteroid_state_helio.vx +
-                         asteroid_state_helio.vy * asteroid_state_helio.vy +
-                         asteroid_state_helio.vz * asteroid_state_helio.vz)
-            << std::endl;
-  std::cout << "asteroid velo(after:au/TU) "
-            << std::sqrt(asteroid_state_nd.vx * asteroid_state_nd.vx +
-                         asteroid_state_nd.vy * asteroid_state_nd.vy +
-                         asteroid_state_nd.vz * asteroid_state_nd.vz)
-            << std::endl;
-  std::cout << "asteroid velo(after:au/day) "
-            << std::sqrt(asteroid_state_nd.vx * asteroid_state_nd.vx +
-                         asteroid_state_nd.vy * asteroid_state_nd.vy +
-                         asteroid_state_nd.vz * asteroid_state_nd.vz) /
-                   365.25
-            << std::endl;
 
   std::cout << " ------- earth ------" << std::endl;
   std::cout << "state(before) : " << earth_state_helio.x << " " << earth_state_helio.y << " "
@@ -83,73 +67,6 @@ int main(void) {
   std::cout << "state(after) : " << earth_state_nd.x << " " << earth_state_nd.y << " "
             << earth_state_nd.z << " " << earth_state_nd.vx << " " << earth_state_nd.vy << " "
             << earth_state_nd.vz << std::endl;
-  std::cout << "velo(before:au/day) "
-            << std::sqrt(earth_state_helio.vx * earth_state_helio.vx +
-                         earth_state_helio.vy * earth_state_helio.vy +
-                         earth_state_helio.vz * earth_state_helio.vz)
-            << std::endl;
-  std::cout << "velo(after:au/TU) "
-            << std::sqrt(earth_state_nd.vx * earth_state_nd.vx +
-                         earth_state_nd.vy * earth_state_nd.vy +
-                         earth_state_nd.vz * earth_state_nd.vz)
-            << std::endl;
-  std::cout << "velo(after:au/day) "
-            << std::sqrt(earth_state_nd.vx * earth_state_nd.vx +
-                         earth_state_nd.vy * earth_state_nd.vy +
-                         earth_state_nd.vz * earth_state_nd.vz) /
-                   365.25
-            << std::endl;
 
-  earth_state_nd =
-      crtbp::ConvertInertial2Rotating(earth_state_helio, earth_state_helio, astro_params);
-  asteroid_state_nd =
-      crtbp::ConvertInertial2Rotating(asteroid_state_helio, earth_state_helio, astro_params);
-  std::cout << " ------- asteroid ------" << std::endl;
-  std::cout << "state(before) : " << asteroid_state_helio.x << " " << asteroid_state_helio.y << " "
-            << asteroid_state_helio.z << " " << asteroid_state_helio.vx << " "
-            << asteroid_state_helio.vy << " " << asteroid_state_helio.vz << std::endl;
-  std::cout << "state(after) : " << asteroid_state_nd.x << " " << asteroid_state_nd.y << " "
-            << asteroid_state_nd.z << " " << asteroid_state_nd.vx << " " << asteroid_state_nd.vy
-            << " " << asteroid_state_nd.vz << std::endl;
-  std::cout << "velo(before:au/day) "
-            << std::sqrt(asteroid_state_helio.vx * asteroid_state_helio.vx +
-                         asteroid_state_helio.vy * asteroid_state_helio.vy +
-                         asteroid_state_helio.vz * asteroid_state_helio.vz)
-            << std::endl;
-  std::cout << "velo(after:au/TU) "
-            << std::sqrt(asteroid_state_nd.vx * asteroid_state_nd.vx +
-                         asteroid_state_nd.vy * asteroid_state_nd.vy +
-                         asteroid_state_nd.vz * asteroid_state_nd.vz)
-            << std::endl;
-  std::cout << "velo(after:au/day) "
-            << std::sqrt(asteroid_state_nd.vx * asteroid_state_nd.vx +
-                         asteroid_state_nd.vy * asteroid_state_nd.vy +
-                         asteroid_state_nd.vz * asteroid_state_nd.vz) /
-                   365.25
-            << std::endl;
-
-  std::cout << " ------- earth ------" << std::endl;
-  std::cout << "state(before) : " << earth_state_helio.x << " " << earth_state_helio.y << " "
-            << earth_state_helio.z << " " << earth_state_helio.vx << " " << earth_state_helio.vy
-            << " " << earth_state_helio.vz << std::endl;
-  std::cout << "state(after) : " << earth_state_nd.x << " " << earth_state_nd.y << " "
-            << earth_state_nd.z << " " << earth_state_nd.vx << " " << earth_state_nd.vy << " "
-            << earth_state_nd.vz << std::endl;
-  std::cout << "velo(before:au/day) "
-            << std::sqrt(earth_state_helio.vx * earth_state_helio.vx +
-                         earth_state_helio.vy * earth_state_helio.vy +
-                         earth_state_helio.vz * earth_state_helio.vz)
-            << std::endl;
-  std::cout << "velo(after:au/TU) "
-            << std::sqrt(earth_state_nd.vx * earth_state_nd.vx +
-                         earth_state_nd.vy * earth_state_nd.vy +
-                         earth_state_nd.vz * earth_state_nd.vz)
-            << std::endl;
-  std::cout << "velo(after:au/day) "
-            << std::sqrt(earth_state_nd.vx * earth_state_nd.vx +
-                         earth_state_nd.vy * earth_state_nd.vy +
-                         earth_state_nd.vz * earth_state_nd.vz) /
-                   365.25
-            << std::endl;
   return 0;
 }
