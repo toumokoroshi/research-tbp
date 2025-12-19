@@ -1,6 +1,16 @@
 build/
 scripts/.venv/
 data/
-configs/3D_crtbp_SALI/3DSALIconfig_*.txt
 test/configs/
 test/data/
+# configsディレクトリ内のファイルを除外しつつ、サンプルファイルのみトラック
+configs/*
+!configs/
+!configs/3D_crtbp_SALI_v3/
+!configs/3D_crtbp_SALI_v3/config_sample.toml
+!configs/poincare_map/
+!configs/poincare_map/poincare_config_sample.toml
+!configs/trajectory_calc/
+!configs/trajectory_calc/trajectory_calc_config_sample.toml
+!configs/trajectory_SALI/
+!configs/trajectory_SALI/trajectory_sali_config_sample.toml

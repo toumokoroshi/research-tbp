@@ -60,10 +60,13 @@ enum class ChaosIndexType {
  * @param argv 引数の配列
  * @param is_continuous 連続シミュレーションモードかどうか（出力）
  * @param skip_wait WaitForEnterをスキップするかどうか（出力）
+ * @param output_tag 出力フォルダに付与するタグ（出力）
  */
-void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait) {
+void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait,
+                          std::string& output_tag) {
   is_continuous = false;  // デフォルト: 単発シミュレーション
   skip_wait = false;      // デフォルト: WaitForEnterを実行
+  output_tag = "";        // デフォルト: タグなし
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -71,12 +74,15 @@ void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& ski
       is_continuous = true;
     } else if (arg == "--no-wait" || arg == "-n") {
       skip_wait = true;
+    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
+      output_tag = argv[++i];
     } else if (arg == "--help" || arg == "-h") {
       std::cout
           << "Usage: " << argv[0] << " [options]\n"
           << "Options:\n"
           << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
           << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
+          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
           << "  -h, --help        このヘルプを表示\n"
           << std::endl;
       std::exit(0);
@@ -93,7 +99,8 @@ int main(int argc, char* argv[]) {
   // コマンドライン引数のパース
   bool is_continuous = false;
   bool skip_wait = false;
-  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait);
+  std::string output_tag = "";
+  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait, output_tag);
 
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
@@ -117,7 +124,6 @@ int main(int argc, char* argv[]) {
             << std::endl;
 
   // 選択されたモードを表示
-  std::string configfilename;
   std::vector<std::string> config_file_list;
 
   if (is_continuous) {
@@ -130,7 +136,7 @@ int main(int argc, char* argv[]) {
     std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
   const std::string calc_config_pattern_str =
-      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".txt$";
+      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".toml$";
   const std::regex pattern("^" + calc_config_pattern_str);
   try {
     for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
@@ -214,7 +220,11 @@ int main(int argc, char* argv[]) {
 
   // 実行ごとのセッション出力ディレクトリを作成
   std::string output_base_path = OUTPUT_DIR;
-  std::string session_output_dir = output_base_path + "/3D_crtbp_SALI_v3/" + getcurrent_date();
+  std::string session_dir_name = getcurrent_date();
+  if (!output_tag.empty()) {
+    session_dir_name += "_" + output_tag;
+  }
+  std::string session_output_dir = output_base_path + "/3D_crtbp_SALI_v3/" + session_dir_name;
   if (!fs::exists(session_output_dir)) {
     fs::create_directories(session_output_dir);
   }
@@ -547,14 +557,7 @@ int main(int argc, char* argv[]) {
     // }
     std::cout << "<>        elapsed time : " << hour << "h " << min << "m " << sec << "s " << msec
               << "ms" << std::endl;
-    // std::cout << "<>        Simulation for " << configfilename << " finished" << std::endl;
     std::cout << "<>        Simulation for " << configfilepath << " finished" << std::endl;
-    // configdata_num++;
-    // configfilename =
-    //     config_base_path + "/3D_crtbp_SALI/3DSALIconfig_" + std::to_string(configdata_num) +
-    //     ".txt";
-    // std::cout << "<>        Next config file : " << configfilename << std::endl;
-    // ifs.open(configfilename);
   }
 
   // 実行時間の計測

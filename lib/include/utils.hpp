@@ -945,8 +945,6 @@ inline std::string getcurrent_date() {
   return oss.str();
 }
 
-// trim関数は97行目に移動済み
-
 /**
  * @brief 設定ファイルを読み込み、キーと値のマップを返す
  * @param filename 読み込むファイル名
