@@ -1,0 +1,35 @@
+# TrajectorySali 設定ファイル 
+# config_sample_　のプレフィックスを持つファイルがシミュレーションの実行時にすべて読まれる
+[data]
+# 軌道データディレクトリ (相対パスまたは絶対パス)
+data_dir = "test/data/eph_cpp_result/OBT_RESULT_PHAs_GR4"
+
+[simulation]
+# calc_duration_nd: 計算時間
+# calc_timestep_nd: 計算時間ステップ
+# forbidden_radius: 禁止半径
+# escape_judge_hill: Hill球の何倍の距離離れたら地球近傍から離脱したとみなすか
+calc_duration_nd = 10.0
+calc_timestep_nd = 0.00001
+forbidden_radius = 1e-6
+escape_judge_hill = 1.0
+
+[deceleration]
+# dv_max: 最大減速
+# dv_step: 減速ステップ
+# phase_step: 
+dv_max = 0.01
+dv_step = 0.002
+phase_step = 1
+
+[integrator]
+# type: "SYMPLECTIC_6TH", "SYMPLECTIC_4TH"
+type = "SYMPLECTIC_6TH"
+
+[chaos]
+# index_type: "SALI", "GALI2", "GALI4", "GALI6"
+# sali_lower_limit: SALIの閾値
+# output_sali_timeseries: SALI時系列を出力するか
+index_type = "SALI"
+sali_lower_limit = 1e-8
+output_sali_timeseries = false

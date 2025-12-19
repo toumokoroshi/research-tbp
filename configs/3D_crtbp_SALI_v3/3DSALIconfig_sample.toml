@@ -1,0 +1,27 @@
+# SALI3dV3 設定ファイル (TOML形式)
+# config_sample.toml　のファイル名はシミュレーションをオプションなしで実行時に読まれる
+# config_sample_数字.toml　のファイル名はシミュレーションを-cオプション実行時にすべて読まれる
+
+[mesh]
+center = 1  # 0: SUN, 1: EARTH
+division = [200, 10, 1]
+half_width = [0.03, 0.001, 0.0]
+
+[simulation]
+calc_timestep = 0.000001
+time_threshold = 10
+
+[boundary]
+soi_radius = 0.03
+forbidden_area_radius = 1e-10
+jacobi_integral = 3.0008
+
+[orientation]
+inclination_deg = 0
+longitude_deg = 0
+tangent_deg = 0
+
+[chaos]
+# index_type: "NONE", "SALI", "GALI2", "GALI4", "GALI6"
+index_type = "SALI"
+sali_lower_limit = 1e-8
