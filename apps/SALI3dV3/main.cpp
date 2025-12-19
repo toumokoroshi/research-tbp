@@ -189,11 +189,9 @@ int main(int argc, char* argv[]) {
       std::cout << "  <>     >> Your input is INVALID. OMP threads is "
                 << "automatically determined as " << OMP_Fmax << std::endl;
     }
+    WaitForEnter();
   } else {
     OMP_Fmax = Core_Max - 1;
-  }
-  if (!skip_wait) {
-    WaitForEnter();
   }
   omp_set_num_threads(OMP_Fmax);
   std::cout << "<>----------------------------------------------------------------" << std::endl;
