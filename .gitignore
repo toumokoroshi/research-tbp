@@ -4,7 +4,7 @@ data/
 test/configs/
 test/data/
 # configsディレクトリ内のファイルを除外しつつ、サンプルファイルのみトラック
-configs/*
+configs/**
 !configs/
 !configs/3D_crtbp_SALI_v3/
 !configs/3D_crtbp_SALI_v3/config_sample.toml
