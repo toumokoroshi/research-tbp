@@ -7,7 +7,7 @@ time_threshold = 6.28
 
 [chaos]
 # カオス指標タイプ: "NONE", "SALI", "GALI2", "GALI4", "GALI6"
-index_type = "NONE"
+index_type = "GALI2"
 
 [integrator]
 # 積分法タイプ: "SYMPLECTIC4", "SYMPLECTIC6", "DOPRI", "RK4"
