@@ -18,6 +18,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <utils.hpp>
 #include <vector>
 
 #define __KEYWAIT__ \
@@ -132,20 +133,7 @@ double calc_jacobi_integral(const std::array<double, 6>& state, const double mu)
          mu * (1. - mu);
 }
 
-void displayProgressBar(double progress, int barWidth = 50) {
-  std::cout << "[";
-  int pos = barWidth * progress;
-  for (int i = 0; i < barWidth; ++i) {
-    if (i < pos)
-      std::cout << "=";
-    else if (i == pos)
-      std::cout << ">";
-    else
-      std::cout << " ";
-  }
-  std::cout << "] " << int(progress * 100.0) << " %\r";
-  std::cout.flush();
-}
+// displayProgressBar -> utils::displayProgressBarThreadSafe に移動
 int main() {
   //  実行時間の計測
   auto start = std::chrono::system_clock::now();
@@ -278,7 +266,7 @@ int main() {
   int totalIterations = meshPoints.size();
   double progress;
   for (const auto& point : meshPoints) {
-    displayProgressBar(progress);
+    utils::displayProgressBar(progress);
     // 0:計算終了, 1:計算継続
     bool calc_traj = 1;
     // 1:計算中断,途中でhill球から抜け出したり、禁止領域に入った場合
@@ -394,7 +382,7 @@ int main() {
     progress = (mesh_num + 1.0) / totalIterations;
 
     // プログレスバーを表示
-    displayProgressBar(progress);
+    utils::displayProgressBar(progress);
 
     mesh_num++;
   }
@@ -440,7 +428,7 @@ int main() {
   auto sec = duration.count() / 1000 % 60;
   auto min = duration.count() / 1000 / 60 % 60;
   auto hour = duration.count() / 1000 / 60 / 60;
-  displayProgressBar(1.0);
+  utils::displayProgressBar(1.0);
   std::cout << std::endl;
   std::cout << "<>        Calculation finished" << std::endl;
   std::cout << "<>        elapsed time : " << hour << "h " << min << "m " << sec << "s " << msec

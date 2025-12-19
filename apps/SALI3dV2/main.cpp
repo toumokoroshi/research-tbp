@@ -122,11 +122,11 @@ int main() {
       std::cerr << "Can't open file : " << filename_interested << std::endl;
       return -1;
     }
-    std::vector<std::streampos> linePositions = indexFile(filename_interested);
+    std::vector<std::streampos> linePositions = utils::indexFileLines(filename_interested);
 
     // 指定した行を読み込む
     int targetLine = std::stoi(mesh_num_of_interest) + HEADER_SIZE;  // 読み込みたい行番号
-    std::string line = readSpecificLine(filename_interested, linePositions, targetLine);
+    std::string line = utils::readLineAtIndex(filename_interested, linePositions, targetLine);
     std::cout << "<>        interested line : " << line << std::endl;
     std::stringstream ss(line);
     std::array<double, 7> data;
@@ -525,44 +525,7 @@ int main() {
   return 0;
 }
 
-std::vector<std::streampos> indexFile(const std::string& filename) {
-  std::ifstream file(filename, std::ios::binary);
-  if (!file.is_open()) {
-    throw std::runtime_error("ファイルを開けませんでした: " + filename);
-  }
-
-  std::vector<std::streampos> linePositions;
-  std::string line;
-
-  // 最初の行の開始位置を記録
-  linePositions.push_back(file.tellg());
-
-  // 各行の開始位置を記録
-  while (std::getline(file, line)) {
-    linePositions.push_back(file.tellg());
-  }
-
-  return linePositions;
-}
-
-std::string readSpecificLine(const std::string& filename,
-                             const std::vector<std::streampos>& linePositions, int targetLine) {
-  if (targetLine < 1 || targetLine >= static_cast<int>(linePositions.size())) {
-    throw std::out_of_range("指定した行が範囲外です: " + std::to_string(targetLine));
-  }
-
-  std::ifstream file(filename);
-  if (!file.is_open()) {
-    throw std::runtime_error("ファイルを開けませんでした: " + filename);
-  }
-
-  // 指定した行の位置にシーク
-  file.seekg(linePositions[targetLine - 1]);
-
-  std::string line;
-  std::getline(file, line);
-  return line;
-}
+// indexFile/readSpecificLine -> utils::indexFileLines/readLineAtIndex に移動
 
 bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
   if (output_row == nullptr) {

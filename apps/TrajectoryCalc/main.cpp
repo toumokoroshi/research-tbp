@@ -61,18 +61,7 @@ struct TrajectoryConfig {
   bool enable_freq_analysis = false;                                ///< 周波数解析を有効にするか
 };
 
-/**
- * @brief 文字列の前後の空白を除去する
- */
-std::string TrimString(const std::string& str) {
-  const char* whitespace = " \t\r\n";
-  size_t start = str.find_first_not_of(whitespace);
-  if (start == std::string::npos) {
-    return "";
-  }
-  size_t end = str.find_last_not_of(whitespace);
-  return str.substr(start, end - start + 1);
-}
+// TrimString -> utils::trim() に置換
 
 /**
  * @brief 設定ファイルを解析してTrajectoryConfigを返す
@@ -90,27 +79,27 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
   std::string line;
   while (std::getline(ifs, line)) {
     // 行の前後の空白を除去（Windows改行コード対策）
-    line = TrimString(line);
+    line = utils::trim(line);
     if (line.empty()) {
       continue;
     }
 
     // CALC TIMESTEP
     if (line.find("CALC TIMESTEP") != std::string::npos) {
-      config->calc_timestep = std::stod(TrimString(line.substr(line.find("=") + 1)));
+      config->calc_timestep = std::stod(utils::trim(line.substr(line.find("=") + 1)));
     }
     // TIME THRESHOLD
     else if (line.find("TIME THRESHOLD") != std::string::npos) {
-      config->time_threshold = std::stod(TrimString(line.substr(line.find("=") + 1)));
+      config->time_threshold = std::stod(utils::trim(line.substr(line.find("=") + 1)));
     }
     // COORD= (カンマ区切り形式に対応)
     else if (line.find("COORD=") != std::string::npos) {
-      std::string coord_str = TrimString(line.substr(line.find("=") + 1));
+      std::string coord_str = utils::trim(line.substr(line.find("=") + 1));
       std::stringstream ss(coord_str);
       std::string token;
       std::vector<double> values;
       while (std::getline(ss, token, ',')) {
-        std::string trimmed = TrimString(token);
+        std::string trimmed = utils::trim(token);
         if (!trimmed.empty()) {
           values.push_back(std::stod(trimmed));
         }
@@ -122,7 +111,7 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     }
     // CHAOS_INDEX (NONE, SALI, GALI2, GALI4, GALI6)
     else if (line.find("CHAOS_INDEX") != std::string::npos) {
-      std::string value = TrimString(line.substr(line.find("=") + 1));
+      std::string value = utils::trim(line.substr(line.find("=") + 1));
       if (value == "NONE" || value == "none" || value == "0") {
         config->chaos_index_type = ChaosIndexType::NONE;
       } else if (value == "SALI" || value == "sali") {
@@ -141,7 +130,7 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     }
     // OUTPUT_SALI (後方互換)
     else if (line.find("OUTPUT_SALI") != std::string::npos) {
-      std::string value = TrimString(line.substr(line.find("=") + 1));
+      std::string value = utils::trim(line.substr(line.find("=") + 1));
       if (value == "1" || value == "true" || value == "TRUE") {
         config->chaos_index_type = ChaosIndexType::SALI;
         config->gali_k = 2;
@@ -149,7 +138,7 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     }
     // INTEGRATOR (SYMPLECTIC4, SYMPLECTIC6, DOPRI, RK4)
     else if (line.find("INTEGRATOR") != std::string::npos) {
-      std::string value = TrimString(line.substr(line.find("=") + 1));
+      std::string value = utils::trim(line.substr(line.find("=") + 1));
       if (value == "SYMPLECTIC4" || value == "symplectic4" || value == "SYMP4") {
         config->integrator_type = IntegratorType::kSymplectic4th;
       } else if (value == "SYMPLECTIC6" || value == "symplectic6" || value == "SYMP6") {
@@ -163,7 +152,7 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     }
     // FREQ_ANALYSIS (周波数解析)
     else if (line.find("FREQ_ANALYSIS") != std::string::npos) {
-      std::string value = TrimString(line.substr(line.find("=") + 1));
+      std::string value = utils::trim(line.substr(line.find("=") + 1));
       if (value == "1" || value == "true" || value == "TRUE" || value == "on" || value == "ON") {
         config->enable_freq_analysis = true;
       } else {

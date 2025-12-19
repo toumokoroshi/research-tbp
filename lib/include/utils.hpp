@@ -6,6 +6,7 @@
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -41,6 +42,358 @@ inline void WaitForEnter(const std::string& message = "<> Press Enter to continu
   std::cout << message << std::endl;
   while (std::cin.get() != '\n') continue;
 }
+
+/**
+ * @brief ファイルの各行の開始位置をインデックス化する
+ * @param filename ファイルパス
+ * @return 各行の開始位置を格納したベクター
+ * @throws std::runtime_error ファイルを開けない場合
+ */
+inline std::vector<std::streampos> indexFileLines(const std::string& filename) {
+  std::ifstream file(filename, std::ios::binary);
+  if (!file.is_open()) {
+    throw std::runtime_error("ファイルを開けませんでした: " + filename);
+  }
+
+  std::vector<std::streampos> linePositions;
+  std::string line;
+
+  // 最初の行の開始位置を記録
+  linePositions.push_back(file.tellg());
+
+  // 各行の開始位置を記録
+  while (std::getline(file, line)) {
+    linePositions.push_back(file.tellg());
+  }
+
+  return linePositions;
+}
+
+/**
+ * @brief インデックスを使用して特定の行を高速に読み込む
+ * @param filename ファイルパス
+ * @param linePositions indexFileLinesで取得したインデックス
+ * @param targetLine 読み込む行番号 (1-indexed)
+ * @return 指定行の内容
+ * @throws std::out_of_range 行番号が範囲外の場合
+ */
+inline std::string readLineAtIndex(const std::string& filename,
+                                   const std::vector<std::streampos>& linePositions,
+                                   int targetLine) {
+  if (targetLine < 1 || targetLine >= static_cast<int>(linePositions.size())) {
+    throw std::out_of_range("指定した行が範囲外です: " + std::to_string(targetLine));
+  }
+
+  std::ifstream file(filename);
+  if (!file.is_open()) {
+    throw std::runtime_error("ファイルを開けませんでした: " + filename);
+  }
+
+  // 指定した行の位置にシーク
+  file.seekg(linePositions[targetLine - 1]);
+
+  std::string line;
+  std::getline(file, line);
+  return line;
+}
+
+/**
+ * @brief 文字列の前後にある空白文字(スペース, タブなど)を削除する
+ * @param s 対象の文字列
+ * @return トリム後の文字列
+ */
+inline std::string trim(const std::string& s) {
+  const std::string WHITESPACE = " \t\n\r\f\v";
+  size_t first = s.find_first_not_of(WHITESPACE);
+  if (std::string::npos == first) {
+    return "";
+  }
+  size_t last = s.find_last_not_of(WHITESPACE);
+  return s.substr(first, (last - first + 1));
+}
+
+/**
+ * @brief キー=値形式の設定ファイルをパースするクラス
+ *
+ * 設定ファイルの各行を「KEY = VALUE」形式でパースし、
+ * 型安全な値取得メソッドを提供する。
+ */
+class ConfigParser {
+ public:
+  /**
+   * @brief コンストラクタ
+   * @param filepath 設定ファイルのパス
+   * @throws std::runtime_error ファイルを開けない場合
+   */
+  explicit ConfigParser(const std::string& filepath) {
+    std::ifstream ifs(filepath);
+    if (!ifs) {
+      throw std::runtime_error("設定ファイルを開けませんでした: " + filepath);
+    }
+    std::string line;
+    while (std::getline(ifs, line)) {
+      // 空白を除去
+      line = trim(line);
+      // コメント行や空行をスキップ
+      if (line.empty() || line[0] == '#' || line[0] == ';') {
+        continue;
+      }
+      // '=' で分割
+      size_t pos = line.find('=');
+      if (pos != std::string::npos) {
+        std::string key = trim(line.substr(0, pos));
+        std::string value = trim(line.substr(pos + 1));
+        config_map_[key] = value;
+      }
+    }
+  }
+
+  /**
+   * @brief double値を取得
+   * @param key キー名
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return パースしたdouble値
+   */
+  double GetDouble(const std::string& key, double default_val = 0.0) const {
+    auto it = config_map_.find(key);
+    if (it != config_map_.end()) {
+      try {
+        return std::stod(it->second);
+      } catch (...) {
+        return default_val;
+      }
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief int値を取得
+   * @param key キー名
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return パースしたint値
+   */
+  int GetInt(const std::string& key, int default_val = 0) const {
+    auto it = config_map_.find(key);
+    if (it != config_map_.end()) {
+      try {
+        return std::stoi(it->second);
+      } catch (...) {
+        return default_val;
+      }
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief 文字列値を取得
+   * @param key キー名
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return 文字列値
+   */
+  std::string GetString(const std::string& key, const std::string& default_val = "") const {
+    auto it = config_map_.find(key);
+    if (it != config_map_.end()) {
+      return it->second;
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief bool値を取得
+   * @param key キー名
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return パースしたbool値 (1, true, on -> true)
+   */
+  bool GetBool(const std::string& key, bool default_val = false) const {
+    auto it = config_map_.find(key);
+    if (it != config_map_.end()) {
+      std::string val = it->second;
+      // 大文字に変換して比較
+      std::transform(val.begin(), val.end(), val.begin(), ::tolower);
+      if (val == "1" || val == "true" || val == "on" || val == "yes") {
+        return true;
+      } else if (val == "0" || val == "false" || val == "off" || val == "no") {
+        return false;
+      }
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief スペース区切りの3つの値をState3dとして取得
+   * @param key キー名
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return State3d値
+   */
+  template <typename T>
+  State3d<T> GetState3d(const std::string& key, State3d<T> default_val = {}) const {
+    auto it = config_map_.find(key);
+    if (it != config_map_.end()) {
+      std::stringstream ss(it->second);
+      T x, y, z;
+      if (ss >> x >> y >> z) {
+        return State3d<T>{x, y, z};
+      }
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief キーが存在するか確認
+   * @param key キー名
+   * @return 存在する場合true
+   */
+  bool HasKey(const std::string& key) const { return config_map_.find(key) != config_map_.end(); }
+
+  /**
+   * @brief すべてのキーを取得
+   * @return キーのベクター
+   */
+  std::vector<std::string> GetKeys() const {
+    std::vector<std::string> keys;
+    for (const auto& pair : config_map_) {
+      keys.push_back(pair.first);
+    }
+    return keys;
+  }
+
+ private:
+  std::map<std::string, std::string> config_map_;
+};
+
+/**
+ * @brief シミュレーション出力ファイルを書き込むためのクラス
+ *
+ * ヘッダーコメント、カラム名、データ行を一貫した形式で出力する。
+ */
+class SimulationOutputWriter {
+ public:
+  /**
+   * @brief コンストラクタ
+   * @param filepath 出力ファイルのパス
+   * @param precision 数値の精度 (デフォルト: 15)
+   */
+  explicit SimulationOutputWriter(const std::string& filepath, int precision = 15)
+      : filepath_(filepath), precision_(precision), header_written_(false) {
+    ofs_.open(filepath);
+    if (!ofs_) {
+      throw std::runtime_error("出力ファイルを開けませんでした: " + filepath);
+    }
+    ofs_ << std::setprecision(precision_) << std::fixed;
+  }
+
+  /**
+   * @brief ヘッダーコメントを追加 (文字列値)
+   * @param key キー名
+   * @param value 値
+   */
+  void AddHeaderComment(const std::string& key, const std::string& value) {
+    ofs_ << "# " << key << "=" << value << "\n";
+  }
+
+  /**
+   * @brief ヘッダーコメントを追加 (数値)
+   * @param key キー名
+   * @param value 数値
+   */
+  void AddHeaderComment(const std::string& key, double value) {
+    ofs_ << "# " << key << "=" << value << "\n";
+  }
+
+  /**
+   * @brief ヘッダーコメントを追加 (整数)
+   * @param key キー名
+   * @param value 整数
+   */
+  void AddHeaderComment(const std::string& key, int value) {
+    ofs_ << "# " << key << "=" << value << "\n";
+  }
+
+  /**
+   * @brief カラム名を設定 (CSV形式)
+   * @param column_names カラム名のベクター
+   */
+  void SetColumns(const std::vector<std::string>& column_names) {
+    for (size_t i = 0; i < column_names.size(); ++i) {
+      ofs_ << column_names[i];
+      if (i < column_names.size() - 1) {
+        ofs_ << ",";
+      }
+    }
+    ofs_ << "\n";
+    header_written_ = true;
+  }
+
+  /**
+   * @brief データ行を書き込む (可変引数テンプレート)
+   * @param values 書き込む値
+   */
+  template <typename... Args>
+  void WriteRow(Args&&... values) {
+    WriteRowImpl(std::forward<Args>(values)...);
+    ofs_ << "\n";
+  }
+
+  /**
+   * @brief スペース区切りでデータ行を書き込む
+   * @param values 書き込む値
+   */
+  template <typename... Args>
+  void WriteRowSpace(Args&&... values) {
+    WriteRowSpaceImpl(std::forward<Args>(values)...);
+    ofs_ << "\n";
+  }
+
+  /**
+   * @brief ファイルを閉じる
+   */
+  void Close() {
+    if (ofs_.is_open()) {
+      ofs_.close();
+    }
+  }
+
+  /**
+   * @brief ファイルパスを取得
+   * @return 出力ファイルのパス
+   */
+  std::string GetFilePath() const { return filepath_; }
+
+  /**
+   * @brief デストラクタ
+   */
+  ~SimulationOutputWriter() { Close(); }
+
+ private:
+  // カンマ区切り用の再帰実装
+  template <typename T>
+  void WriteRowImpl(T&& value) {
+    ofs_ << std::forward<T>(value);
+  }
+
+  template <typename T, typename... Rest>
+  void WriteRowImpl(T&& first, Rest&&... rest) {
+    ofs_ << std::forward<T>(first) << ",";
+    WriteRowImpl(std::forward<Rest>(rest)...);
+  }
+
+  // スペース区切り用の再帰実装
+  template <typename T>
+  void WriteRowSpaceImpl(T&& value) {
+    ofs_ << std::forward<T>(value);
+  }
+
+  template <typename T, typename... Rest>
+  void WriteRowSpaceImpl(T&& first, Rest&&... rest) {
+    ofs_ << std::forward<T>(first) << " ";
+    WriteRowSpaceImpl(std::forward<Rest>(rest)...);
+  }
+
+  std::ofstream ofs_;
+  std::string filepath_;
+  int precision_;
+  bool header_written_;
+};
 
 template <typename ScalarType>
 inline std::vector<State3d<ScalarType>> createSphereMesh(const ScalarType ROI_radius,
@@ -298,20 +651,8 @@ inline std::string getcurrent_date() {
   return oss.str();
 }
 
-/**
- * @brief 文字列の前後にある空白文字(スペース, タブなど)を削除する
- * @param s 対象の文字列
- * @return トリム後の文字列
- */
-inline std::string trim(const std::string& s) {
-  const std::string WHITESPACE = " \t\n\r\f\v";
-  size_t first = s.find_first_not_of(WHITESPACE);
-  if (std::string::npos == first) {
-    return "";
-  }
-  size_t last = s.find_last_not_of(WHITESPACE);
-  return s.substr(first, (last - first + 1));
-}
+// trim関数は97行目に移動済み
+
 /**
  * @brief 設定ファイルを読み込み、キーと値のマップを返す
  * @param filename 読み込むファイル名
