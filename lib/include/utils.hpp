@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <toml++/toml.hpp>
 #include <vector>
 
 namespace utils {
@@ -117,6 +118,7 @@ inline std::string trim(const std::string& s) {
  *
  * 設定ファイルの各行を「KEY = VALUE」形式でパースし、
  * 型安全な値取得メソッドを提供する。
+ * 同一キーが複数回出現する場合、すべての値を保持する。
  */
 class ConfigParser {
  public:
@@ -143,22 +145,22 @@ class ConfigParser {
       if (pos != std::string::npos) {
         std::string key = trim(line.substr(0, pos));
         std::string value = trim(line.substr(pos + 1));
-        config_map_[key] = value;
+        config_multimap_[key].push_back(value);
       }
     }
   }
 
   /**
-   * @brief double値を取得
+   * @brief double値を取得（最初の値）
    * @param key キー名
    * @param default_val キーが存在しない場合のデフォルト値
    * @return パースしたdouble値
    */
   double GetDouble(const std::string& key, double default_val = 0.0) const {
-    auto it = config_map_.find(key);
-    if (it != config_map_.end()) {
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end() && !it->second.empty()) {
       try {
-        return std::stod(it->second);
+        return std::stod(it->second[0]);
       } catch (...) {
         return default_val;
       }
@@ -167,16 +169,16 @@ class ConfigParser {
   }
 
   /**
-   * @brief int値を取得
+   * @brief int値を取得（最初の値）
    * @param key キー名
    * @param default_val キーが存在しない場合のデフォルト値
    * @return パースしたint値
    */
   int GetInt(const std::string& key, int default_val = 0) const {
-    auto it = config_map_.find(key);
-    if (it != config_map_.end()) {
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end() && !it->second.empty()) {
       try {
-        return std::stoi(it->second);
+        return std::stoi(it->second[0]);
       } catch (...) {
         return default_val;
       }
@@ -185,30 +187,30 @@ class ConfigParser {
   }
 
   /**
-   * @brief 文字列値を取得
+   * @brief 文字列値を取得（最初の値）
    * @param key キー名
    * @param default_val キーが存在しない場合のデフォルト値
    * @return 文字列値
    */
   std::string GetString(const std::string& key, const std::string& default_val = "") const {
-    auto it = config_map_.find(key);
-    if (it != config_map_.end()) {
-      return it->second;
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end() && !it->second.empty()) {
+      return it->second[0];
     }
     return default_val;
   }
 
   /**
-   * @brief bool値を取得
+   * @brief bool値を取得（最初の値）
    * @param key キー名
    * @param default_val キーが存在しない場合のデフォルト値
    * @return パースしたbool値 (1, true, on -> true)
    */
   bool GetBool(const std::string& key, bool default_val = false) const {
-    auto it = config_map_.find(key);
-    if (it != config_map_.end()) {
-      std::string val = it->second;
-      // 大文字に変換して比較
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end() && !it->second.empty()) {
+      std::string val = it->second[0];
+      // 小文字に変換して比較
       std::transform(val.begin(), val.end(), val.begin(), ::tolower);
       if (val == "1" || val == "true" || val == "on" || val == "yes") {
         return true;
@@ -220,16 +222,16 @@ class ConfigParser {
   }
 
   /**
-   * @brief スペース区切りの3つの値をState3dとして取得
+   * @brief スペース区切りの3つの値をState3dとして取得（最初の値）
    * @param key キー名
    * @param default_val キーが存在しない場合のデフォルト値
    * @return State3d値
    */
   template <typename T>
   State3d<T> GetState3d(const std::string& key, State3d<T> default_val = {}) const {
-    auto it = config_map_.find(key);
-    if (it != config_map_.end()) {
-      std::stringstream ss(it->second);
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end() && !it->second.empty()) {
+      std::stringstream ss(it->second[0]);
       T x, y, z;
       if (ss >> x >> y >> z) {
         return State3d<T>{x, y, z};
@@ -238,27 +240,302 @@ class ConfigParser {
     return default_val;
   }
 
+  // ========== 複数値取得メソッド ==========
+
+  /**
+   * @brief 同一キーのすべての文字列値を取得
+   * @param key キー名
+   * @return 文字列のベクター（キーが存在しない場合は空）
+   */
+  std::vector<std::string> GetMultiString(const std::string& key) const {
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end()) {
+      return it->second;
+    }
+    return {};
+  }
+
+  /**
+   * @brief 同一キーのすべてのdouble値を取得
+   * @param key キー名
+   * @return doubleのベクター（パース失敗した値はスキップ）
+   */
+  std::vector<double> GetMultiDouble(const std::string& key) const {
+    std::vector<double> result;
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end()) {
+      for (const auto& val : it->second) {
+        try {
+          result.push_back(std::stod(val));
+        } catch (...) {
+          // パース失敗はスキップ
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * @brief 同一キーのすべてのカンマ区切り6値をState<double>として取得
+   * @param key キー名
+   * @return State<double>のベクター（パース失敗した値はスキップ）
+   * @note COORD = x, y, z, vx, vy, vz 形式のパースに使用
+   */
+  std::vector<State<double>> GetMultiState6d(const std::string& key) const {
+    std::vector<State<double>> result;
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end()) {
+      for (const auto& val : it->second) {
+        // カンマ区切りでパース
+        std::vector<double> values;
+        std::stringstream ss(val);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+          std::string trimmed = trim(token);
+          if (!trimmed.empty()) {
+            try {
+              values.push_back(std::stod(trimmed));
+            } catch (...) {
+              break;
+            }
+          }
+        }
+        if (values.size() >= 6) {
+          result.push_back(
+              State<double>{values[0], values[1], values[2], values[3], values[4], values[5]});
+        }
+      }
+    }
+    return result;
+  }
+
   /**
    * @brief キーが存在するか確認
    * @param key キー名
    * @return 存在する場合true
    */
-  bool HasKey(const std::string& key) const { return config_map_.find(key) != config_map_.end(); }
+  bool HasKey(const std::string& key) const {
+    return config_multimap_.find(key) != config_multimap_.end();
+  }
 
   /**
-   * @brief すべてのキーを取得
+   * @brief 指定キーの値の数を取得
+   * @param key キー名
+   * @return 値の数（キーが存在しない場合は0）
+   */
+  size_t GetValueCount(const std::string& key) const {
+    auto it = config_multimap_.find(key);
+    if (it != config_multimap_.end()) {
+      return it->second.size();
+    }
+    return 0;
+  }
+
+  /**
+   * @brief すべてのキーを取得（重複なし）
    * @return キーのベクター
    */
   std::vector<std::string> GetKeys() const {
     std::vector<std::string> keys;
-    for (const auto& pair : config_map_) {
+    for (const auto& pair : config_multimap_) {
       keys.push_back(pair.first);
     }
     return keys;
   }
 
  private:
-  std::map<std::string, std::string> config_map_;
+  std::map<std::string, std::vector<std::string>> config_multimap_;
+};
+
+/**
+ * @brief TOML形式の設定ファイルをパースするクラス
+ *
+ * toml++ライブラリを使用してTOML形式の設定ファイルを読み込み、
+ * 階層的なキーアクセスと配列取得をサポートする。
+ *
+ * 使用例:
+ *   TomlConfigParser config("config.toml");
+ *   double dt = config.GetDouble("simulation.calc_timestep", 0.001);
+ *   auto coords = config.GetCoordsArray("coords");
+ */
+class TomlConfigParser {
+ public:
+  /**
+   * @brief コンストラクタ
+   * @param filepath TOML設定ファイルのパス
+   * @throws std::runtime_error ファイルを開けない/パースエラーの場合
+   */
+  explicit TomlConfigParser(const std::string& filepath) {
+    try {
+      config_ = toml::parse_file(filepath);
+    } catch (const toml::parse_error& err) {
+      throw std::runtime_error("TOMLパースエラー: " + std::string(err.description()));
+    }
+  }
+
+  /**
+   * @brief double値を取得（ドット区切りのパスをサポート）
+   * @param path キーパス (例: "simulation.calc_timestep")
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return パースしたdouble値
+   */
+  double GetDouble(const std::string& path, double default_val = 0.0) const {
+    auto node = navigateToNode(path);
+    if (node && node->is_number()) {
+      return node->value_or(default_val);
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief int値を取得
+   * @param path キーパス
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return パースしたint値
+   */
+  int GetInt(const std::string& path, int default_val = 0) const {
+    auto node = navigateToNode(path);
+    if (node && node->is_integer()) {
+      return static_cast<int>(node->value_or(static_cast<int64_t>(default_val)));
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief 文字列値を取得
+   * @param path キーパス
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return 文字列値
+   */
+  std::string GetString(const std::string& path, const std::string& default_val = "") const {
+    auto node = navigateToNode(path);
+    if (node && node->is_string()) {
+      return std::string(node->value_or(default_val));
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief bool値を取得
+   * @param path キーパス
+   * @param default_val キーが存在しない場合のデフォルト値
+   * @return bool値
+   */
+  bool GetBool(const std::string& path, bool default_val = false) const {
+    auto node = navigateToNode(path);
+    if (node && node->is_boolean()) {
+      return node->value_or(default_val);
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief double配列を取得
+   * @param path キーパス
+   * @return doubleのベクター
+   */
+  std::vector<double> GetDoubleArray(const std::string& path) const {
+    std::vector<double> result;
+    auto node = navigateToNode(path);
+    if (node && node->is_array()) {
+      for (const auto& elem : *node->as_array()) {
+        if (elem.is_number()) {
+          result.push_back(elem.value_or(0.0));
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * @brief 座標配列を取得 (TOML配列のテーブルから)
+   * @param path キーパス (例: "coords")
+   * @return State<double>のベクター
+   *
+   * 期待するTOML形式:
+   *   [[coords]]
+   *   position = [1.0, 0.0, 0.0]
+   *   velocity = [0.1, 0.0, 0.0]
+   */
+  std::vector<State<double>> GetCoordsArray(const std::string& path) const {
+    std::vector<State<double>> result;
+    auto node = navigateToNode(path);
+    if (node && node->is_array()) {
+      for (const auto& elem : *node->as_array()) {
+        if (elem.is_table()) {
+          const auto& tbl = *elem.as_table();
+          auto pos = tbl["position"].as_array();
+          auto vel = tbl["velocity"].as_array();
+          if (pos && pos->size() >= 3 && vel && vel->size() >= 3) {
+            State<double> state;
+            state.x = (*pos)[0].value_or(0.0);
+            state.y = (*pos)[1].value_or(0.0);
+            state.z = (*pos)[2].value_or(0.0);
+            state.vx = (*vel)[0].value_or(0.0);
+            state.vy = (*vel)[1].value_or(0.0);
+            state.vz = (*vel)[2].value_or(0.0);
+            result.push_back(state);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
+   * @brief State3d配列を取得
+   * @param path キーパス
+   * @return State3d<double>のベクター
+   */
+  template <typename T>
+  State3d<T> GetState3d(const std::string& path, State3d<T> default_val = {}) const {
+    auto arr = GetDoubleArray(path);
+    if (arr.size() >= 3) {
+      return State3d<T>{static_cast<T>(arr[0]), static_cast<T>(arr[1]), static_cast<T>(arr[2])};
+    }
+    return default_val;
+  }
+
+  /**
+   * @brief キーが存在するか確認
+   * @param path キーパス
+   * @return 存在する場合true
+   */
+  bool HasKey(const std::string& path) const { return navigateToNode(path) != nullptr; }
+
+  /**
+   * @brief 生のtoml::tableへのアクセス（上級者向け）
+   * @return toml::tableへの参照
+   */
+  const toml::table& GetRawTable() const { return config_; }
+
+ private:
+  /**
+   * @brief ドット区切りのパスをナビゲートしてノードを取得
+   * @param path キーパス (例: "simulation.calc_timestep")
+   * @return ノードへのポインタ（存在しない場合はnullptr）
+   */
+  const toml::node* navigateToNode(const std::string& path) const {
+    std::vector<std::string> keys;
+    std::stringstream ss(path);
+    std::string token;
+    while (std::getline(ss, token, '.')) {
+      keys.push_back(token);
+    }
+
+    const toml::node* current = &config_;
+    for (const auto& key : keys) {
+      if (current->is_table()) {
+        current = current->as_table()->get(key);
+        if (!current) return nullptr;
+      } else {
+        return nullptr;
+      }
+    }
+    return current;
+  }
+
+  toml::table config_;
 };
 
 /**
@@ -352,6 +629,23 @@ class SimulationOutputWriter {
       ofs_.close();
     }
   }
+
+  /**
+   * @brief 内部ストリームへの参照を取得（複雑な出力用）
+   * @return 出力ストリームへの参照
+   */
+  std::ofstream& GetStream() { return ofs_; }
+
+  /**
+   * @brief 空行を書き込む（gnuplotインデックス区切り用など）
+   */
+  void WriteBlankLine() { ofs_ << "\n"; }
+
+  /**
+   * @brief コメント行を書き込む
+   * @param comment コメント内容
+   */
+  void WriteComment(const std::string& comment) { ofs_ << "# " << comment << "\n"; }
 
   /**
    * @brief ファイルパスを取得

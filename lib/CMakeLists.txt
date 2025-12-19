@@ -18,4 +18,5 @@ target_include_directories(my_lib
 target_link_libraries(my_lib
     INTERFACE
         Boost::headers
+        tomlplusplus::tomlplusplus
 )

@@ -52,6 +52,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
 # -------------------------------------------------------------
 # 外部ライブラリの検索
 # -------------------------------------------------------------
+# toml++ (TOML設定ファイルパーサー)
+include(FetchContent)
+FetchContent_Declare(
+  tomlplusplus
+  GIT_REPOSITORY https://github.com/marzer/tomlplusplus.git
+  GIT_TAG v3.4.0
+)
+FetchContent_MakeAvailable(tomlplusplus)
+
 # Boost
 find_package(Boost 1.71 REQUIRED)
 

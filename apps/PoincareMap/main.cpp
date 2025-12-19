@@ -77,72 +77,32 @@ struct CrossingEvent {
 };
 
 bool LoadConfig(const std::string& filepath, PoincareConfig* cfg) {
-  std::ifstream ifs(filepath);
-  if (!ifs.is_open()) {
-    std::cerr << "Failed to open config: " << filepath << "\n";
+  try {
+    utils::TomlConfigParser config(filepath);
+
+    cfg->jacobi_constant = config.GetDouble("jacobi.constant", 3.0009);
+    cfg->x_min = config.GetDouble("initial_grid.x_min", 0.988);
+    cfg->x_max = config.GetDouble("initial_grid.x_max", 0.999);
+    cfg->x_samples = config.GetInt("initial_grid.x_samples", 80);
+    cfg->x_step = config.GetDouble("initial_grid.x_step", 0.0);
+    cfg->initial_vx = config.GetDouble("initial_grid.initial_vx", 0.0);
+    cfg->initial_vz = config.GetDouble("initial_grid.initial_vz", 0.0);
+    cfg->initial_z = config.GetDouble("initial_grid.initial_z", 0.0);
+    cfg->max_time = config.GetDouble("simulation.max_time", 300.0);
+    cfg->time_step = config.GetDouble("simulation.time_step", 1e-3);
+    cfg->max_crossings_per_traj = config.GetInt("simulation.max_crossings_per_traj", 200);
+    cfg->plane_velocity_threshold = config.GetDouble("crossing.plane_velocity_threshold", 1e-7);
+    cfg->crossing_tolerance = config.GetDouble("crossing.crossing_tolerance", 1e-10);
+    cfg->plane_direction = config.GetInt("crossing.plane_direction", 1);
+    cfg->earth_collision_radius = config.GetDouble("collision.earth_collision_radius", 1e-4);
+    cfg->sun_collision_radius = config.GetDouble("collision.sun_collision_radius", 1e-4);
+    cfg->escape_radius = config.GetDouble("collision.escape_radius", 2.0);
+    cfg->record_initial_crossing = config.GetBool("output.record_initial_crossing", true);
+    cfg->output_basename = config.GetString("output.output_basename", "poincare_map");
+    cfg->append_timestamp = config.GetBool("output.append_timestamp", true);
+  } catch (const std::exception& e) {
+    std::cerr << "Failed to load config: " << e.what() << "\n";
     return false;
-  }
-
-  std::string line;
-  while (std::getline(ifs, line)) {
-    const auto hash = line.find('#');
-    if (hash != std::string::npos) {
-      line = line.substr(0, hash);
-    }
-    if (line.empty()) continue;
-    const auto eq = line.find('=');
-    if (eq == std::string::npos) continue;
-
-    std::string key = trim(line.substr(0, eq));
-    std::string value = trim(line.substr(eq + 1));
-    if (key.empty() || value.empty()) continue;
-
-    try {
-      if (key == "jacobi_constant") {
-        cfg->jacobi_constant = std::stod(value);
-      } else if (key == "x_min") {
-        cfg->x_min = std::stod(value);
-      } else if (key == "x_max") {
-        cfg->x_max = std::stod(value);
-      } else if (key == "x_samples") {
-        cfg->x_samples = std::stoi(value);
-      } else if (key == "x_step") {
-        cfg->x_step = std::stod(value);
-      } else if (key == "initial_vx") {
-        cfg->initial_vx = std::stod(value);
-      } else if (key == "initial_vz") {
-        cfg->initial_vz = std::stod(value);
-      } else if (key == "initial_z") {
-        cfg->initial_z = std::stod(value);
-      } else if (key == "max_time") {
-        cfg->max_time = std::stod(value);
-      } else if (key == "time_step") {
-        cfg->time_step = std::stod(value);
-      } else if (key == "max_crossings_per_traj") {
-        cfg->max_crossings_per_traj = std::stoi(value);
-      } else if (key == "plane_velocity_threshold") {
-        cfg->plane_velocity_threshold = std::stod(value);
-      } else if (key == "crossing_tolerance") {
-        cfg->crossing_tolerance = std::stod(value);
-      } else if (key == "earth_collision_radius") {
-        cfg->earth_collision_radius = std::stod(value);
-      } else if (key == "sun_collision_radius") {
-        cfg->sun_collision_radius = std::stod(value);
-      } else if (key == "escape_radius") {
-        cfg->escape_radius = std::stod(value);
-      } else if (key == "plane_direction") {
-        cfg->plane_direction = std::stoi(value);
-      } else if (key == "record_initial_crossing") {
-        cfg->record_initial_crossing = (value == "1" || value == "true" || value == "TRUE");
-      } else if (key == "output_basename") {
-        cfg->output_basename = value;
-      } else if (key == "append_timestamp") {
-        cfg->append_timestamp = (value == "1" || value == "true" || value == "TRUE");
-      }
-    } catch (const std::exception& e) {
-      std::cerr << "Failed to parse key '" << key << "': " << e.what() << "\n";
-      return false;
-    }
   }
 
   if (cfg->x_max < cfg->x_min) {
@@ -276,9 +236,9 @@ TerminationReason SimulateTrajectory(int sample_index, double x0, double vy0,
                                      const PoincareConfig& cfg,
                                      const AstroConstants<double>& astro_params, double mu,
                                      std::vector<CrossingRecord>* global_records) {
-  using Stepper = boost::numeric::odeint::runge_kutta_dopri5<
-      State<double>, double, State<double>, double,
-      boost::numeric::odeint::vector_space_algebra>;
+  using Stepper =
+      boost::numeric::odeint::runge_kutta_dopri5<State<double>, double, State<double>, double,
+                                                 boost::numeric::odeint::vector_space_algebra>;
 
   State<double> current{};
   current.x = x0;
@@ -355,8 +315,8 @@ TerminationReason SimulateTrajectory(int sample_index, double x0, double vy0,
     }
 
     CrossingEvent event;
-    if (DetectCrossing(prev_state, current, prev_time, current_time, cfg, mu,
-                       cfg.jacobi_constant, &event)) {
+    if (DetectCrossing(prev_state, current, prev_time, current_time, cfg, mu, cfg.jacobi_constant,
+                       &event)) {
       record_event(event);
       ++recorded_crossings;
       if (recorded_crossings >= cfg.max_crossings_per_traj) {
@@ -373,24 +333,27 @@ TerminationReason SimulateTrajectory(int sample_index, double x0, double vy0,
 
 void WriteCsv(const fs::path& output_path, const PoincareConfig& cfg,
               const std::vector<CrossingRecord>& records) {
-  std::ofstream ofs(output_path);
-  if (!ofs.is_open()) {
-    throw std::runtime_error("Failed to open output file: " + output_path.string());
-  }
-  ofs << std::setprecision(15);
-  ofs << "# JacobiConstant=" << cfg.jacobi_constant << "\n";
-  ofs << "# XRange=[" << cfg.x_min << "," << cfg.x_max << "]\n";
-  ofs << "# InitialVX=" << cfg.initial_vx << ", InitialVZ=" << cfg.initial_vz << "\n";
-  ofs << "# MaxTime=" << cfg.max_time << ", TimeStep=" << cfg.time_step << "\n";
-  ofs << "# MaxCrossingsPerTrajectory=" << cfg.max_crossings_per_traj << "\n";
-  ofs << "sample_index,crossing_index,time,x,y,z,vx,vy,vz,initial_x,initial_vx,initial_vy,"
-         "jacobi,jacobi_error\n";
+  utils::SimulationOutputWriter writer(output_path.string(), 15);
 
+  // ヘッダーコメント
+  writer.AddHeaderComment("JacobiConstant", cfg.jacobi_constant);
+  writer.AddHeaderComment("XRange",
+                          "[" + std::to_string(cfg.x_min) + "," + std::to_string(cfg.x_max) + "]");
+  writer.AddHeaderComment("InitialVX", cfg.initial_vx);
+  writer.AddHeaderComment("InitialVZ", cfg.initial_vz);
+  writer.AddHeaderComment("MaxTime", cfg.max_time);
+  writer.AddHeaderComment("TimeStep", cfg.time_step);
+  writer.AddHeaderComment("MaxCrossingsPerTrajectory", cfg.max_crossings_per_traj);
+
+  // カラムヘッダー
+  writer.SetColumns({"sample_index", "crossing_index", "time", "x", "y", "z", "vx", "vy", "vz",
+                     "initial_x", "initial_vx", "initial_vy", "jacobi", "jacobi_error"});
+
+  // データ行
   for (const auto& rec : records) {
-    ofs << rec.sample_index << "," << rec.crossing_index << "," << rec.time << ","
-        << rec.state.x << "," << rec.state.y << "," << rec.state.z << "," << rec.state.vx << ","
-        << rec.state.vy << "," << rec.state.vz << "," << rec.initial_x << "," << rec.initial_vx
-        << "," << rec.initial_vy << "," << rec.jacobi << "," << rec.jacobi_error << "\n";
+    writer.WriteRow(rec.sample_index, rec.crossing_index, rec.time, rec.state.x, rec.state.y,
+                    rec.state.z, rec.state.vx, rec.state.vy, rec.state.vz, rec.initial_x,
+                    rec.initial_vx, rec.initial_vy, rec.jacobi, rec.jacobi_error);
   }
 }
 
@@ -418,7 +381,8 @@ int main(int argc, char** argv) {
       return 1;
     }
 
-    const auto astro = loadConstants<double>(std::string(CONFIG_DIR) + "/astro_param/astro_param.txt");
+    const auto astro =
+        loadConstants<double>(std::string(CONFIG_DIR) + "/astro_param/astro_param.txt");
     const double mu = astro.gm_earth / (astro.gm_earth + astro.gm_sun);
 
     const auto x_values = BuildInitialXGrid(config);
@@ -443,8 +407,8 @@ int main(int argc, char** argv) {
           SimulateTrajectory(static_cast<int>(idx), x0, *vy0, config, astro, mu, &records);
       reason_counts[reason] += 1;
 
-      std::cout << "[" << idx + 1 << "/" << x_values.size() << "] x0=" << x0
-                << " -> " << ToString(reason) << "\n";
+      std::cout << "[" << idx + 1 << "/" << x_values.size() << "] x0=" << x0 << " -> "
+                << ToString(reason) << "\n";
     }
 
     std::string filename = config.output_basename;

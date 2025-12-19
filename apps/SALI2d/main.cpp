@@ -176,44 +176,24 @@ int main() {
 #endif
   std::cout << "<>    read config file\n\n" << std::endl;
 
-  // 設定ファイル読み込み
-  int MESH_SIZE = 0;
-  double CALC_TIMESTEP = 0;
-  double SALI_CALCTIME_THRESHOLD = 0;
-  double SOI_RADIUS = 0;
-  double FOREBIDDEN_AREA_RADIUS = 0;
-  double DIRECTION = 0;
-  double JACOBI_INTEGRAL = 0;
-  std::ifstream ifs("configdata/SALI2Dconfig.txt");
-  if (!ifs) {
-    std::cerr << "Failed to open file." << std::endl;
-    return -1;
-  }
-  std::string str;
+  // 設定ファイル読み込み (ConfigParserを使用)
+  utils::ConfigParser config("configdata/SALI2Dconfig.txt");
+
+  int MESH_SIZE = config.GetInt("MESH_SIZE", 50);
+  double CALC_TIMESTEP = config.GetDouble("CALC_TIMESTEP", 0.001);
+  double SALI_CALCTIME_THRESHOLD = config.GetDouble("SALI_CALCTIME_THRESHOLD", 100.0);
+  double SOI_RADIUS = config.GetDouble("SOI_RADIUS", 0.01);
+  double FOREBIDDEN_AREA_RADIUS = config.GetDouble("FOREBIDDEN_AREA_RADIUS", 0.001);
+  double DIRECTION = config.GetDouble("DIRECTION", 1.0);
+  double JACOBI_INTEGRAL = config.GetDouble("JACOBI_INTEGRAL", 3.0);
+
   std::cout << std::setprecision(10);
-  while (std::getline(ifs, str)) {
-    if (str.find("MESH_SIZE") != std::string::npos) {
-      MESH_SIZE = std::stoi(str.substr(str.find("=") + 1));
-      std::cout << "<>        MESH_SIZE : " << MESH_SIZE << std::endl;
-    } else if (str.find("CALC_TIMESTEP") != std::string::npos) {
-      CALC_TIMESTEP = std::stod(str.substr(str.find("=") + 1));
-      std::cout << "<>        CALC_TIMESTEP : " << CALC_TIMESTEP << std::endl;
-    } else if (str.find("SALI_CALCTIME_THRESHOLD") != std::string::npos) {
-      SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-      std::cout << "<>        SALI_CALCTIME_THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
-    } else if (str.find("SOI_RADIUS") != std::string::npos) {
-      SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      std::cout << "<>        SOI_RADIUS : " << SOI_RADIUS << std::endl;
-    } else if (str.find("FOREBIDDEN_AREA_RADIUS") != std::string::npos) {
-      FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      std::cout << "<>        FOREBIDDEN_AREA_RADIUS : " << FOREBIDDEN_AREA_RADIUS << std::endl;
-    } else if (str.find("DIRECTION") != std::string::npos) {
-      DIRECTION = std::stod(str.substr(str.find("=") + 1));
-    } else if (str.find("JACOBI_INTEGRAL") != std::string::npos) {
-      JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-      std::cout << "<>        JACOBI_INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
-    }
-  }
+  std::cout << "<>        MESH_SIZE : " << MESH_SIZE << std::endl;
+  std::cout << "<>        CALC_TIMESTEP : " << CALC_TIMESTEP << std::endl;
+  std::cout << "<>        SALI_CALCTIME_THRESHOLD : " << SALI_CALCTIME_THRESHOLD << std::endl;
+  std::cout << "<>        SOI_RADIUS : " << SOI_RADIUS << std::endl;
+  std::cout << "<>        FOREBIDDEN_AREA_RADIUS : " << FOREBIDDEN_AREA_RADIUS << std::endl;
+  std::cout << "<>        JACOBI_INTEGRAL : " << JACOBI_INTEGRAL << std::endl;
   std::cout << "<>    config file read successfully" << std::endl;
   std::cout << "<>    Press any key to go ahead" << std::endl;
   __KEYWAIT__
@@ -391,31 +371,25 @@ int main() {
   std::string filename =
       "results/SALI/SALI_2d_" +
       std::to_string(std::chrono::system_clock::now().time_since_epoch().count()) + ".txt";
-  std::ofstream ofs1(filename);
-  if (!ofs1) {
-    std::cerr << "Failed to open file." << std::endl;
-    return -1;
-  }
-  // 計算のコンフィグレーションをファイルに書き込む
-  ofs1 << "MESH SIZE=" << MESH_SIZE << std::endl;
-  ofs1 << "CALCULATION TIMESTEP=" << CALC_TIMESTEP << std::endl;
-  ofs1 << "SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
-  ofs1 << "RADIUSofSOI=" << SOI_RADIUS << std::endl;
-  ofs1 << "FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
-  if (DIRECTION == 1) {
-    ofs1 << "PROGRADE" << std::endl;
-  } else {
-    ofs1 << "RETROGRADE" << std::endl;
-  }
-  ofs1 << "INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
-  ofs1 << "mesh_num, time, x, y, z, SALI1, SALI2, SALI3, SALI" << std::endl;
+
+  // SimulationOutputWriterを使用
+  utils::SimulationOutputWriter writer(filename, 15);
+
+  // 計算のコンフィグレーションをヘッダーとして書き込む
+  writer.AddHeaderComment("MESH SIZE", MESH_SIZE);
+  writer.AddHeaderComment("CALCULATION TIMESTEP", CALC_TIMESTEP);
+  writer.AddHeaderComment("SIMULATION TIME", SALI_CALCTIME_THRESHOLD);
+  writer.AddHeaderComment("RADIUSofSOI", SOI_RADIUS);
+  writer.AddHeaderComment("FOREBIDDEN AREA RADIUS", FOREBIDDEN_AREA_RADIUS);
+  writer.AddHeaderComment("DIRECTION", DIRECTION == 1 ? "PROGRADE" : "RETROGRADE");
+  writer.AddHeaderComment("INITIAL JACOBI INTEGRAL", JACOBI_INTEGRAL);
+  writer.SetColumns({"mesh_num", "time", "x", "y", "z", "SALI1", "SALI2", "SALI3", "SALI"});
+
+  // データ行を書き込む（スペース区切り）
   for (const auto& data : SALI_data) {
-    ofs1 << std::setprecision(0) << std::fixed << data[0] << " " << std::setprecision(4) << data[1]
-         << " " << std::setprecision(15) << std::fixed << data[2] << " " << data[3] << " "
-         << data[4] << " " << data[5] << " " << data[6] << " " << data[7] << " " << data[8]
-         << std::endl;
+    writer.WriteRowSpace(static_cast<int>(data[0]), data[1], data[2], data[3], data[4], data[5],
+                         data[6], data[7], data[8]);
   }
-  ofs1.close();
 
   // 実行時間の計測
   auto end = std::chrono::system_clock::now();

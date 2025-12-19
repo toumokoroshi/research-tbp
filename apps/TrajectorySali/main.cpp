@@ -78,79 +78,52 @@ struct OrbitDataRow {
 };
 
 /**
- * @brief 設定ファイルを読み込む
+ * @brief TOML設定ファイルを読み込む
  * @param[in] filepath 設定ファイルパス
  * @param[out] config 設定構造体
  * @return 成功時true
  */
 bool LoadTrajectorySaliConfig(const std::string& filepath, TrajectorySaliConfig* config) {
-  std::ifstream ifs(filepath);
-  if (!ifs) {
-    std::cerr << "<> !err! Cannot open config file: " << filepath << std::endl;
+  try {
+    utils::TomlConfigParser toml_config(filepath);
+
+    config->data_dir = toml_config.GetString("data.data_dir", "");
+    config->calc_duration_nd = toml_config.GetDouble("simulation.calc_duration_nd", 10.0);
+    config->calc_timestep_nd = toml_config.GetDouble("simulation.calc_timestep_nd", 0.01);
+    config->forbidden_radius = toml_config.GetDouble("simulation.forbidden_radius", 1e-6);
+    config->escape_judge_hill = toml_config.GetDouble("simulation.escape_judge_hill", 1.0);
+    config->dv_max = toml_config.GetDouble("deceleration.dv_max", 0.01);
+    config->dv_step = toml_config.GetDouble("deceleration.dv_step", 0.002);
+    config->phase_step = toml_config.GetInt("deceleration.phase_step", 1);
+
+    std::string integrator_str = toml_config.GetString("integrator.type", "SYMPLECTIC_6TH");
+    if (integrator_str == "SYMPLECTIC_6TH") {
+      config->integrator = IntegratorType::kSymplectic6th;
+    } else if (integrator_str == "SYMPLECTIC_4TH") {
+      config->integrator = IntegratorType::kSymplectic4th;
+    }
+
+    config->sali_lower_limit = toml_config.GetDouble("chaos.sali_lower_limit", 1e-8);
+    config->output_sali_timeseries = toml_config.GetBool("chaos.output_sali_timeseries", false);
+
+    std::string chaos_str = toml_config.GetString("chaos.index_type", "SALI");
+    if (chaos_str == "SALI" || chaos_str == "sali") {
+      config->chaos_index_type = ChaosIndexType::SALI;
+      config->gali_k = 2;
+    } else if (chaos_str == "GALI2" || chaos_str == "gali2") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 2;
+    } else if (chaos_str == "GALI4" || chaos_str == "gali4") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 4;
+    } else if (chaos_str == "GALI6" || chaos_str == "gali6") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 6;
+    }
+
+  } catch (const std::exception& e) {
+    std::cerr << "<> !err! Cannot load config: " << e.what() << std::endl;
     return false;
-  }
-
-  std::string line;
-  while (std::getline(ifs, line)) {
-    if (line.empty() || line[0] == '#') continue;
-
-    size_t eq_pos = line.find('=');
-    if (eq_pos == std::string::npos) continue;
-
-    std::string key = line.substr(0, eq_pos);
-    std::string value = line.substr(eq_pos + 1);
-
-    // 末尾コメント除去
-    size_t comment_pos = value.find("//");
-    if (comment_pos != std::string::npos) {
-      value = value.substr(0, comment_pos);
-    }
-    // 空白除去
-    while (!value.empty() && (value.back() == ' ' || value.back() == '\t')) {
-      value.pop_back();
-    }
-
-    if (key == "DATA_DIR") {
-      config->data_dir = value;
-    } else if (key == "CALC_DURATION_ND") {
-      config->calc_duration_nd = std::stod(value);
-    } else if (key == "CALC_TIMESTEP_ND") {
-      config->calc_timestep_nd = std::stod(value);
-    } else if (key == "FORBIDDEN_RADIUS") {
-      config->forbidden_radius = std::stod(value);
-    } else if (key == "ESCAPE_JUDGE_HILL") {
-      config->escape_judge_hill = std::stod(value);
-    } else if (key == "DV_MAX") {
-      config->dv_max = std::stod(value);
-    } else if (key == "DV_STEP") {
-      config->dv_step = std::stod(value);
-    } else if (key == "PHASE_STEP") {
-      config->phase_step = std::stoi(value);
-    } else if (key == "INTEGRATOR") {
-      if (value == "SYMPLECTIC_6TH") {
-        config->integrator = IntegratorType::kSymplectic6th;
-      } else if (value == "SYMPLECTIC_4TH") {
-        config->integrator = IntegratorType::kSymplectic4th;
-      }
-    } else if (key == "SALI_LOWER_LIMIT") {
-      config->sali_lower_limit = std::stod(value);
-    } else if (key == "OUTPUT_SALI_TIMESERIES") {
-      config->output_sali_timeseries = (value == "1" || value == "true" || value == "TRUE");
-    } else if (key == "CHAOS_INDEX") {
-      if (value == "SALI" || value == "sali") {
-        config->chaos_index_type = ChaosIndexType::SALI;
-        config->gali_k = 2;
-      } else if (value == "GALI2" || value == "gali2") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 2;
-      } else if (value == "GALI4" || value == "gali4") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 4;
-      } else if (value == "GALI6" || value == "gali6") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 6;
-      }
-    }
   }
   return true;
 }

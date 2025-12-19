@@ -4,4 +4,5 @@ add_subdirectory(coordtest)
 # add_subdirectory(salitest)
 # add_subdirectory(error_compare)
 add_subdirectory(poii)
+add_subdirectory(toml_test)
 

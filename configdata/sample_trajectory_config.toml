@@ -1,0 +1,27 @@
+# サンプル: TrajectoryCalc用TOML設定ファイル
+# 従来のKEY=VALUE形式と同等の設定をTOML形式で記述
+
+[simulation]
+calc_timestep = 0.001       # 計算タイムステップ
+time_threshold = 100.0      # シミュレーション時間上限
+
+[chaos]
+# カオス指標タイプ: "NONE", "SALI", "GALI2", "GALI4", "GALI6"
+index_type = "SALI"
+gali_k = 2
+
+[integrator]
+# 積分法タイプ: "SYMPLECTIC4", "SYMPLECTIC6", "DOPRI", "RK4"
+type = "SYMPLECTIC6"
+
+[analysis]
+enable_freq_analysis = false
+
+# 初期座標の配列 (複数定義可能)
+[[coords]]
+position = [1.0, 0.0, 0.0]
+velocity = [0.1, 0.0, 0.0]
+
+[[coords]]
+position = [1.01, 0.0, 0.0]
+velocity = [0.1, 0.0, 0.0]

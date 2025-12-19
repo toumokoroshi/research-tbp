@@ -128,66 +128,29 @@ int main() {
     std::cout << "<>    loaded config >>>" << std::endl;
 
     //--------- 設定ファイル読み込み部分---------
-    //   // 設定ファイル読み込み
-    int MESH_CENTER = 0;
-    State3d<int> MESH_DIVISION = {50, 50, 50};
-    State3d<double> MESH_HALF_WIDTH{0.01, 0.01, 0.01};
-    double CALC_TIMESTEP = 0;
-    double SALI_CALCTIME_THRESHOLD = 0;
-    double SOI_RADIUS = 0;
-    double FOREBIDDEN_AREA_RADIUS = 0;
-    double JACOBI_INTEGRAL = 0;
-    double inclination = 0;
-    double OMEGA = 0;
-    double THETA = 0;
-    while (std::getline(ifs, str)) {
-      if (str.find("MESH CENTER") != std::string::npos) {
-        MESH_CENTER = std::stoi(str.substr(str.find("=") + 1));
-        if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
-          MeshCenter.x = 1.0 - kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
-          MeshCenter.x = -kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else {
-          std::cerr << "<> !err! MESH CENTER is INVALID. EXITING..." << std::endl;
-          return -1;
-        }
-      } else if (str.find("MESH DIVISION") != std::string::npos) {
-        MESH_DIVISION.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_DIVISION.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_DIVISION.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("MESH SIZE") != std::string::npos) {
-        MESH_HALF_WIDTH.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_HALF_WIDTH.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_HALF_WIDTH.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("CALC TIMESTEP") != std::string::npos) {
-        CALC_TIMESTEP = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("SALI CALCTIME THRESHOLD") != std::string::npos) {
-        SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF SOI") != std::string::npos) {
-        SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF FOREBIDDEN AREA") != std::string::npos) {
-        FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("JACOBI INTEGRAL") != std::string::npos) {
-        JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") != std::string::npos) {
-        inclination = std::stod(str.substr(str.find("=") + 1));
-        inclination = inclination * std::acos(-1) / 180.;
-      } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") != std::string::npos) {
-        OMEGA = std::stod(str.substr(str.find("=") + 1));
-        OMEGA = OMEGA * std::acos(-1) / 180.;
-      } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
-        THETA = std::stod(str.substr(str.find("=") + 1));
-        THETA = THETA * std::acos(-1) / 180.;
-      }
+    // ConfigParserを使用
+    utils::ConfigParser config(configfilepath);
+
+    int MESH_CENTER = config.GetInt("MESH CENTER", 0);
+    State3d<double> MeshCenter_local{1.0 - kMU, 0, 0};
+    if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
+      MeshCenter_local.x = 1.0 - kMU;
+    } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
+      MeshCenter_local.x = -kMU;
     }
+
+    State3d<int> MESH_DIVISION = config.GetState3d<int>("MESH DIVISION", {50, 50, 50});
+    State3d<double> MESH_HALF_WIDTH = config.GetState3d<double>("MESH SIZE", {0.01, 0.01, 0.01});
+    double CALC_TIMESTEP = config.GetDouble("CALC TIMESTEP", 0.001);
+    double SALI_CALCTIME_THRESHOLD = config.GetDouble("SALI CALCTIME THRESHOLD", 100.0);
+    double SOI_RADIUS = config.GetDouble("RADIUS OF SOI", 0.01);
+    double FOREBIDDEN_AREA_RADIUS = config.GetDouble("RADIUS OF FOREBIDDEN AREA", 0.001);
+    double JACOBI_INTEGRAL = config.GetDouble("JACOBI INTEGRAL", 3.0);
+    double inclination =
+        config.GetDouble("INCLINATION AGAINST XY PLANE(deg)", 0.0) * std::acos(-1) / 180.;
+    double OMEGA = config.GetDouble("LONGTITUDE AGAINST X AXIS+(deg)", 0.0) * std::acos(-1) / 180.;
+    double THETA = config.GetDouble("DEGREE FROM TANGENT", 0.0) * std::acos(-1) / 180.;
+
     ifs.close();
     std::string center_str = (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) ? "SUN" : "EARTH";
     std::cout << "<>        MESH CENTER : " << center_str << std::endl;

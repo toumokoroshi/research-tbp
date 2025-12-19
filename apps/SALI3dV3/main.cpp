@@ -277,93 +277,64 @@ int main() {
 
     //--------- 設定ファイル読み込み部分---------
     //   // 設定ファイル読み込み
-    int MESH_CENTER = 0;
-    State3d<int> MESH_DIVISION = {50, 50, 50};
+    // TomlConfigParserを使用した設定読み込み
+    utils::TomlConfigParser config(configfilepath);
+
+    int MESH_CENTER = config.GetInt("mesh.center", 1);
+    if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
+      MeshCenter.x = -kMU;
+      MeshCenter.y = 0.0;
+      MeshCenter.z = 0.0;
+    } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
+      MeshCenter.x = 1.0 - kMU;
+      MeshCenter.y = 0.0;
+      MeshCenter.z = 0.0;
+    }
+
+    auto division_arr = config.GetDoubleArray("mesh.division");
+    State3d<int> MESH_DIVISION{50, 50, 50};
+    if (division_arr.size() >= 3) {
+      MESH_DIVISION.x = static_cast<int>(division_arr[0]);
+      MESH_DIVISION.y = static_cast<int>(division_arr[1]);
+      MESH_DIVISION.z = static_cast<int>(division_arr[2]);
+    }
+
+    auto halfwidth_arr = config.GetDoubleArray("mesh.half_width");
     State3d<double> MESH_HALF_WIDTH{0.01, 0.01, 0.01};
-    double CALC_TIMESTEP = 0;
-    double SALI_CALCTIME_THRESHOLD = 0;
-    double SOI_RADIUS = 0;
-    double FOREBIDDEN_AREA_RADIUS = 0;
-    double JACOBI_INTEGRAL = 0;
-    double inclination = 0;
-    double OMEGA = 0;
-    double THETA = 0;
-    double SALI_LOWER_LIMIT = 1e-8;
+    if (halfwidth_arr.size() >= 3) {
+      MESH_HALF_WIDTH.x = halfwidth_arr[0];
+      MESH_HALF_WIDTH.y = halfwidth_arr[1];
+      MESH_HALF_WIDTH.z = halfwidth_arr[2];
+    }
+
+    double CALC_TIMESTEP = config.GetDouble("simulation.calc_timestep", 0.000001);
+    double SALI_CALCTIME_THRESHOLD = config.GetDouble("simulation.time_threshold", 10.0);
+    double SOI_RADIUS = config.GetDouble("boundary.soi_radius", 0.03);
+    double FOREBIDDEN_AREA_RADIUS = config.GetDouble("boundary.forbidden_area_radius", 1e-10);
+    double JACOBI_INTEGRAL = config.GetDouble("boundary.jacobi_integral", 3.0008);
+
+    double inclination =
+        config.GetDouble("orientation.inclination_deg", 0.0) * std::acos(-1) / 180.;
+    double OMEGA = config.GetDouble("orientation.longitude_deg", 0.0) * std::acos(-1) / 180.;
+    double THETA = config.GetDouble("orientation.tangent_deg", 0.0) * std::acos(-1) / 180.;
+
+    double SALI_LOWER_LIMIT = config.GetDouble("chaos.sali_lower_limit", 1e-8);
+
+    std::string chaos_str = config.GetString("chaos.index_type", "SALI");
     ChaosIndexType chaos_index_type = ChaosIndexType::SALI;
     int gali_k = 2;
-    while (std::getline(ifs, str)) {
-      if (str.find("MESH CENTER") != std::string::npos) {
-        MESH_CENTER = std::stoi(str.substr(str.find("=") + 1));
-        if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {
-          MeshCenter.x = -kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else if (MESH_CENTER == static_cast<int>(MeshCenter::kEARTH)) {
-          MeshCenter.x = 1.0 - kMU;
-          MeshCenter.y = 0.0;
-          MeshCenter.z = 0.0;
-        } else {
-          std::cerr << "<> !err! MESH CENTER is INVALID. EXITING..." << std::endl;
-          return -1;
-        }
-      } else if (str.find("MESH DIVISION") != std::string::npos) {
-        MESH_DIVISION.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_DIVISION.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_DIVISION.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("MESH SIZE") != std::string::npos) {
-        MESH_HALF_WIDTH.x = std::stod(str.substr(str.find("=") + 1));
-        size_t first_space = str.find(" ", str.find("=") + 1);
-        size_t second_space = str.find(" ", first_space + 1);
-        MESH_HALF_WIDTH.y = std::stod(str.substr(first_space + 1, second_space - first_space - 1));
-        MESH_HALF_WIDTH.z = std::stod(str.substr(second_space + 1));
-      } else if (str.find("CALC TIMESTEP") != std::string::npos) {
-        CALC_TIMESTEP = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("SALI CALCTIME THRESHOLD") != std::string::npos) {
-        SALI_CALCTIME_THRESHOLD = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF SOI") != std::string::npos) {
-        SOI_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("RADIUS OF FOREBIDDEN AREA") != std::string::npos) {
-        FOREBIDDEN_AREA_RADIUS = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("JACOBI INTEGRAL") != std::string::npos) {
-        JACOBI_INTEGRAL = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("INCLINATION AGAINST XY PLANE(deg)") != std::string::npos) {
-        inclination = std::stod(str.substr(str.find("=") + 1));
-        inclination = inclination * std::acos(-1) / 180.;
-      } else if (str.find("LONGTITUDE AGAINST X AXIS+(deg)") != std::string::npos) {
-        OMEGA = std::stod(str.substr(str.find("=") + 1));
-        OMEGA = OMEGA * std::acos(-1) / 180.;
-      } else if (str.find("DEGREE FROM TANGENT") != std::string::npos) {
-        THETA = std::stod(str.substr(str.find("=") + 1));
-        THETA = THETA * std::acos(-1) / 180.;
-      } else if (str.find("SALI LOWER LIMIT") != std::string::npos) {
-        SALI_LOWER_LIMIT = std::stod(str.substr(str.find("=") + 1));
-      } else if (str.find("CHAOS_INDEX") != std::string::npos ||
-                 str.find("CHAOS INDEX") != std::string::npos) {
-        std::string value = str.substr(str.find("=") + 1);
-        // 空白除去
-        while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
-          value.erase(0, 1);
-        }
-        while (!value.empty() &&
-               (value.back() == ' ' || value.back() == '\t' || value.back() == '\r')) {
-          value.pop_back();
-        }
-        if (value == "SALI" || value == "sali") {
-          chaos_index_type = ChaosIndexType::SALI;
-          gali_k = 2;
-        } else if (value == "GALI2" || value == "gali2") {
-          chaos_index_type = ChaosIndexType::GALI;
-          gali_k = 2;
-        } else if (value == "GALI4" || value == "gali4") {
-          chaos_index_type = ChaosIndexType::GALI;
-          gali_k = 4;
-        } else if (value == "GALI6" || value == "gali6") {
-          chaos_index_type = ChaosIndexType::GALI;
-          gali_k = 6;
-        }
-      }
+    if (chaos_str == "SALI" || chaos_str == "sali") {
+      chaos_index_type = ChaosIndexType::SALI;
+      gali_k = 2;
+    } else if (chaos_str == "GALI2" || chaos_str == "gali2") {
+      chaos_index_type = ChaosIndexType::GALI;
+      gali_k = 2;
+    } else if (chaos_str == "GALI4" || chaos_str == "gali4") {
+      chaos_index_type = ChaosIndexType::GALI;
+      gali_k = 4;
+    } else if (chaos_str == "GALI6" || chaos_str == "gali6") {
+      chaos_index_type = ChaosIndexType::GALI;
+      gali_k = 6;
     }
     ifs.close();
     std::string center_str = (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) ? "SUN" : "EARTH";
