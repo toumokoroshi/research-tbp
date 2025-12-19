@@ -1,2 +1,0 @@
-App started.
-Config Dir: C:/WORKSPACE/Research_git/TBP/configs/trajectory_SALI/

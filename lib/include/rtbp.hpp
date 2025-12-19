@@ -770,9 +770,6 @@ OrbitalElements<ScalarType> ConvertToOrbitalElements(const State<ScalarType>& st
 template <typename ScalarType>
 ScalarType calc_v_abs(const State3d<ScalarType>& r, const ScalarType JACOBI_INTEGRAL,
                       const ScalarType mu) {
-  ScalarType r1 = calc_r1<ScalarType>(r.x, r.y, r.z, mu);
-  ScalarType r2 = calc_r2<ScalarType>(r.x, r.y, r.z, mu);
-
   ScalarType x = r.x;
   ScalarType y = r.y;
   ScalarType z = r.z;

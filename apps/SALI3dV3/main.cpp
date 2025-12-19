@@ -19,11 +19,6 @@
 
 #include "rtbp.hpp"
 
-std::vector<std::streampos> indexFile(const std::string& filename);
-
-std::string readSpecificLine(const std::string& filename,
-                             const std::vector<std::streampos>& linePositions, int targetLine);
-
 struct SaliOutputRow {
   int mesh_num;
   double sali;
@@ -59,11 +54,47 @@ enum class ChaosIndexType {
   GALI   ///< GALI (K可変)
 };
 
-int main() {
+/**
+ * @brief コマンドライン引数をパースする
+ * @param argc 引数の数
+ * @param argv 引数の配列
+ * @param is_continuous 連続シミュレーションモードかどうか（出力）
+ * @param skip_wait WaitForEnterをスキップするかどうか（出力）
+ */
+void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait) {
+  is_continuous = false;  // デフォルト: 単発シミュレーション
+  skip_wait = false;      // デフォルト: WaitForEnterを実行
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--continuous" || arg == "-c") {
+      is_continuous = true;
+    } else if (arg == "--no-wait" || arg == "-n") {
+      skip_wait = true;
+    } else if (arg == "--help" || arg == "-h") {
+      std::cout
+          << "Usage: " << argv[0] << " [options]\n"
+          << "Options:\n"
+          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
+          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
+          << "  -h, --help        このヘルプを表示\n"
+          << std::endl;
+      std::exit(0);
+    }
+  }
+}
+
+int main(int argc, char* argv[]) {
   using namespace param;
   using namespace crtbp;
   using namespace utils;
   namespace fs = std::filesystem;
+
+  // コマンドライン引数のパース
+  bool is_continuous = false;
+  bool skip_wait = false;
+  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait);
+
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
   const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI_v3/";
@@ -77,101 +108,26 @@ int main() {
   const double kMU = kGMEARTH / (kGMEARTH + kGMSUN);  // mu parameter of Earth-Sun
   std::cout << "-" << std::endl;
 
-  constexpr double HEADER_SIZE = 9;
   State3d<double> MeshCenter{1.0 - kMU, 0, 0};
-  double ROI_length = 0;
 
   std::cout << "<>----------------------------------------------------------------" << std::endl;
   std::cout << "<>            CRTBP 3dSALI  Calculation ver3.0" << std::endl;
   std::cout << "<>-------------------------------------------------------------"
                "---\n\n"
             << std::endl;
-  std::cout << "<>****************************************************************" << std::endl;
-  std::cout << "<>  [mode selection] : " << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<>        1. New simulation" << std::endl;
-  std::cout << "<>        2. Detailed simulation for existing data" << std::endl;
-  std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>   enter number " << std::endl;
-  std::cout << "<> >>>";
-  char mode;
-  std::cin >> mode;
-  std::cout << "<> " << std::endl;
-  if (mode == '1') {
-    std::cout << "<> > selected mode : New simulation" << std::endl;
-  } else if (mode == '2') {
-    std::cout << "<> > selected mode : Detailed simulation for existing data\n" << std::endl;
-  } else {
-    std::cout << "<> > selected mode : Exit\n" << std::endl;
-    return 0;
-  }
-  std::cout << "<> " << std::endl;
 
-  if (mode == '2') {
-    // ファイルを読み込んで、ターゲットのメッシュ番号を指定
-    std::cout << "<>        [input file name to refer] : ";
-    std::string filename_interested;
-    std::cin >> filename_interested;
-    std::cout << std::endl;
-    // メッシュ番号を指定
-    std::cout << "<>        [input mesh number to focus on] : ";
-    std::string mesh_num_of_interest;
-    std::cin >> mesh_num_of_interest;
-    std::cout << std::endl;
-
-    std::cout << "<>        [input the length of ROI] : ";
-    std::string ROI_length_;
-    std::cin >> ROI_length_;
-    std::cout << std::endl;
-    ROI_length = std::stod(ROI_length_);
-
-    // ファイル読み込み
-    std::ifstream ifs(filename_interested);
-    if (!ifs) {
-      std::cerr << "Can't open file : " << filename_interested << std::endl;
-      return -1;
-    }
-    std::vector<std::streampos> linePositions = utils::indexFileLines(filename_interested);
-
-    // 指定した行を読み込む
-    int targetLine = std::stoi(mesh_num_of_interest) + HEADER_SIZE;  // 読み込みたい行番号
-    std::string line = utils::readLineAtIndex(filename_interested, linePositions, targetLine);
-    std::cout << "<>        interested line : " << line << std::endl;
-    std::stringstream ss(line);
-    std::array<double, 7> data;
-    for (int i = 0; i < 7; i++) {
-      ss >> data[i];
-    }
-
-    MeshCenter.x = data[2];
-    MeshCenter.y = data[3];
-    MeshCenter.z = data[4];
-  }
-  // #endif
-  char mode2;
-  std::cout << "<>  [single simulation or continuous simulation] : " << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<>        1. single simulation" << std::endl;
-  std::cout << "<>        2. continuous simulation" << std::endl;
-  std::cout << "<>        else. Exit" << std::endl;
-  std::cout << "<>      enter number " << std::endl;
-  std::cout << "<> >>> ";
-  std::cin >> mode2;
-  std::cout << "<> " << std::endl;
-
-  double is_continuous = 0;
+  // 選択されたモードを表示
   std::string configfilename;
   std::vector<std::string> config_file_list;
 
-  if (mode2 == '1') {
-    std::cout << "<> >  selected mode : single simulation" << std::endl;
-    is_continuous = 0;
-  } else if (mode2 == '2') {
-    std::cout << "<>    selected mode : continuous simulation\n" << std::endl;
-    is_continuous = 1;
+  if (is_continuous) {
+    std::cout << "<>    selected mode : continuous simulation (--continuous)\n" << std::endl;
   } else {
-    std::cout << "selected mode : Exit\n" << std::endl;
-    return 0;
+    std::cout << "<> >  selected mode : single simulation (default)" << std::endl;
+  }
+
+  if (skip_wait) {
+    std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
   const std::string calc_config_pattern_str =
       "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".txt$";
@@ -202,35 +158,43 @@ int main() {
     std::cout << "<>    - " << filename << std::endl;
   }
 
-  WaitForEnter();
+  if (!skip_wait) {
+    WaitForEnter();
+  }
   std::cout << "<> " << std::endl;
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
   int Core_Max = omp_get_max_threads();
   int OMP_Fmax{};
-  std::cout << "<>  [OpenMP preparation]" << std::endl;
-  std::cout << "<> " << std::endl;
-  std::cout << "<> On your PC, " << Core_Max
-            << " threads can be used for parallel computing employing OMP." << std::endl;
-  std::cout << "<> >  " << std::endl;
-  std::cout << "<>   * How many threads do you want use for simulation? "
-            << "(input an integer)" << std::endl;
-  std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
-  std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
-  std::cout << "<> >>> ";
-  int getcore = 0;
-  std::cin >> getcore;
-  if (getcore <= Core_Max) {
-    OMP_Fmax = getcore;
-    std::cout << "<>" << std::endl;
-    std::cout << "<>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
-    std::cout << "<>" << std::endl;
+  if (!skip_wait) {
+    std::cout << "<>  [OpenMP preparation]" << std::endl;
+    std::cout << "<> " << std::endl;
+    std::cout << "<> On your PC, " << Core_Max
+              << " threads can be used for parallel computing employing OMP." << std::endl;
+    std::cout << "<> >  " << std::endl;
+    std::cout << "<>   * How many threads do you want use for simulation? "
+              << "(input an integer)" << std::endl;
+    std::cout << "<>   * （※最大コア数を指定すると計算が終わるまでPCが" << std::endl;
+    std::cout << "<>   *    激重になるので，最大値-1くらいが良いかも？）> " << std::endl;
+    std::cout << "<> >>> ";
+    int getcore = 0;
+    std::cin >> getcore;
+    if (getcore <= Core_Max) {
+      OMP_Fmax = getcore;
+      std::cout << "<>" << std::endl;
+      std::cout << "<>     >> Number of OMP threads is " << OMP_Fmax << std::endl;
+      std::cout << "<>" << std::endl;
+    } else {
+      OMP_Fmax = Core_Max;
+      std::cout << "  <>     >> Your input is INVALID. OMP threads is "
+                << "automatically determined as " << OMP_Fmax << std::endl;
+    }
   } else {
-    OMP_Fmax = Core_Max;
-    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
-              << "automatically determined as " << OMP_Fmax << std::endl;
+    OMP_Fmax = Core_Max - 1;
   }
-  WaitForEnter();
+  if (!skip_wait) {
+    WaitForEnter();
+  }
   omp_set_num_threads(OMP_Fmax);
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
@@ -363,21 +327,16 @@ int main() {
     }
     std::cout << "<>        CHAOS INDEX : " << chaos_index_str << std::endl;
     std::cout << "<>    config file read successfully\n" << std::endl;
-    if (is_continuous == 0) {
+    if (!is_continuous && !skip_wait) {
       WaitForEnter();
     }
 
     std::cout << "<>    -- Start SALI caluculation for " << configfilepath << std::endl;
     std::cout << "<>        Generating mesh ";
     std::vector<State3d<double>> meshPoints;
-    if (mode == '1') {
-      std::cout << "based on SOI radius" << std::endl;
-      // meshPoints = CreateCircleMesh(SOI_RADIUS, MESH_SIZE, MeshCenter);
-      meshPoints = createDimensionlessCartesianMesh(MeshCenter, MESH_HALF_WIDTH, MESH_DIVISION);
-    } else if (mode == '2') {
-      // std::cout << "based on the specified point" << std::endl;
-      // meshPoints = create_cube_mesh(ROI_length, MESH_SIZE, MeshCenter);
-    }
+    std::cout << "based on SOI radius" << std::endl;
+    meshPoints = createDimensionlessCartesianMesh(MeshCenter, MESH_HALF_WIDTH, MESH_DIVISION);
+
     int countt = meshPoints.size();
     std::cout << "<>        " << countt << " mesh generated successfully" << std::endl;
     std::cout << "<>        Start calclation" << std::endl;
@@ -619,8 +578,6 @@ int main() {
 
   return 0;
 }
-
-// indexFile/readSpecificLine -> utils::indexFileLines/readLineAtIndex に移動
 
 bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
   if (output_row == nullptr) {
