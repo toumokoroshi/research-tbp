@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -171,7 +172,7 @@ int main(int argc, char* argv[]) {
   std::cout << "<>----------------------------------------------------------------" << std::endl;
 
   int Core_Max = omp_get_max_threads();
-  int OMP_Fmax{};
+  int OMP_Fmax = Core_Max - 1;
   if (!skip_wait) {
     std::cout << "<>  [OpenMP preparation]" << std::endl;
     std::cout << "<> " << std::endl;
@@ -192,12 +193,12 @@ int main(int argc, char* argv[]) {
       std::cout << "<>" << std::endl;
     } else {
       OMP_Fmax = Core_Max;
-      std::cout << "  <>     >> Your input is INVALID. OMP threads is "
-                << "automatically determined as " << OMP_Fmax << std::endl;
     }
+    std::cout << "  <>     >> Your input is INVALID. OMP threads is "
+              << "automatically determined as " << OMP_Fmax << std::endl;
     WaitForEnter();
   } else {
-    OMP_Fmax = Core_Max - 1;
+    std::cout << "  <>     >> OMP threads is automatically determined as " << OMP_Fmax << std::endl;
   }
   omp_set_num_threads(OMP_Fmax);
   std::cout << "<>----------------------------------------------------------------" << std::endl;
@@ -250,7 +251,54 @@ int main(int argc, char* argv[]) {
     //--------- 設定ファイル読み込み部分---------
     //   // 設定ファイル読み込み
     // TomlConfigParserを使用した設定読み込み
-    utils::TomlConfigParser config(configfilepath);
+    std::unique_ptr<utils::TomlConfigParser> config_ptr;
+    try {
+      config_ptr = std::make_unique<utils::TomlConfigParser>(configfilepath);
+    } catch (const std::exception& e) {
+      std::cerr << "\n<> !ERROR! Failed to parse config file: " << configfilepath << std::endl;
+      std::cerr << "<> !ERROR! Reason: " << e.what() << std::endl;
+      std::cerr << "<> !ERROR! Please check if all required values are properly set." << std::endl;
+      std::cerr << "<> !ERROR! Common issues:" << std::endl;
+      std::cerr << "<>         - Empty values (e.g., 'jacobi_integral = ')" << std::endl;
+      std::cerr << "<>         - Missing quotes around string values" << std::endl;
+      std::cerr << "<>         - Invalid number format" << std::endl;
+      std::cerr << "<> Skipping this config file...\n" << std::endl;
+      ifs.close();
+      continue;
+    }
+    auto& config = *config_ptr;
+
+    // 必須パラメータのバリデーション
+    std::vector<std::string> validation_errors;
+
+    // jacobi_integral は必須（特別な値-999.0をセンチネルとして使用）
+    const double kSentinelValue = -999.0;
+    double jacobi_check = config.GetDouble("boundary.jacobi_integral", kSentinelValue);
+    if (jacobi_check == kSentinelValue || !config.HasKey("boundary.jacobi_integral")) {
+      validation_errors.push_back("boundary.jacobi_integral is missing or invalid");
+    }
+
+    // 配列パラメータのチェック
+    auto division_check = config.GetDoubleArray("mesh.division");
+    if (division_check.size() < 3) {
+      validation_errors.push_back("mesh.division must have 3 values [x, y, z]");
+    }
+
+    auto halfwidth_check = config.GetDoubleArray("mesh.half_width");
+    if (halfwidth_check.size() < 3) {
+      validation_errors.push_back("mesh.half_width must have 3 values [x, y, z]");
+    }
+
+    // バリデーションエラーがある場合
+    if (!validation_errors.empty()) {
+      std::cerr << "\n<> !ERROR! Config validation failed for: " << configfilepath << std::endl;
+      for (const auto& err : validation_errors) {
+        std::cerr << "<> !ERROR!   - " << err << std::endl;
+      }
+      std::cerr << "<> Skipping this config file...\n" << std::endl;
+      ifs.close();
+      continue;
+    }
 
     int MESH_CENTER = config.GetInt("mesh.center", 1);
     if (MESH_CENTER == static_cast<int>(MeshCenter::kSUN)) {

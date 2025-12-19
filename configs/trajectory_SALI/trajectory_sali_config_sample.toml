@@ -31,5 +31,5 @@ type = "SYMPLECTIC_6TH"
 # sali_lower_limit: SALIの閾値
 # output_sali_timeseries: SALI時系列を出力するか
 index_type = "SALI"
-sali_lower_limit = 1e-8
+sali_lower_limit = 1e-10
 output_sali_timeseries = false

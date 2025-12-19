@@ -62,7 +62,7 @@ struct TrajectorySaliConfig {
   double dv_step = 0.002;          ///< 減速ステップ（無次元）
   int phase_step = 1;              ///< 軌道位相の間引き（1=全て使用）
   IntegratorType integrator = IntegratorType::kSymplectic6th;
-  double sali_lower_limit = 1e-8;                          ///< SALI閾値
+  double sali_lower_limit = 1e-10;                         ///< SALI閾値
   bool output_sali_timeseries = false;                     ///< SALI時系列出力フラグ
   ChaosIndexType chaos_index_type = ChaosIndexType::SALI;  ///< カオス指標の種類
   int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
