@@ -105,7 +105,7 @@ int main(int argc, char* argv[]) {
 
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
-  const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI_v3/";
+  const std::string kCalcConfigPath = kConfigFilePath + "/3D_crtbp_SALI/";
   std::string calc_config_prefix = "3DSALIconfig";
   std::string astro_param_file = kConfigFilePath + "/astro_param/astro_param.txt";
   AstroConstants<double> astro_params = loadConstants<double>(astro_param_file);
