@@ -242,6 +242,32 @@ class SALIContourApp:
             variable=self.plot_mode,
             value="ReachTime",
         ).pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(
+            plot_mode_frame,
+            text="SALI閾値判定マップ",
+            variable=self.plot_mode,
+            value="ThresholdMap",
+        ).pack(anchor=tk.W, pady=2)
+
+        # --- SALI閾値設定 ---
+        threshold_frame = ttk.LabelFrame(control_frame, text="SALI閾値設定")
+        threshold_frame.pack(fill=tk.X, pady=(0, 10))
+        threshold_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(threshold_frame, text="閾値:").grid(
+            row=0, column=0, sticky=tk.W, pady=2
+        )
+        self.sali_threshold = tk.DoubleVar(value=1e-8)
+        self.sali_threshold_entry = ttk.Entry(
+            threshold_frame, textvariable=self.sali_threshold, width=15
+        )
+        self.sali_threshold_entry.grid(row=0, column=1, sticky=tk.EW, pady=2, padx=5)
+
+        ttk.Label(
+            threshold_frame,
+            text="(SALI > 閾値: 秩序的, SALI ≤ 閾値: カオス的)",
+            font=("Consolas", 8),
+        ).grid(row=1, column=0, columnspan=2, sticky=tk.W, pady=2)
 
         # --- スケール設定 ---
         scale_frame = ttk.LabelFrame(control_frame, text="SALIスケール設定")
@@ -785,6 +811,70 @@ class SALIContourApp:
                     )
 
                 title_str = f"閾値到達時間 カラーコンター (Z = {z_target:.6f} AU)"
+
+            elif plot_mode == "ThresholdMap":
+                # --- SALI閾値判定モード ---
+                try:
+                    threshold = float(self.sali_threshold.get())
+                except (tk.TclError, ValueError):
+                    messagebox.showerror("エラー", "SALI閾値が不正です")
+                    return
+
+                # SALI = -1 (計算不可) を分離
+                invalid_sali_mask = sliced_data["SALI"] == -1
+                valid_data = sliced_data[~invalid_sali_mask]
+                invalid_data = sliced_data[invalid_sali_mask]
+
+                # 閾値判定: SALI > threshold は秩序的(青), SALI <= threshold はカオス的(赤)
+                ordered_mask = valid_data["SALI"] > threshold
+                chaotic_mask = valid_data["SALI"] <= threshold
+
+                ordered_data = valid_data[ordered_mask]
+                chaotic_data = valid_data[chaotic_mask]
+
+                # カオス的 (SALI <= threshold) -> 赤
+                if len(chaotic_data) > 0:
+                    self.ax.scatter(
+                        chaotic_data["x"],
+                        chaotic_data["y"],
+                        c="#e74c3c",  # 赤
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=2,
+                        label=f"カオス的 (SALI ≤ {threshold:.2e})",
+                    )
+
+                # 秩序的 (SALI > threshold) -> 青
+                if len(ordered_data) > 0:
+                    self.ax.scatter(
+                        ordered_data["x"],
+                        ordered_data["y"],
+                        c="#3498db",  # 青
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=2,
+                        label=f"秩序的 (SALI > {threshold:.2e})",
+                    )
+
+                # 無効なSALI (-1) -> グレー
+                if len(invalid_data) > 0:
+                    self.ax.scatter(
+                        invalid_data["x"],
+                        invalid_data["y"],
+                        c="lightgray",
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=1,
+                        label="Undefined (SALI=-1)",
+                    )
+
+                # 凡例を自動追加
+                self.ax.legend(loc="upper left")
+
+                title_str = f"SALI閾値判定マップ (Z = {z_target:.6f} AU, 閾値 = {threshold:.2e})"
 
             else:
                 # --- SALIモード（デフォルト）---
