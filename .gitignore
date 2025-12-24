@@ -14,5 +14,7 @@ configs/**
 !configs/trajectory_calc/trajectory_calc_config_sample.toml
 !configs/trajectory_SALI/
 !configs/trajectory_SALI/trajectory_sali_config_sample.toml
+!configs/poincare_map/
+!configs/poincare_map/poincare_map_config_sample.toml
 !configs/astro_param/
 !configs/astro_param/astro_param.txt

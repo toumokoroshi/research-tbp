@@ -1,0 +1,60 @@
+# PoincareMap 設定ファイル (TOML形式)
+# CR3BP（円制限三体問題）のポアンカレマップ生成用
+
+[simulation]
+# 計算時間 (無次元時間) (Python: t_max=300 per orbit)
+calc_time = 300.0
+# タイムステップ (無次元時間)
+timestep = 0.0001
+
+[section]
+# ポアンカレ断面を定義する変数: "x", "y", "z", "vx", "vy", "vz"
+section_var = "y"
+# 断面の位置（例: y = 0）
+section_value = 0.0
+# 断面交差の方向: "positive" (正方向), "negative" (負方向), "both" (両方向)
+crossing_direction = "positive"
+
+[initial_condition]
+# ヤコビ積分の値 (Python: C_target=3.0006)
+jacobi_integral = 3.0006
+# 変動変数1（ポアンカレマップのx軸に対応） (Python: 0.97 to 1.03, 120 points)
+var1_name = "x"
+var1_min = 0.97
+var1_max = 0.999999
+var1_division = 500
+# 変動変数2（Python: vx=0 固定なので、範囲を狭くして分割数1にする）
+var2_name = "vx"
+# 厳密に0にするため min=max=0
+var2_min = -0.1
+var2_max = 0.1
+var2_division = 11
+# 固定変数とその値
+fixed_var1_name = "z"
+fixed_var1_value = 0.0
+fixed_var2_name = "vz"
+fixed_var2_value = 0.0
+
+[integrator]
+# 積分器の種類: "symplectic4", "symplectic6", "rk4", "rk45" (Dormand-Prince)
+type = "rk45"
+# RK45（適応ステップ）用の設定（rk45/dopri5選択時のみ使用）
+# 絶対誤差許容値 (Python: 1e-11)
+rk45_atol = 1e-11
+# 相対誤差許容値 (Python: 1e-11)
+rk45_rtol = 1e-11
+# 初期ステップ幅（無次元時間）
+rk45_initial_step = 0.001
+# 最大ステップ幅（無次元時間、ポアンカレ断面を見逃さないため小さめに） (Python: 0.01)
+rk45_max_step = 0.01
+
+[output]
+# 出力ファイルに付与するタグ
+tag = "python_match_C3.0006"
+
+[collision]
+# 衝突判定に用いる最小距離 (無次元)
+# 地球・太陽からこの距離以下に近づいたら計算を打ち切る
+# Python版では 1e-12 に設定 (地球半径の約1/18000、数値的特異点回避用)
+collision_radius_earth = 1e-12
+collision_radius_sun = 1e-12

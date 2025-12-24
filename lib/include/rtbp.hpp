@@ -52,13 +52,23 @@ struct State {
   State() = default;
   State(ScalarType x, ScalarType y, ScalarType z, ScalarType vx, ScalarType vy, ScalarType vz)
       : x(x), y(y), z(z), vx(vx), vy(vy), vz(vz) {}
-  // RK4のための演算子
+
+  // RK4およびBoost.Odeint用の演算子
   State<ScalarType> operator+(const State<ScalarType>& other) const {
     return {x + other.x, y + other.y, z + other.z, vx + other.vx, vy + other.vy, vz + other.vz};
   }
 
   State<ScalarType> operator*(ScalarType scalar) const {
     return {x * scalar, y * scalar, z * scalar, vx * scalar, vy * scalar, vz * scalar};
+  }
+
+  State<ScalarType> operator/(ScalarType scalar) const {
+    return {x / scalar, y / scalar, z / scalar, vx / scalar, vy / scalar, vz / scalar};
+  }
+
+  // Element-wise division for controlled stepper error estimation
+  State<ScalarType> operator/(const State<ScalarType>& other) const {
+    return {x / other.x, y / other.y, z / other.z, vx / other.vx, vy / other.vy, vz / other.vz};
   }
 
   State<ScalarType> operator+=(const State<ScalarType>& other) {
@@ -77,6 +87,51 @@ template <typename ScalarType>
 State<ScalarType> operator*(ScalarType scalar, const State<ScalarType>& state) {
   return state * scalar;
 }
+
+// Allow scalar + State (broadcasts scalar to all components)
+template <typename ScalarType>
+State<ScalarType> operator+(ScalarType scalar, const State<ScalarType>& state) {
+  return State<ScalarType>{scalar + state.x,  scalar + state.y,  scalar + state.z,
+                           scalar + state.vx, scalar + state.vy, scalar + state.vz};
+}
+
+// Allow scalar / State (element-wise)
+template <typename ScalarType>
+State<ScalarType> operator/(ScalarType scalar, const State<ScalarType>& state) {
+  return State<ScalarType>{scalar / state.x,  scalar / state.y,  scalar / state.z,
+                           scalar / state.vx, scalar / state.vy, scalar / state.vz};
+}
+
+// abs function for State (element-wise absolute value) - required for controlled steppers
+template <typename ScalarType>
+State<ScalarType> abs(const State<ScalarType>& s) {
+  return State<ScalarType>{std::abs(s.x),  std::abs(s.y),  std::abs(s.z),
+                           std::abs(s.vx), std::abs(s.vy), std::abs(s.vz)};
+}
+
+}  // namespace my_type
+
+// Boost.Odeint vector_space_norm_inf specialization for State<double>
+// Required for controlled_runge_kutta error estimation
+namespace boost {
+namespace numeric {
+namespace odeint {
+
+template <>
+struct vector_space_norm_inf<my_type::State<double>> {
+  using result_type = double;
+  result_type operator()(const my_type::State<double>& s) const {
+    using std::abs;
+    return std::max({abs(s.x), abs(s.y), abs(s.z), abs(s.vx), abs(s.vy), abs(s.vz)});
+  }
+};
+
+}  // namespace odeint
+}  // namespace numeric
+}  // namespace boost
+
+namespace my_type {
+
 /**
  * @brief 正準状態ベクトル (位置 q, 正準運動量 p)
  * (qx, qy, qz, px, py, pz)

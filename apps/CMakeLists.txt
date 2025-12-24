@@ -9,3 +9,5 @@ add_subdirectory(TrajectorySali)
 # add_subdirectory(sticky_orbit_search)
 add_subdirectory(PoincareMap)
 add_subdirectory(TrajectoryCalc)
+add_subdirectory(PeriodicOrbitAnalysis)
+
