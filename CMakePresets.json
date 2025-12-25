@@ -1,6 +1,12 @@
 {
-  "version": 3,
+  "version": 6,
   "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Default (Ninja with Intel LLVM)",
+      "description": "Default preset - alias for ninja-intel",
+      "inherits": "ninja-intel"
+    },
     {
       "name": "vs-intel",
       "displayName": "Visual Studio with Intel LLVM",
@@ -21,13 +27,9 @@
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_C_COMPILER": "icx",
-        "CMAKE_CXX_COMPILER": "icpx",
+        "CMAKE_C_COMPILER": "icx-cl",
+        "CMAKE_CXX_COMPILER": "icx-cl",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER_ID": "MSVC",
-        "CMAKE_C_COMPILER_ID": "MSVC",
-        "CMAKE_CXX_COMPILER_FORCED": "TRUE",
-        "CMAKE_C_COMPILER_FORCED": "TRUE",
         "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
       }
     }
