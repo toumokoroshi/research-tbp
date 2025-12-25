@@ -21,6 +21,31 @@
 namespace utils {
 namespace fs = std::filesystem;
 using namespace my_type;
+
+// ---------------------------------------------------------------------------
+// 共通の列挙型定義
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 数値積分法の種類
+ */
+enum class IntegratorType {
+  kSymplectic4th,  ///< 4次シンプレクティック法
+  kSymplectic6th,  ///< 6次シンプレクティック法 (デフォルト)
+  kRungeKutta4th,  ///< 4次ルンゲクッタ法
+  kDormandPrince   ///< ドルマンプリンス法 (DOPRI5/RK45)
+};
+
+/**
+ * @brief カオス指標の種類
+ */
+enum class ChaosIndexType {
+  NONE,  ///< カオス指標を計算しない
+  SALI,  ///< SALI (K=2)
+  GALI,  ///< GALI (K可変)
+  LLE    ///< 最大リヤプノフ指数
+};
+
 #ifndef __KEYWAIT__
 #define __KEYWAIT__                                           \
   {                                                           \
@@ -1042,6 +1067,200 @@ inline std::vector<std::string> DiscoverConfigFiles(const std::string& directory
   };
   std::sort(files.begin(), files.end(), sorter);
   return files;
+}
+
+// ---------------------------------------------------------------------------
+// TOML設定ファイル検出用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 設定ファイル検出オプション
+ */
+struct ConfigDiscoveryOptions {
+  bool exclude_sample = true;  ///< _sample付きを除外するか
+  bool continuous_mode =
+      false;  ///< 連番ファイルのみ対象（true: prefix_1.toml等、false: prefix.toml）
+};
+
+/**
+ * @brief TOML設定ファイルをディレクトリから列挙
+ * @param directory 検索ディレクトリ
+ * @param prefix ファイル名プレフィックス（例: "3DSALIconfig"）
+ * @param options 検出オプション
+ * @return 検出したファイルパスのベクター（数値順にソート済み）
+ */
+inline std::vector<std::string> DiscoverConfigFilesToml(
+    const std::string& directory, const std::string& prefix,
+    const ConfigDiscoveryOptions& options = {}) {
+  std::vector<std::string> files;
+  if (!fs::exists(directory)) {
+    std::cerr << "<> Config directory does not exist: " << directory << std::endl;
+    return files;
+  }
+
+  // パターン: continuous_mode=true -> prefix_数字.toml、false -> prefix.toml
+  std::string pattern_str;
+  if (options.continuous_mode) {
+    pattern_str = "^" + prefix + "_\\d+\\.toml$";
+  } else {
+    pattern_str = "^" + prefix + "\\.toml$";
+  }
+  const std::regex pattern(pattern_str);
+
+  // _sample除外用パターン
+  const std::regex sample_pattern(".*_sample.*", std::regex_constants::icase);
+
+  try {
+    for (const auto& entry : fs::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) continue;
+      const auto filename = entry.path().filename().string();
+
+      // _sample除外チェック
+      if (options.exclude_sample && std::regex_match(filename, sample_pattern)) {
+        continue;
+      }
+
+      if (std::regex_match(filename, pattern)) {
+        files.push_back(fs::absolute(entry.path()).string());
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "<> Failed to read config directory: " << e.what() << std::endl;
+    return files;
+  }
+
+  // 数値順にソート
+  auto sorter = [](const std::string& a, const std::string& b) {
+    const std::string stem_a = fs::path(a).stem().string();
+    const std::string stem_b = fs::path(b).stem().string();
+    auto number_from_stem = [](const std::string& stem) -> int {
+      const auto pos = stem.find_last_of('_');
+      if (pos == std::string::npos) return 0;
+      try {
+        return std::stoi(stem.substr(pos + 1));
+      } catch (...) {
+        return 0;
+      }
+    };
+    return number_from_stem(stem_a) < number_from_stem(stem_b);
+  };
+  std::sort(files.begin(), files.end(), sorter);
+  return files;
+}
+
+// ---------------------------------------------------------------------------
+// 出力ディレクトリ作成用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 出力ディレクトリ作成結果
+ */
+struct OutputDirResult {
+  std::string session_dir;  ///< 作成されたセッションディレクトリパス
+  bool success = false;     ///< 成功フラグ
+};
+
+/**
+ * @brief 日時付きセッション出力ディレクトリを作成
+ * @param base_path 出力ベースパス（例: OUTPUT_DIR）
+ * @param app_subdir アプリ固有のサブディレクトリ名（例: "3D_crtbp_SALI_v3"）
+ * @param output_tag オプションのタグ（空文字列の場合は付加しない）
+ * @param verbose trueの場合、作成時にコンソール出力
+ * @return OutputDirResult 結果（session_dirとsuccess）
+ */
+inline OutputDirResult CreateSessionOutputDir(const std::string& base_path,
+                                              const std::string& app_subdir,
+                                              const std::string& output_tag = "",
+                                              bool verbose = true) {
+  OutputDirResult result;
+
+  try {
+    // ベースディレクトリの作成
+    std::string app_output_dir = base_path + "/" + app_subdir;
+    if (!fs::exists(app_output_dir)) {
+      fs::create_directories(app_output_dir);
+      if (verbose) {
+        std::cout << "<>    Created app output directory: " << app_output_dir << std::endl;
+      }
+    }
+
+    // 日時付きセッションディレクトリ名を生成
+    std::string session_timestamp = getcurrent_date();
+    std::string session_dir_name = session_timestamp;
+    if (!output_tag.empty()) {
+      session_dir_name += "_" + output_tag;
+    }
+
+    // セッションディレクトリを作成
+    result.session_dir = app_output_dir + "/" + session_dir_name;
+    if (!fs::exists(result.session_dir)) {
+      fs::create_directories(result.session_dir);
+    }
+
+    if (verbose) {
+      std::cout << "<>    Session output directory: " << result.session_dir << std::endl;
+    }
+
+    result.success = true;
+  } catch (const std::exception& e) {
+    std::cerr << "<> !err! Failed to create output directory: " << e.what() << std::endl;
+    result.success = false;
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// コマンドライン引数パース用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief コマンドライン引数の解析結果を格納する構造体
+ */
+struct CommonArgs {
+  bool is_continuous = false;   ///< 連続シミュレーションモード
+  bool skip_wait = false;       ///< WaitForEnterをスキップ
+  std::string output_tag = "";  ///< 出力フォルダに付与するタグ
+};
+
+/**
+ * @brief 共通のコマンドライン引数をパースする
+ * @param argc 引数の数
+ * @param argv 引数の配列
+ * @param app_name アプリケーション名（ヘルプ表示用、空の場合argv[0]を使用）
+ * @return パースされた引数
+ *
+ * サポートするオプション:
+ *   -c, --continuous  連続シミュレーションモード
+ *   -n, --no-wait     ユーザー確認の待機をスキップ
+ *   -t, --tag <TAG>   出力フォルダに付与するタグ
+ *   -h, --help        ヘルプを表示して終了
+ */
+inline CommonArgs ParseCommonArgs(int argc, char* argv[], const std::string& app_name = "") {
+  CommonArgs args;
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--continuous" || arg == "-c") {
+      args.is_continuous = true;
+    } else if (arg == "--no-wait" || arg == "-n") {
+      args.skip_wait = true;
+    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
+      args.output_tag = argv[++i];
+    } else if (arg == "--help" || arg == "-h") {
+      std::string name = app_name.empty() ? argv[0] : app_name;
+      std::cout
+          << "Usage: " << name << " [options]\n"
+          << "Options:\n"
+          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
+          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
+          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
+          << "  -h, --help        このヘルプを表示\n"
+          << std::endl;
+      std::exit(0);
+    }
+  }
+  return args;
 }
 
 }  // namespace utils

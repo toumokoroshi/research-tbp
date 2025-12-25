@@ -33,21 +33,7 @@ using namespace crtbp;
 using namespace param;
 using namespace utils;
 
-/**
- * @brief 積分器の種類
- */
-enum class IntegratorType {
-  kSymplectic6th,  ///< 6次吉田法（デフォルト）
-  kSymplectic4th,  ///< 4次吉田法
-};
-
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  SALI,  ///< SALI (K=2) - デフォルト
-  GALI   ///< GALI (K可変)
-};
+// IntegratorType と ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
 
 /**
  * @brief 設定パラメータ構造体
@@ -369,7 +355,12 @@ void GenerateSaliTimeSeriesPlot(const std::string& csv_path, const std::string& 
   std::system(cmd.c_str());
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+  // コマンドライン引数のパース
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
+
   // ヘッダー出力
   std::cout << "<>----------------------------------------------------------------" << std::endl;
   std::cout << "<>            CRTBP Trajectory-SALI Calculator ver1.0" << std::endl;
@@ -380,9 +371,27 @@ int main() {
   // パス設定
   const std::string kConfigBasePath = CONFIG_DIR;
   const std::string kOutputBasePath = OUTPUT_DIR;
-  const std::string kConfigFilePath =
-      kConfigBasePath + "/trajectory_SALI/trajectory_sali_config_sample.toml";
+  const std::string kConfigDirPath = kConfigBasePath + "/trajectory_SALI/";
   const std::string kAstroParamFile = kConfigBasePath + "/astro_param/astro_param.txt";
+
+  // configファイル検索（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = args.is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kConfigDirPath, "trajectory_sali_config", discovery_opts);
+
+  if (config_file_list.empty()) {
+    std::cerr << "<> No config files found in " << kConfigDirPath << std::endl;
+    std::cerr << "<>    Expected pattern: trajectory_sali_config"
+              << (args.is_continuous ? "_*.toml" : ".toml") << std::endl;
+    return -1;
+  }
+
+  std::cout << "<> Loaded config file list:" << std::endl;
+  for (const auto& filepath : config_file_list) {
+    std::cout << "<>    - " << filepath << std::endl;
+  }
 
   // 天文定数読み込み
   AstroConstants<double> astro_params = loadConstants<double>(kAstroParamFile);
@@ -390,6 +399,9 @@ int main() {
 
   std::cout << "<>    mu parameter: " << std::setprecision(15) << kMU << std::endl;
   std::cout << "<>" << std::endl;
+
+  // 各configファイルを処理（最初の1つのみ使用、今後ループ対応可能）
+  const std::string& kConfigFilePath = config_file_list[0];
 
   // 設定ファイル読み込み
   std::cout << "<>    Loading config file: " << kConfigFilePath << std::endl;
@@ -445,21 +457,28 @@ int main() {
   std::cout << "<>" << std::endl;
 
   // ユーザー確認
-  WaitForEnter("<>    Press Enter to start simulation...");
-
-  // OpenMP設定
   int core_max = omp_get_max_threads();
-  int omp_threads = 1;
-  std::cout << "<>" << std::endl;
-  std::cout << "<>  [OpenMP Configuration]" << std::endl;
-  std::cout << "<>    Available threads: " << core_max << std::endl;
-  std::cout << "<>    Enter number of threads to use: ";
-  std::cin >> omp_threads;
-  if (omp_threads > core_max) omp_threads = core_max;
-  if (omp_threads < 1) omp_threads = 1;
-  omp_set_num_threads(omp_threads);
-  std::cout << "<>    Using " << omp_threads << " threads" << std::endl;
-  std::cout << "<>" << std::endl;
+  if (!skip_wait) {
+    WaitForEnter("<>    Press Enter to start simulation...");
+
+    // OpenMP設定
+    int omp_threads = 1;
+    std::cout << "<>" << std::endl;
+    std::cout << "<>  [OpenMP Configuration]" << std::endl;
+    std::cout << "<>    Available threads: " << core_max << std::endl;
+    std::cout << "<>    Enter number of threads to use: ";
+    std::cin >> omp_threads;
+    if (omp_threads > core_max) omp_threads = core_max;
+    if (omp_threads < 1) omp_threads = 1;
+    omp_set_num_threads(omp_threads);
+    std::cout << "<>    Using " << omp_threads << " threads" << std::endl;
+    std::cout << "<>" << std::endl;
+  } else {
+    // skip_wait時は最大スレッド数-1を自動選択
+    int omp_threads = std::max(1, core_max - 1);
+    omp_set_num_threads(omp_threads);
+    std::cout << "<>    Using " << omp_threads << " threads (auto-selected)" << std::endl;
+  }
 
   // SALI積分器ラムダ
   auto sali_integrator = [&](SaliState<double>* state, double h) {
@@ -497,29 +516,17 @@ int main() {
     }
   };
 
-  // ベース出力ディレクトリ
-  std::string output_base_dir = kOutputBasePath + "/trajectory_SALI";
-  if (!fs::exists(output_base_dir)) {
-    fs::create_directories(output_base_dir);
+  // ベース出力ディレクトリとセッションディレクトリの作成
+  OutputDirResult output_result =
+      CreateSessionOutputDir(kOutputBasePath, "trajectory_SALI", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
+  std::string sim_output_dir = output_result.session_dir;
+  std::cout << "<>" << std::endl;
 
   // 全体時間計測
   auto start_total = std::chrono::system_clock::now();
-
-  // シミュレーション開始時刻のタイムスタンプを生成（全軌道ファイル共通）
-  std::time_t start_time_t = std::chrono::system_clock::to_time_t(start_total);
-  std::tm start_local_tm;
-#ifdef _WIN32
-  localtime_s(&start_local_tm, &start_time_t);
-#else
-  localtime_r(&start_time_t, &start_local_tm);
-#endif
-  std::ostringstream sim_timestamp_ss;
-  sim_timestamp_ss << std::put_time(&start_local_tm, "%y_%m%d_%H%M") << "_run";
-  std::string sim_output_dir = output_base_dir + "/" + sim_timestamp_ss.str();
-  fs::create_directories(sim_output_dir);
-  std::cout << "<>    Simulation output folder: " << sim_output_dir << std::endl;
-  std::cout << "<>" << std::endl;
 
   // 各軌道ファイルをループ
   for (size_t file_idx = 0; file_idx < orbit_files.size(); ++file_idx) {

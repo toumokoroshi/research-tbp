@@ -1,0 +1,58 @@
+# TrajectoryCalc設定ファイル (TOML形式)
+# 円制限三体問題の軌道計算用
+
+[simulation]
+# 計算タイムステップ (無次元時間)
+calc_timestep = 0.00001
+# 計算時間 (無次元時間)
+time_threshold = 62.8
+
+[chaos]
+# カオス指標タイプ: "NONE", "SALI", "GALI2", "GALI4", "GALI6", "LLE"
+index_type = "SALI"
+# LLE用パラメータ (index_type = "LLE" の場合のみ使用)
+lle_renorm_interval = 100 # 再正規化の間隔（ステップ数）
+lle_skip_steps = 1000     # 初期過渡状態をスキップ（ステップ数）
+
+[integrator]
+# 積分法タイプ: "SYMPLECTIC4", "SYMPLECTIC6", "DOPRI", "RK4"
+type = "DOPRI"
+
+# DOPRI専用設定 (type = "DOPRI" の場合のみ使用)
+dopri_abs_tol = 1.0e-10    # 絶対誤差許容値
+dopri_rel_tol = 1.0e-10    # 相対誤差許容値
+dopri_initial_step = 0.001 # 初期ステップサイズ
+dopri_max_step = 0.1       # 最大ステップサイズ
+
+[analysis]
+# 周波数解析を有効にするか
+enable_freq_analysis = false
+
+[output]
+# 各種出力の有効/無効を設定（デフォルト: すべてtrue）
+output_trajectory = true        # 軌道データCSV出力
+output_chaos_index = true       # カオス指標時系列出力
+output_orbital_elements = false # 軌道要素時系列出力
+output_freq_analysis = false    # 周波数解析出力
+output_gnuplot = true           # gnuplotスクリプト・画像生成
+
+# 初期座標の配列 (複数定義可能)
+[[coords]]
+position = [0.996247517306881, 0.000000000000000, 0.000000000000000]
+velocity = [0.000039017135879, 0.032157553971489, 0.000000000000000]
+[[coords]]
+position = [0.996310693024491, 0.000000000000000, 0.000000000000000]
+velocity = [0.000087601867751, 0.032567324436432, 0.000000000000000]
+
+[[coords]]
+position = [0.991550873866813, 0.000000000000000, 0.000000000000000]
+velocity = [0.006177311038132, 0.016709611949685, 0.000000000000000]
+[[coords]]
+position = [0.991544368496124, 0.000000000000000, 0.000000000000000]
+velocity = [0.000849134998677, 0.017787252382264, 0.00000000000000]
+[[coords]]
+position = [0.990215994961473, 0.000000000000000, 0.000000000000000]
+velocity = [0.002985601410003, 0.016884642926274, 0.000000000000000]
+[[coords]]
+position = [0.987023431940931, 0.000000000000000, 0.000000000000000]
+velocity = [0.012437219037311, 0.014445874741070, 0.000000000000000]

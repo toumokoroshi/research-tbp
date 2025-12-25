@@ -38,10 +38,7 @@ enum class CrossingDirection {
   kBoth       // 両方向
 };
 
-// ---------------------------------------------------------------------------
-// 積分器タイプの列挙型
-// ---------------------------------------------------------------------------
-enum class IntegratorType { kSymplectic4, kSymplectic6, kRK4, kRK45 };
+// IntegratorType は utils.hpp で定義されているため、ローカル定義は不要
 
 // ---------------------------------------------------------------------------
 // コンフィグ構造体
@@ -72,7 +69,7 @@ struct PoincareMapConfig {
   double fixed_var2_value = 0.0;
 
   // 積分器設定
-  IntegratorType integrator_type = IntegratorType::kSymplectic6;
+  IntegratorType integrator_type = IntegratorType::kSymplectic6th;
   // RK45（適応ステップ）用パラメータ
   double rk45_atol = 1e-10;          // 絶対誤差許容値
   double rk45_rtol = 1e-10;          // 相対誤差許容値
@@ -95,37 +92,6 @@ struct PoincareCrossing {
   double x, y, z, vx, vy, vz;
   int crossing_index;  // 何回目の交差か
 };
-
-// ---------------------------------------------------------------------------
-// コマンドライン引数をパースする
-// ---------------------------------------------------------------------------
-void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait,
-                          std::string& output_tag) {
-  is_continuous = false;
-  skip_wait = false;
-  output_tag = "";
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--continuous" || arg == "-c") {
-      is_continuous = true;
-    } else if (arg == "--no-wait" || arg == "-n") {
-      skip_wait = true;
-    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
-      output_tag = argv[++i];
-    } else if (arg == "--help" || arg == "-h") {
-      std::cout
-          << "Usage: " << argv[0] << " [options]\n"
-          << "Options:\n"
-          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
-          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
-          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
-          << "  -h, --help        このヘルプを表示\n"
-          << std::endl;
-      std::exit(0);
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
 // 変数名からインデックスを取得
@@ -230,13 +196,13 @@ bool LoadConfig(const std::string& filepath, PoincareMapConfig* config) {
     // 積分器設定
     std::string integrator_str = parser.GetString("integrator.type", "symplectic6");
     if (integrator_str == "symplectic4") {
-      config->integrator_type = IntegratorType::kSymplectic4;
+      config->integrator_type = IntegratorType::kSymplectic4th;
     } else if (integrator_str == "symplectic6") {
-      config->integrator_type = IntegratorType::kSymplectic6;
+      config->integrator_type = IntegratorType::kSymplectic6th;
     } else if (integrator_str == "rk4") {
-      config->integrator_type = IntegratorType::kRK4;
+      config->integrator_type = IntegratorType::kRungeKutta4th;
     } else if (integrator_str == "rk45" || integrator_str == "dopri5") {
-      config->integrator_type = IntegratorType::kRK45;
+      config->integrator_type = IntegratorType::kDormandPrince;
     }
 
     // RK45適応ステップ用パラメータ
@@ -292,21 +258,21 @@ void PrintConfig(const PoincareMapConfig& config) {
 
   std::string integrator_str;
   switch (config.integrator_type) {
-    case IntegratorType::kSymplectic4:
+    case IntegratorType::kSymplectic4th:
       integrator_str = "symplectic4";
       break;
-    case IntegratorType::kSymplectic6:
+    case IntegratorType::kSymplectic6th:
       integrator_str = "symplectic6";
       break;
-    case IntegratorType::kRK4:
+    case IntegratorType::kRungeKutta4th:
       integrator_str = "rk4";
       break;
-    case IntegratorType::kRK45:
+    case IntegratorType::kDormandPrince:
       integrator_str = "rk45 (Dormand-Prince)";
       break;
   }
   std::cout << "<>        integrator: " << integrator_str << std::endl;
-  if (config.integrator_type == IntegratorType::kRK45) {
+  if (config.integrator_type == IntegratorType::kDormandPrince) {
     std::cout << "<>          rk45_atol: " << config.rk45_atol << std::endl;
     std::cout << "<>          rk45_rtol: " << config.rk45_rtol << std::endl;
     std::cout << "<>          rk45_initial_step: " << config.rk45_initial_step << std::endl;
@@ -454,10 +420,10 @@ int main(int argc, char* argv[]) {
             << std::endl;
 
   // コマンドライン引数のパース
-  bool is_continuous = false;
-  bool skip_wait = false;
-  std::string cli_output_tag = "";
-  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait, cli_output_tag);
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool is_continuous = args.is_continuous;
+  bool skip_wait = args.skip_wait;
+  std::string cli_output_tag = args.output_tag;
 
   // 天文パラメータの読み込み
   const std::string kConfigFilePath = CONFIG_DIR;
@@ -478,34 +444,20 @@ int main(int argc, char* argv[]) {
     std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
 
-  // コンフィグファイルのリストを取得
+  // コンフィグファイルのリストを取得（_sample付きは除外）
   const std::string kCalcConfigPath = kConfigFilePath + "/poincare_map/";
   std::string config_prefix = "poincare_map_config";
-  std::vector<std::string> config_file_list;
 
-  const std::regex pattern(is_continuous ? "^" + config_prefix + "_\\d+\\.toml$"
-                                         : "^" + config_prefix + "\\.toml$");
-
-  try {
-    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_file_list.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (const fs::filesystem_error& e) {
-    std::cerr << "Error accessing config directory: " << e.what() << std::endl;
-    return -1;
-  }
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kCalcConfigPath, config_prefix, discovery_opts);
 
   if (config_file_list.empty()) {
     std::cerr << "<> No config files found in " << kCalcConfigPath << std::endl;
     return -1;
   }
-
-  std::sort(config_file_list.begin(), config_file_list.end());
 
   std::cout << "<> Loaded config file list:" << std::endl;
   for (const auto& filepath : config_file_list) {
@@ -556,15 +508,12 @@ int main(int argc, char* argv[]) {
   EquationOfMotion<double> eom(astro_params);
 
   // セッション出力ディレクトリを作成
-  std::string output_base_path = OUTPUT_DIR;
-  std::string session_dir_name = getcurrent_date();
-  if (!cli_output_tag.empty()) {
-    session_dir_name += "_" + cli_output_tag;
+  OutputDirResult output_result =
+      CreateSessionOutputDir(OUTPUT_DIR, "poincare_map", cli_output_tag);
+  if (!output_result.success) {
+    return -1;
   }
-  std::string session_output_dir = output_base_path + "/poincare_map/" + session_dir_name;
-  if (!fs::exists(session_output_dir)) {
-    fs::create_directories(session_output_dir);
-  }
+  std::string session_output_dir = output_result.session_dir;
   std::cout << "<>" << std::endl;
   std::cout << "<>    Session output directory: " << session_output_dir << std::endl;
   std::cout << "<>" << std::endl;
@@ -691,7 +640,7 @@ int main(int argc, char* argv[]) {
         int crossing_count = 0;
 
         // RK45の場合は適応的ステップ、それ以外は固定ステップ
-        if (config.integrator_type == IntegratorType::kRK45) {
+        if (config.integrator_type == IntegratorType::kDormandPrince) {
           // Dormand-Prince RK45 (適応的ステップサイズ制御)
           namespace odeint = boost::numeric::odeint;
           using Stepper = odeint::runge_kutta_dopri5<State<double>, double, State<double>, double,
@@ -765,13 +714,13 @@ int main(int argc, char* argv[]) {
             State<double> curr_state;
 
             switch (config.integrator_type) {
-              case IntegratorType::kSymplectic4:
+              case IntegratorType::kSymplectic4th:
                 curr_state = SymplecticStep4thOrder(kMU, prev_state, config.timestep);
                 break;
-              case IntegratorType::kSymplectic6:
+              case IntegratorType::kSymplectic6th:
                 curr_state = SymplecticStep6thOrder(kMU, prev_state, config.timestep);
                 break;
-              case IntegratorType::kRK4:
+              case IntegratorType::kRungeKutta4th:
                 curr_state = RungeKutta4Step(eom, prev_state, time, config.timestep);
                 break;
               default:

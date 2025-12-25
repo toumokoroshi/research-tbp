@@ -21,12 +21,14 @@
 
 #include "periodic_orbit.hpp"
 #include "rtbp.hpp"
+#include "utils.hpp"
 
 // Use toml++
 #include <toml++/toml.hpp>
 
 using namespace my_type;
 using namespace periodic_orbit;
+using namespace utils;
 
 // ---------------------------------------------------------------------------
 // Config Structure
@@ -86,7 +88,7 @@ struct PeriodicOrbitConfig {
 
 bool LoadConfig(const std::string& filepath, PeriodicOrbitConfig* config);
 void PrintConfig(const PeriodicOrbitConfig& config);
-std::string CreateOutputDirectory(const PeriodicOrbitConfig& config);
+// CreateOutputDirectory は utils::CreateSessionOutputDir() に統合
 std::vector<State<double>> LoadInitialGuesses(const PeriodicOrbitConfig& config);
 void SavePeriodicOrbit(const PeriodicOrbit<double>& orbit, const std::string& output_dir,
                        const PeriodicOrbitConfig& config);
@@ -274,33 +276,7 @@ void PrintConfig(const PeriodicOrbitConfig& config) {
   std::cout << "========================================\n\n";
 }
 
-// ---------------------------------------------------------------------------
-// Create Output Directory
-// ---------------------------------------------------------------------------
-
-std::string CreateOutputDirectory(const PeriodicOrbitConfig& config) {
-  namespace fs = std::filesystem;
-
-  // Generate timestamp
-  auto now = std::chrono::system_clock::now();
-  auto time_t = std::chrono::system_clock::to_time_t(now);
-  std::tm tm;
-  localtime_s(&tm, &time_t);
-
-  std::ostringstream oss;
-  oss << std::put_time(&tm, "%y_%m%d_%H%M");
-  std::string timestamp = oss.str();
-
-  // Output directory path
-  fs::path output_path = fs::path(config.output_dir) / timestamp / config.tag;
-
-  // Create directory
-  fs::create_directories(output_path);
-
-  std::cout << "Output directory created: " << output_path.string() << "\n\n";
-
-  return output_path.string();
-}
+// CreateOutputDirectory は utils::CreateSessionOutputDir() に統合
 
 // ---------------------------------------------------------------------------
 // Load Initial Guesses
@@ -434,13 +410,31 @@ int main(int argc, char* argv[]) {
   std::cout << "  CR3BP Periodic Orbit Detection\n";
   std::cout << "========================================\n\n";
 
-  // Check command line arguments
-  if (argc < 2) {
-    std::cerr << "Usage: " << argv[0] << " <config_file.toml>\n";
+  // コマンドライン引数のパース
+  CommonArgs args = ParseCommonArgs(argc, argv, "PeriodicOrbitAnalysis");
+  std::string output_tag = args.output_tag;
+  bool is_continuous = args.is_continuous;
+
+  // configファイル検索
+  const std::string kConfigPath = std::string(CONFIG_DIR) + "/periodic_orbit";
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = is_continuous;
+  std::vector<std::string> config_files =
+      DiscoverConfigFilesToml(kConfigPath, "periodic_orbit_config", discovery_opts);
+
+  if (config_files.empty()) {
+    std::cerr << "No config files found in " << kConfigPath << std::endl;
     return 1;
   }
 
-  std::string config_file = argv[1];
+  std::cout << "Found " << config_files.size() << " config file(s):\n";
+  for (const auto& f : config_files) {
+    std::cout << "  - " << f << "\n";
+  }
+
+  // 最初のconfigファイルを使用
+  std::string config_file = config_files[0];
 
   // Load configuration file
   PeriodicOrbitConfig config;
@@ -451,8 +445,13 @@ int main(int argc, char* argv[]) {
 
   PrintConfig(config);
 
-  // Create output directory
-  std::string output_dir = CreateOutputDirectory(config);
+  // Create output directory using shared utility
+  OutputDirResult output_result = CreateSessionOutputDir(
+      config.output_dir, "periodic_orbit", output_tag.empty() ? config.tag : output_tag);
+  if (!output_result.success) {
+    return -1;
+  }
+  std::string output_dir = output_result.session_dir;
 
   // Load initial guesses
   auto guesses = LoadInitialGuesses(config);

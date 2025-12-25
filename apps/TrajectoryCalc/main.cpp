@@ -29,25 +29,9 @@
 
 namespace fs = std::filesystem;
 
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  NONE,  ///< カオス指標を計算しない
-  SALI,  ///< SALI (K=2)
-  GALI,  ///< GALI (K可変)
-  LLE    ///< 最大リヤプノフ指数
-};
-
-/**
- * @brief 数値積分法の種類
- */
-enum class IntegratorType {
-  kSymplectic4th,  ///< 4次シンプレクティック法
-  kSymplectic6th,  ///< 6次シンプレクティック法 (デフォルト)
-  kDormandPrince,  ///< ドルマンプリンス法 (DOPRI5)
-  kRungeKutta4th   ///< 4次ルンゲクッタ法
-};
+// IntegratorType と ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
+using utils::ChaosIndexType;
+using utils::IntegratorType;
 
 /**
  * @brief 設定ファイルから初期条件を読み込む
@@ -207,34 +191,16 @@ void GenerateGnuplot(const std::string& csv_path, const std::string& output_dir,
   }
 }
 
-/**
- * @brief trajectory_calcディレクトリ内のconfigファイル一覧を取得する
- */
-std::vector<std::string> GetConfigFileList(const std::string& config_dir) {
-  std::vector<std::string> config_files;
-  const std::regex pattern("^trajectory_calc_config.*\\.toml$");
+// GetConfigFileList は utils.hpp の DiscoverConfigFilesToml に統合済み
 
-  try {
-    for (const auto& entry : fs::directory_iterator(config_dir)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_files.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (const fs::filesystem_error& e) {
-    std::cerr << "<> !err! Error accessing directory: " << e.what() << std::endl;
-  }
-
-  // ファイル名でソート
-  std::sort(config_files.begin(), config_files.end());
-  return config_files;
-}
-
-int main() {
+int main(int argc, char* argv[]) {
   using namespace crtbp;
   using namespace utils;
+
+  // コマンドライン引数のパース
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
 
   // ヘッダー出力 (SALI3dV2スタイル)
   std::cout << "<>----------------------------------------------------------------" << std::endl;
@@ -259,11 +225,16 @@ int main() {
   std::cout << "<>    mu parameter: " << std::setprecision(15) << kMU << std::endl;
   std::cout << "<>" << std::endl;
 
-  // configファイル一覧を取得
-  std::vector<std::string> config_files = GetConfigFileList(config_dir);
+  // configファイル一覧を取得（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = args.is_continuous;  // コマンドライン引数で指定
+  std::vector<std::string> config_files =
+      DiscoverConfigFilesToml(config_dir, "trajectory_calc_config", discovery_opts);
   if (config_files.empty()) {
     std::cerr << "<> !err! No config files found in: " << config_dir << std::endl;
-    std::cerr << "<>        Expected pattern: trajectory_calc_config*.txt" << std::endl;
+    std::cerr << "<>        Expected pattern: trajectory_calc_config"
+              << (args.is_continuous ? "_*.toml" : ".toml") << std::endl;
     return -1;
   }
 
@@ -273,19 +244,13 @@ int main() {
   }
   std::cout << "<>" << std::endl;
 
-  // 出力ディレクトリの作成
-  if (!fs::exists(output_dir)) {
-    fs::create_directories(output_dir);
-    std::cout << "<>    Created output directory: " << output_dir << std::endl;
+  // 出力ディレクトリの作成（セッションディレクトリ）
+  OutputDirResult output_result =
+      CreateSessionOutputDir(output_base_path, "trajectory_calc", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
-
-  // シミュレーション実行ごとのサブフォルダを作成（日時付き）
-  std::string run_timestamp = getcurrent_date();
-  std::string run_output_dir = output_dir + "/" + run_timestamp + "_run";
-  if (!fs::exists(run_output_dir)) {
-    fs::create_directories(run_output_dir);
-    std::cout << "<>    Created run output directory: " << run_output_dir << std::endl;
-  }
+  std::string run_output_dir = output_result.session_dir;
 
   // 全体の実行時間計測
   auto start_total = std::chrono::system_clock::now();
