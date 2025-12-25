@@ -35,7 +35,8 @@ namespace fs = std::filesystem;
 enum class ChaosIndexType {
   NONE,  ///< カオス指標を計算しない
   SALI,  ///< SALI (K=2)
-  GALI   ///< GALI (K可変)
+  GALI,  ///< GALI (K可変)
+  LLE    ///< 最大リヤプノフ指数
 };
 
 /**
@@ -59,6 +60,23 @@ struct TrajectoryConfig {
   int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
   IntegratorType integrator_type = IntegratorType::kSymplectic6th;  ///< 数値積分法
   bool enable_freq_analysis = false;                                ///< 周波数解析を有効にするか
+
+  // LLE (最大リヤプノフ指数) 用パラメータ
+  int lle_renorm_interval = 100;  ///< 再正規化の間隔（ステップ数）
+  int lle_skip_steps = 1000;      ///< 初期過渡状態をスキップ（ステップ数）
+
+  // DOPRI (Dormand-Prince) 用パラメータ
+  double dopri_abs_tol = 1.0e-10;     ///< 絶対誤差許容値
+  double dopri_rel_tol = 1.0e-10;     ///< 相対誤差許容値
+  double dopri_initial_step = 0.001;  ///< 初期ステップサイズ
+  double dopri_max_step = 0.1;        ///< 最大ステップサイズ
+
+  // 出力制御フラグ
+  bool output_trajectory = true;        ///< 軌道データのCSV出力
+  bool output_chaos_index = true;       ///< カオス指標の時系列出力
+  bool output_orbital_elements = true;  ///< 軌道要素の時系列出力
+  bool output_freq_analysis = true;     ///< 周波数解析結果の出力
+  bool output_gnuplot = true;           ///< gnuplotスクリプトと画像の生成
 };
 
 // TrimString -> utils::trim() に置換
@@ -67,100 +85,73 @@ struct TrajectoryConfig {
  * @brief 設定ファイルを解析してTrajectoryConfigを返す
  */
 bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config) {
-  std::ifstream ifs(filepath);
-  if (!ifs) {
-    std::cerr << "<> !err! Cannot open config file: " << filepath << std::endl;
+  try {
+    utils::TomlConfigParser parser(filepath);
+
+    // シミュレーション設定
+    config->calc_timestep = parser.GetDouble("simulation.calc_timestep", 0.0001);
+    config->time_threshold = parser.GetDouble("simulation.time_threshold", 10.0);
+
+    // カオス指標設定
+    std::string chaos_type = parser.GetString("chaos.index_type", "NONE");
+    if (chaos_type == "NONE" || chaos_type == "none") {
+      config->chaos_index_type = ChaosIndexType::NONE;
+    } else if (chaos_type == "SALI" || chaos_type == "sali") {
+      config->chaos_index_type = ChaosIndexType::SALI;
+      config->gali_k = 2;
+    } else if (chaos_type == "GALI2" || chaos_type == "gali2") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 2;
+    } else if (chaos_type == "GALI4" || chaos_type == "gali4") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 4;
+    } else if (chaos_type == "GALI6" || chaos_type == "gali6") {
+      config->chaos_index_type = ChaosIndexType::GALI;
+      config->gali_k = 6;
+    } else if (chaos_type == "LLE" || chaos_type == "lle") {
+      config->chaos_index_type = ChaosIndexType::LLE;
+    }
+
+    // LLE用パラメータ
+    config->lle_renorm_interval = parser.GetInt("chaos.lle_renorm_interval", 100);
+    config->lle_skip_steps = parser.GetInt("chaos.lle_skip_steps", 1000);
+
+    // 積分器設定
+    std::string integrator_type = parser.GetString("integrator.type", "SYMPLECTIC6");
+    if (integrator_type == "SYMPLECTIC4" || integrator_type == "symplectic4") {
+      config->integrator_type = IntegratorType::kSymplectic4th;
+    } else if (integrator_type == "SYMPLECTIC6" || integrator_type == "symplectic6") {
+      config->integrator_type = IntegratorType::kSymplectic6th;
+    } else if (integrator_type == "DOPRI" || integrator_type == "dopri") {
+      config->integrator_type = IntegratorType::kDormandPrince;
+    } else if (integrator_type == "RK4" || integrator_type == "rk4") {
+      config->integrator_type = IntegratorType::kRungeKutta4th;
+    }
+
+    // DOPRI用パラメータ
+    config->dopri_abs_tol = parser.GetDouble("integrator.dopri_abs_tol", 1.0e-10);
+    config->dopri_rel_tol = parser.GetDouble("integrator.dopri_rel_tol", 1.0e-10);
+    config->dopri_initial_step = parser.GetDouble("integrator.dopri_initial_step", 0.001);
+    config->dopri_max_step = parser.GetDouble("integrator.dopri_max_step", 0.1);
+
+    // 周波数解析設定
+    config->enable_freq_analysis = parser.GetBool("analysis.enable_freq_analysis", false);
+
+    // 出力設定
+    config->output_trajectory = parser.GetBool("output.output_trajectory", true);
+    config->output_chaos_index = parser.GetBool("output.output_chaos_index", true);
+    config->output_orbital_elements = parser.GetBool("output.output_orbital_elements", true);
+    config->output_freq_analysis = parser.GetBool("output.output_freq_analysis", true);
+    config->output_gnuplot = parser.GetBool("output.output_gnuplot", true);
+
+    // 初期座標の読み込み
+    config->initial_coords = parser.GetCoordsArray("coords");
+
+    return true;
+  } catch (const std::exception& e) {
+    std::cerr << "<> !err! Error loading config: " << e.what() << std::endl;
     return false;
   }
-
-  // デフォルト値をリセット
-  config->initial_coords.clear();
-
-  std::string line;
-  while (std::getline(ifs, line)) {
-    // 行の前後の空白を除去（Windows改行コード対策）
-    line = utils::trim(line);
-    if (line.empty()) {
-      continue;
-    }
-
-    // CALC TIMESTEP
-    if (line.find("CALC TIMESTEP") != std::string::npos) {
-      config->calc_timestep = std::stod(utils::trim(line.substr(line.find("=") + 1)));
-    }
-    // TIME THRESHOLD
-    else if (line.find("TIME THRESHOLD") != std::string::npos) {
-      config->time_threshold = std::stod(utils::trim(line.substr(line.find("=") + 1)));
-    }
-    // COORD= (カンマ区切り形式に対応)
-    else if (line.find("COORD=") != std::string::npos) {
-      std::string coord_str = utils::trim(line.substr(line.find("=") + 1));
-      std::stringstream ss(coord_str);
-      std::string token;
-      std::vector<double> values;
-      while (std::getline(ss, token, ',')) {
-        std::string trimmed = utils::trim(token);
-        if (!trimmed.empty()) {
-          values.push_back(std::stod(trimmed));
-        }
-      }
-      if (values.size() >= 6) {
-        config->initial_coords.push_back(my_type::State<double>{values[0], values[1], values[2],
-                                                                values[3], values[4], values[5]});
-      }
-    }
-    // CHAOS_INDEX (NONE, SALI, GALI2, GALI4, GALI6)
-    else if (line.find("CHAOS_INDEX") != std::string::npos) {
-      std::string value = utils::trim(line.substr(line.find("=") + 1));
-      if (value == "NONE" || value == "none" || value == "0") {
-        config->chaos_index_type = ChaosIndexType::NONE;
-      } else if (value == "SALI" || value == "sali") {
-        config->chaos_index_type = ChaosIndexType::SALI;
-        config->gali_k = 2;
-      } else if (value == "GALI2" || value == "gali2") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 2;
-      } else if (value == "GALI4" || value == "gali4") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 4;
-      } else if (value == "GALI6" || value == "gali6") {
-        config->chaos_index_type = ChaosIndexType::GALI;
-        config->gali_k = 6;
-      }
-    }
-    // OUTPUT_SALI (後方互換)
-    else if (line.find("OUTPUT_SALI") != std::string::npos) {
-      std::string value = utils::trim(line.substr(line.find("=") + 1));
-      if (value == "1" || value == "true" || value == "TRUE") {
-        config->chaos_index_type = ChaosIndexType::SALI;
-        config->gali_k = 2;
-      }
-    }
-    // INTEGRATOR (SYMPLECTIC4, SYMPLECTIC6, DOPRI, RK4)
-    else if (line.find("INTEGRATOR") != std::string::npos) {
-      std::string value = utils::trim(line.substr(line.find("=") + 1));
-      if (value == "SYMPLECTIC4" || value == "symplectic4" || value == "SYMP4") {
-        config->integrator_type = IntegratorType::kSymplectic4th;
-      } else if (value == "SYMPLECTIC6" || value == "symplectic6" || value == "SYMP6") {
-        config->integrator_type = IntegratorType::kSymplectic6th;
-      } else if (value == "DOPRI" || value == "dopri" || value == "DORMANDPRINCE" ||
-                 value == "dormandprince") {
-        config->integrator_type = IntegratorType::kDormandPrince;
-      } else if (value == "RK4" || value == "rk4" || value == "RUNGEKUTTA4") {
-        config->integrator_type = IntegratorType::kRungeKutta4th;
-      }
-    }
-    // FREQ_ANALYSIS (周波数解析)
-    else if (line.find("FREQ_ANALYSIS") != std::string::npos) {
-      std::string value = utils::trim(line.substr(line.find("=") + 1));
-      if (value == "1" || value == "true" || value == "TRUE" || value == "on" || value == "ON") {
-        config->enable_freq_analysis = true;
-      } else {
-        config->enable_freq_analysis = false;
-      }
-    }
-  }
-  return true;
 }
 
 /**
@@ -221,7 +212,7 @@ void GenerateGnuplot(const std::string& csv_path, const std::string& output_dir,
  */
 std::vector<std::string> GetConfigFileList(const std::string& config_dir) {
   std::vector<std::string> config_files;
-  const std::regex pattern("^trajectory_calc_config.*\\.txt$");
+  const std::regex pattern("^trajectory_calc_config.*\\.toml$");
 
   try {
     for (const auto& entry : fs::directory_iterator(config_dir)) {
@@ -335,6 +326,9 @@ int main() {
       case ChaosIndexType::GALI:
         chaos_index_str = "GALI" + std::to_string(config.gali_k);
         break;
+      case ChaosIndexType::LLE:
+        chaos_index_str = "LLE";
+        break;
     }
     std::cout << "<>        CHAOS_INDEX: " << chaos_index_str << std::endl;
 
@@ -354,9 +348,31 @@ int main() {
         integrator_str = "Runge-Kutta 4th Order (RK4)";
         break;
     }
-    std::cout << "<>        INTEGRATOR: " << integrator_str << std::endl;
+    std::cout << "<> INTEGRATOR: " << integrator_str << std::endl;
+    // DOPRI使用時は追加パラメータを表示
+    if (config.integrator_type == IntegratorType::kDormandPrince) {
+      std::cout << "<>        DOPRI_ABS_TOL: " << std::scientific << config.dopri_abs_tol
+                << std::endl;
+      std::cout << "<>        DOPRI_REL_TOL: " << std::scientific << config.dopri_rel_tol
+                << std::endl;
+      std::cout << "<>        DOPRI_INITIAL_STEP: " << std::fixed << config.dopri_initial_step
+                << std::endl;
+      std::cout << "<>        DOPRI_MAX_STEP: " << std::fixed << config.dopri_max_step << std::endl;
+    }
     std::cout << "<>        FREQ_ANALYSIS: "
               << (config.enable_freq_analysis ? "ENABLED" : "DISABLED") << std::endl;
+
+    // 出力フラグ表示
+    std::cout << "<>        OUTPUT_TRAJECTORY: " << (config.output_trajectory ? "ON" : "OFF")
+              << std::endl;
+    std::cout << "<>        OUTPUT_CHAOS_INDEX: " << (config.output_chaos_index ? "ON" : "OFF")
+              << std::endl;
+    std::cout << "<>        OUTPUT_ORBITAL_ELEMENTS: "
+              << (config.output_orbital_elements ? "ON" : "OFF") << std::endl;
+    std::cout << "<>        OUTPUT_FREQ_ANALYSIS: " << (config.output_freq_analysis ? "ON" : "OFF")
+              << std::endl;
+    std::cout << "<>        OUTPUT_GNUPLOT: " << (config.output_gnuplot ? "ON" : "OFF")
+              << std::endl;
 
     // 計算のステップ数
     int num_steps = static_cast<int>(config.time_threshold / config.calc_timestep);
@@ -490,7 +506,16 @@ int main() {
         gali6_state.w[3] = crtbp::CanonicalState<double>{0.0, 0.0, 0.0, 1.0, 0.0, 0.0};
         gali6_state.w[4] = crtbp::CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 1.0, 0.0};
         gali6_state.w[5] = crtbp::CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 0.0, 1.0};
+      } else if (config.chaos_index_type == ChaosIndexType::LLE) {
+        // LLE用に初期化（SALI状態を流用、w1のみ使用）
+        sali_state.state = crtbp::ConvertToCanonical(state);
+        sali_state.w1 = crtbp::CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        sali_state.w2 = crtbp::CanonicalState<double>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};  // 未使用
       }
+
+      // LLE計算用の変数
+      double lle_sum = 0.0;      // log(増大率)の累積和
+      int lle_renorm_count = 0;  // 再正規化回数
 
       for (int step = 0; step < num_steps; ++step) {
         double chaos_value = 0.0;
@@ -537,6 +562,66 @@ int main() {
             }
             break;
 
+          case ChaosIndexType::LLE:
+            // LLE計算（全積分器対応）
+            switch (config.integrator_type) {
+              case IntegratorType::kSymplectic4th:
+                crtbp::SymplecticStep4thOrderSALI(kMU, &sali_state, config.calc_timestep);
+                break;
+              case IntegratorType::kSymplectic6th:
+                crtbp::SymplecticStep6thOrderSALI(kMU, &sali_state, config.calc_timestep);
+                break;
+              case IntegratorType::kDormandPrince: {
+                // DOPRI5での偏差ベクトル伝搬（固定ステップ）
+                // 注意:
+                // SaliStateは可変ステップ制御に必要なnorm_inf/abs操作をサポートしないため固定ステップ
+                using namespace boost::numeric::odeint;
+                crtbp::SaliOrbitSystem<double> sali_system(kMU);
+                // vector_space_algebraを明示的に指定（SaliStateはRangeではない）
+                runge_kutta_dopri5<crtbp::SaliState<double>, double, crtbp::SaliState<double>,
+                                   double, vector_space_algebra>
+                    stepper;
+                stepper.do_step(sali_system, sali_state, 0.0, config.calc_timestep);
+              } break;
+              case IntegratorType::kRungeKutta4th: {
+                // RK4での偏差ベクトル伝搬
+                using namespace boost::numeric::odeint;
+                crtbp::SaliOrbitSystem<double> sali_system(kMU);
+                // vector_space_algebraを明示的に指定（SaliStateはRangeではない）
+                runge_kutta4<crtbp::SaliState<double>, double, crtbp::SaliState<double>, double,
+                             vector_space_algebra>
+                    stepper;
+                stepper.do_step(sali_system, sali_state, 0.0, config.calc_timestep);
+              } break;
+            }
+
+            // 定期的に再正規化し、増大率を記録
+            if ((step + 1) % config.lle_renorm_interval == 0 && step >= config.lle_skip_steps) {
+              double norm_before = sali_state.w1.Norm();
+              if (norm_before > 1e-12) {  // ゼロ除算回避
+                lle_sum += std::log(norm_before);
+                lle_renorm_count++;
+              }
+              sali_state.w1.Normalize();
+            }
+
+            // 主軌道の状態を更新
+            state.x = sali_state.state.qx;
+            state.y = sali_state.state.qy;
+            state.z = sali_state.state.qz;
+            state.vx = sali_state.state.px + sali_state.state.qy;
+            state.vy = sali_state.state.py - sali_state.state.qx;
+            state.vz = sali_state.state.pz;
+
+            // 現在のLLE推定値を計算（時系列出力用）
+            if (lle_renorm_count > 0) {
+              double elapsed_time = (step + 1) * config.calc_timestep;
+              chaos_value = lle_sum / elapsed_time;
+            } else {
+              chaos_value = 0.0;
+            }
+            break;
+
           case ChaosIndexType::NONE:
           default:
             // 積分器の選択
@@ -548,7 +633,7 @@ int main() {
                 state = crtbp::SymplecticStep6thOrder(kMU, state, config.calc_timestep);
                 break;
               case IntegratorType::kDormandPrince: {
-                // Boost odeint を使用したDormand-Prince法
+                // Boost odeint を使用したDormand-Prince法（可変ステップ）
                 using namespace boost::numeric::odeint;
                 using StateVec = std::array<double, 6>;
                 StateVec y = {state.x, state.y, state.z, state.vx, state.vy, state.vz};
@@ -565,8 +650,25 @@ int main() {
                   dydt[4] = -2 * y[3] + y[1] - (1 - mu) * y[1] / r1_3 - mu * y[1] / r2_3;
                   dydt[5] = -(1 - mu) * y[2] / r1_3 - mu * y[2] / r2_3;
                 };
-                runge_kutta_dopri5<StateVec> stepper;
-                stepper.do_step(crtbp_eom, y, 0.0, config.calc_timestep);
+                // 誤差制御付きコントローラを構築
+                auto controlled_stepper =
+                    make_controlled(config.dopri_abs_tol, config.dopri_rel_tol,
+                                    config.dopri_max_step, runge_kutta_dopri5<StateVec>());
+                // 1ステップ分(calc_timestepまで)を適応的に積分
+                double t_local = 0.0;
+                double dt = config.dopri_initial_step;
+                while (t_local < config.calc_timestep) {
+                  double remaining = config.calc_timestep - t_local;
+                  if (dt > remaining) {
+                    dt = remaining;
+                  }
+                  controlled_step_result result =
+                      controlled_stepper.try_step(crtbp_eom, y, t_local, dt);
+                  if (result == success) {
+                    // ステップ成功: t_localは更新済み
+                  }
+                  // failed: dtが自動調整され、再試行される
+                }
                 state = {y[0], y[1], y[2], y[3], y[4], y[5]};
               } break;
               case IntegratorType::kRungeKutta4th: {
@@ -637,7 +739,8 @@ int main() {
       std::cout << "\r<>        Progress: 100.0%" << std::endl;
 
       // カオス指標時系列プロット生成
-      if (config.chaos_index_type != ChaosIndexType::NONE && !chaos_timeseries.empty()) {
+      if (config.output_chaos_index && config.chaos_index_type != ChaosIndexType::NONE &&
+          !chaos_timeseries.empty()) {
         std::string chaos_csv_path = config_output_dir + "/" + base_name + "_" + chaos_index_str +
                                      "_traj" + std::to_string(coord_idx + 1) + ".csv";
         std::ofstream chaos_ofs(chaos_csv_path);
@@ -653,48 +756,54 @@ int main() {
           std::cout << "<>        " << chaos_index_str << " CSV: " << chaos_csv_path << std::endl;
 
           // gnuplotでカオス指標時系列プロット
-          std::string chaos_gp_path = config_output_dir + "/" + base_name + "_" + chaos_index_str +
-                                      "_traj" + std::to_string(coord_idx + 1) + ".gp";
-          std::string chaos_eps_path = config_output_dir + "/" + base_name + "_" + chaos_index_str +
-                                       "_traj" + std::to_string(coord_idx + 1) + ".eps";
-          std::string chaos_png_path = config_output_dir + "/" + base_name + "_" + chaos_index_str +
-                                       "_traj" + std::to_string(coord_idx + 1) + ".png";
-          std::ofstream gp(chaos_gp_path);
-          if (gp) {
-            gp << "set datafile separator ','\n";
-            gp << "set datafile commentschars '#'\n";
-            gp << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
-            gp << "set output '" << chaos_eps_path << "'\n";
-            gp << "set xlabel 'Time (non-dim)'\n";
-            gp << "set ylabel '" << chaos_index_str << "'\n";
-            gp << "set title '" << chaos_index_str << " Time Series - Trajectory "
-               << (coord_idx + 1) << "'\n";
-            gp << "set grid\n";
-            gp << "set logscale xy\n";
-            gp << "set format x '10^{%L}'\n";
-            gp << "set format y '10^{%L}'\n";
-            gp << "plot '" << chaos_csv_path
-               << "' using ($1 > 0 ? $1 : 1/0):($2 > 0 ? $2 : 1e-16) with lines lw 2 lc rgb 'blue' "
-                  "title '"
-               << chaos_index_str << "'\n";
-            gp << "\n";
-            gp << "set terminal pngcairo enhanced font 'Helvetica,14' size 1200,600\n";
-            gp << "set output '" << chaos_png_path << "'\n";
-            gp << "replot\n";
-            gp.close();
+          if (config.output_gnuplot) {
+            std::string chaos_gp_path = config_output_dir + "/" + base_name + "_" +
+                                        chaos_index_str + "_traj" + std::to_string(coord_idx + 1) +
+                                        ".gp";
+            std::string chaos_eps_path = config_output_dir + "/" + base_name + "_" +
+                                         chaos_index_str + "_traj" + std::to_string(coord_idx + 1) +
+                                         ".eps";
+            std::string chaos_png_path = config_output_dir + "/" + base_name + "_" +
+                                         chaos_index_str + "_traj" + std::to_string(coord_idx + 1) +
+                                         ".png";
+            std::ofstream gp(chaos_gp_path);
+            if (gp) {
+              gp << "set datafile separator ','\n";
+              gp << "set datafile commentschars '#'\n";
+              gp << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
+              gp << "set output '" << chaos_eps_path << "'\n";
+              gp << "set xlabel 'Time (non-dim)'\n";
+              gp << "set ylabel '" << chaos_index_str << "'\n";
+              gp << "set title '" << chaos_index_str << " Time Series - Trajectory "
+                 << (coord_idx + 1) << "'\n";
+              gp << "set grid\n";
+              gp << "set logscale xy\n";
+              gp << "set format x '10^{%L}'\n";
+              gp << "set format y '10^{%L}'\n";
+              gp << "plot '" << chaos_csv_path
+                 << "' using ($1 > 0 ? $1 : 1/0):($2 > 0 ? $2 : 1e-16) with lines lw 2 lc rgb "
+                    "'blue' "
+                    "title '"
+                 << chaos_index_str << "'\n";
+              gp << "\n";
+              gp << "set terminal pngcairo enhanced font 'Helvetica,14' size 1200,600\n";
+              gp << "set output '" << chaos_png_path << "'\n";
+              gp << "replot\n";
+              gp.close();
 
-            std::string cmd = "gnuplot \"" + chaos_gp_path + "\"";
-            int ret = std::system(cmd.c_str());
-            if (ret == 0) {
-              std::cout << "<>        " << chaos_index_str << " plot: " << chaos_png_path
-                        << std::endl;
+              std::string cmd = "gnuplot \"" + chaos_gp_path + "\"";
+              int ret = std::system(cmd.c_str());
+              if (ret == 0) {
+                std::cout << "<>        " << chaos_index_str << " plot: " << chaos_png_path
+                          << std::endl;
+              }
             }
           }
         }
       }
 
       // 軌道要素時系列CSV出力
-      if (!orb_elem_timeseries.empty()) {
+      if (config.output_orbital_elements && !orb_elem_timeseries.empty()) {
         std::string orb_csv_path = config_output_dir + "/" + base_name + "_orb_elem_traj" +
                                    std::to_string(coord_idx + 1) + ".csv";
         std::ofstream orb_ofs(orb_csv_path);
@@ -715,57 +824,59 @@ int main() {
           std::cout << "<>        Orbital elements CSV: " << orb_csv_path << std::endl;
 
           // gnuplotで軌道要素時系列プロット (a, e, i)
-          std::string orb_gp_path = config_output_dir + "/" + base_name + "_orb_elem_traj" +
-                                    std::to_string(coord_idx + 1) + ".gp";
-          std::string orb_png_path = config_output_dir + "/" + base_name + "_orb_elem_traj" +
-                                     std::to_string(coord_idx + 1) + ".png";
-          std::ofstream gp_orb(orb_gp_path);
-          if (gp_orb) {
-            gp_orb << "set datafile separator ','\n";
-            gp_orb << "set datafile commentschars '#'\n";
-            gp_orb << "set terminal pngcairo enhanced font 'Helvetica,12' size 1200,900\n";
-            gp_orb << "set output '" << orb_png_path << "'\n";
-            gp_orb << "set multiplot layout 3,2 title 'Orbital Elements - Trajectory "
-                   << (coord_idx + 1) << "'\n";
-            gp_orb << "set xlabel 'Time (non-dim)'\n";
-            gp_orb << "set grid\n";
-            // Semi-major axis
-            gp_orb << "set ylabel 'a (semi-major axis)'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:2 with lines lw 1.5 lc rgb 'blue' "
-                      "notitle\n";
-            // Eccentricity
-            gp_orb << "set ylabel 'e (eccentricity)'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:3 with lines lw 1.5 lc rgb 'red' "
-                      "notitle\n";
-            // Inclination
-            gp_orb << "set ylabel 'i (inclination) [rad]'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:4 with lines lw 1.5 lc rgb 'green' "
-                      "notitle\n";
-            // RAAN
-            gp_orb << "set ylabel 'Omega (RAAN) [rad]'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:5 with lines lw 1.5 lc rgb 'purple' "
-                      "notitle\n";
-            // Argument of periapsis
-            gp_orb << "set ylabel 'omega (arg of peri) [rad]'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:6 with lines lw 1.5 lc rgb 'orange' "
-                      "notitle\n";
-            // True anomaly
-            gp_orb << "set ylabel 'nu (true anomaly) [rad]'\n";
-            gp_orb << "plot '" << orb_csv_path
-                   << "' using 1:7 with lines lw 1.5 lc rgb 'cyan' "
-                      "notitle\n";
-            gp_orb << "unset multiplot\n";
-            gp_orb.close();
+          if (config.output_gnuplot) {
+            std::string orb_gp_path = config_output_dir + "/" + base_name + "_orb_elem_traj" +
+                                      std::to_string(coord_idx + 1) + ".gp";
+            std::string orb_png_path = config_output_dir + "/" + base_name + "_orb_elem_traj" +
+                                       std::to_string(coord_idx + 1) + ".png";
+            std::ofstream gp_orb(orb_gp_path);
+            if (gp_orb) {
+              gp_orb << "set datafile separator ','\n";
+              gp_orb << "set datafile commentschars '#'\n";
+              gp_orb << "set terminal pngcairo enhanced font 'Helvetica,12' size 1200,900\n";
+              gp_orb << "set output '" << orb_png_path << "'\n";
+              gp_orb << "set multiplot layout 3,2 title 'Orbital Elements - Trajectory "
+                     << (coord_idx + 1) << "'\n";
+              gp_orb << "set xlabel 'Time (non-dim)'\n";
+              gp_orb << "set grid\n";
+              // Semi-major axis
+              gp_orb << "set ylabel 'a (semi-major axis)'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:2 with lines lw 1.5 lc rgb 'blue' "
+                        "notitle\n";
+              // Eccentricity
+              gp_orb << "set ylabel 'e (eccentricity)'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:3 with lines lw 1.5 lc rgb 'red' "
+                        "notitle\n";
+              // Inclination
+              gp_orb << "set ylabel 'i (inclination) [rad]'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:4 with lines lw 1.5 lc rgb 'green' "
+                        "notitle\n";
+              // RAAN
+              gp_orb << "set ylabel 'Omega (RAAN) [rad]'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:5 with lines lw 1.5 lc rgb 'purple' "
+                        "notitle\n";
+              // Argument of periapsis
+              gp_orb << "set ylabel 'omega (arg of peri) [rad]'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:6 with lines lw 1.5 lc rgb 'orange' "
+                        "notitle\n";
+              // True anomaly
+              gp_orb << "set ylabel 'nu (true anomaly) [rad]'\n";
+              gp_orb << "plot '" << orb_csv_path
+                     << "' using 1:7 with lines lw 1.5 lc rgb 'cyan' "
+                        "notitle\n";
+              gp_orb << "unset multiplot\n";
+              gp_orb.close();
 
-            std::string cmd = "gnuplot \"" + orb_gp_path + "\"";
-            int ret = std::system(cmd.c_str());
-            if (ret == 0) {
-              std::cout << "<>        Orbital elements plot: " << orb_png_path << std::endl;
+              std::string cmd = "gnuplot \"" + orb_gp_path + "\"";
+              int ret = std::system(cmd.c_str());
+              if (ret == 0) {
+                std::cout << "<>        Orbital elements plot: " << orb_png_path << std::endl;
+              }
             }
           }
         }
@@ -778,7 +889,7 @@ int main() {
       }
 
       // ========== 周波数解析 (Laskar's Frequency Map Analysis) ==========
-      if (config.enable_freq_analysis) {
+      if (config.enable_freq_analysis && config.output_freq_analysis) {
         if (freq_buffer.Size() >= 100) {  // 十分なデータがある場合のみ解析
           std::cout << "<>        Performing Frequency Analysis..." << std::endl;
 

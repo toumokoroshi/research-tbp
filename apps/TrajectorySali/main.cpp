@@ -66,6 +66,8 @@ struct TrajectorySaliConfig {
   bool output_sali_timeseries = false;                     ///< SALI時系列出力フラグ
   ChaosIndexType chaos_index_type = ChaosIndexType::SALI;  ///< カオス指標の種類
   int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
+  bool output_converted_trajectory = false;                ///< 座標変換後軌道の時刻歴出力フラグ
+  bool output_impulse_trajectory = false;  ///< インパルス付与後軌道の時刻歴出力フラグ
 };
 
 /**
@@ -120,6 +122,12 @@ bool LoadTrajectorySaliConfig(const std::string& filepath, TrajectorySaliConfig*
       config->chaos_index_type = ChaosIndexType::GALI;
       config->gali_k = 6;
     }
+
+    // 出力オプション
+    config->output_converted_trajectory =
+        toml_config.GetBool("output.output_converted_trajectory", false);
+    config->output_impulse_trajectory =
+        toml_config.GetBool("output.output_impulse_trajectory", false);
 
   } catch (const std::exception& e) {
     std::cerr << "<> !err! Cannot load config: " << e.what() << std::endl;
@@ -372,7 +380,8 @@ int main() {
   // パス設定
   const std::string kConfigBasePath = CONFIG_DIR;
   const std::string kOutputBasePath = OUTPUT_DIR;
-  const std::string kConfigFilePath = kConfigBasePath + "/trajectory_SALI/trajectorySALI.txt";
+  const std::string kConfigFilePath =
+      kConfigBasePath + "/trajectory_SALI/trajectory_sali_config_sample.toml";
   const std::string kAstroParamFile = kConfigBasePath + "/astro_param/astro_param.txt";
 
   // 天文定数読み込み
@@ -424,6 +433,10 @@ int main() {
       break;
   }
   std::cout << "<>    CHAOS_INDEX: " << chaos_index_str << std::endl;
+  std::cout << "<>    OUTPUT_CONVERTED_TRAJ: "
+            << (config.output_converted_trajectory ? "ON" : "OFF") << std::endl;
+  std::cout << "<>    OUTPUT_IMPULSE_TRAJ: " << (config.output_impulse_trajectory ? "ON" : "OFF")
+            << std::endl;
   std::cout << "<>" << std::endl;
   std::cout << "<>    Velocity deceleration steps: "
             << static_cast<int>(config.dv_max / config.dv_step) + 1 << std::endl;
@@ -521,6 +534,25 @@ int main() {
     std::string timeseries_dir = output_dir + "/sali_timeseries";
     fs::create_directories(timeseries_dir);
 
+    // インパルス付与後軌道データ用サブディレクトリ
+    std::string impulse_traj_dir = output_dir + "/impulse_trajectory";
+    if (config.output_impulse_trajectory) {
+      fs::create_directories(impulse_traj_dir);
+    }
+
+    // 座標変換後軌道データ用CSVファイル（全位相点の変換結果を並べたもの）
+    std::string converted_csv_path = output_dir + "/" + file_basename + "_converted_states.csv";
+    std::ofstream converted_ofs;
+    if (config.output_converted_trajectory) {
+      converted_ofs.open(converted_csv_path);
+      if (converted_ofs) {
+        converted_ofs << std::setprecision(15) << std::fixed;
+        converted_ofs << "# Converted States (J2000 -> Rotating Frame)\n";
+        converted_ofs << "# Source: " << orbit_file << "\n";
+        converted_ofs << "phase_idx,time_j2000,x,y,z,vx,vy,vz,jacobi\n";
+      }
+    }
+
     std::cout << "<>----------------------------------------------------------------" << std::endl;
     std::cout << "<>    Processing file " << (file_idx + 1) << " / " << orbit_files.size() << ": "
               << file_basename << std::endl;
@@ -568,7 +600,8 @@ int main() {
       const OrbitDataRow& row = orbit_data[phase_idx];
 
       // J2000→CR3BP回転座標変換
-      State<double> asteroid_rot = ConvertInertial2Rotating(row.asteroid, row.earth, astro_params);
+      State<double> asteroid_rot =
+          ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
 
       // 速度変化ループ
       for (int dv_idx = 0; dv_idx < dv_count; ++dv_idx) {
@@ -631,6 +664,18 @@ int main() {
         std::vector<std::pair<double, double>> chaos_timeseries;
         chaos_timeseries.reserve(num_steps);
 
+        // 軌道時刻歴データを記録するベクトル (time, x, y, z, vx, vy, vz, jacobi)
+        // インパルス付与後軌道用（時系列出力が必要な場合のみ）
+        std::vector<std::tuple<double, double, double, double, double, double, double, double>>
+            trajectory_timeseries;
+        if (config.output_impulse_trajectory && dv_idx > 0) {
+          trajectory_timeseries.reserve(num_steps + 1);
+          // 初期状態を記録
+          trajectory_timeseries.emplace_back(0.0, modified_state.x, modified_state.y,
+                                             modified_state.z, modified_state.vx, modified_state.vy,
+                                             modified_state.vz, jacobi);
+        }
+
         // 積分ループ
         for (int step = 0; step < num_steps; ++step) {
           CanonicalState<double>* current_state = nullptr;
@@ -675,6 +720,15 @@ int main() {
             if (r2 > config.escape_judge_hill) {
               escape_flag = 1;
             }
+
+            // 軌道時刻歴データを収集（インパルス付与後軌道用）
+            if (config.output_impulse_trajectory && dv_idx > 0) {
+              State<double> current_cartesian = ConvertToPhysical(*current_state);
+              double current_jacobi = calc_jacobi_integral(current_cartesian, kMU);
+              trajectory_timeseries.emplace_back(
+                  current_time, current_cartesian.x, current_cartesian.y, current_cartesian.z,
+                  current_cartesian.vx, current_cartesian.vy, current_cartesian.vz, current_jacobi);
+            }
           }
         }
 
@@ -705,6 +759,45 @@ int main() {
               GenerateSaliTimeSeriesPlot(ts_csv_path, timeseries_dir, file_basename, phase_idx,
                                          dv_mag);
             }
+          }
+        }
+
+        // 座標変換後軌道の状態量をCSVに出力（dv_mag=0の場合のみ、各位相点を1行）
+        if (config.output_converted_trajectory && dv_idx == 0 && converted_ofs) {
+#pragma omp critical(converted_csv)
+          {
+            double jacobi_rot = calc_jacobi_integral(asteroid_rot, kMU);
+            converted_ofs << phase_idx << "," << row.time_j2000 << "," << asteroid_rot.x << ","
+                          << asteroid_rot.y << "," << asteroid_rot.z << "," << asteroid_rot.vx
+                          << "," << asteroid_rot.vy << "," << asteroid_rot.vz << "," << jacobi_rot
+                          << "\n";
+          }
+        }
+
+        // インパルス付与後軌道の時刻歴CSVファイル出力（dv_mag > 0の場合のみ）
+        if (config.output_impulse_trajectory && dv_idx > 0) {
+          std::ostringstream traj_filename;
+          traj_filename << impulse_traj_dir << "/" << file_basename << "_impulse_traj_p"
+                        << phase_idx << "_dv" << std::fixed << std::setprecision(4) << dv_mag
+                        << ".csv";
+          std::string traj_csv_path = traj_filename.str();
+          std::ofstream traj_ofs(traj_csv_path);
+          if (traj_ofs) {
+            traj_ofs << std::setprecision(15) << std::fixed;
+            traj_ofs << "# Impulse Trajectory (After Delta-V Application)\n";
+            traj_ofs << "# phase_idx=" << phase_idx << ", dv_mag=" << dv_mag << "\n";
+            traj_ofs << "# Source: " << orbit_file << "\n";
+            traj_ofs << "# Initial state after impulse: x=" << modified_state.x
+                     << ", y=" << modified_state.y << ", z=" << modified_state.z << "\n";
+            traj_ofs << "# Delta-V: dvx=" << dv_x << ", dvy=" << dv_y << ", dvz=" << dv_z << "\n";
+            traj_ofs << "time_nd,x,y,z,vx,vy,vz,jacobi\n";
+            for (const auto& traj_point : trajectory_timeseries) {
+              traj_ofs << std::get<0>(traj_point) << "," << std::get<1>(traj_point) << ","
+                       << std::get<2>(traj_point) << "," << std::get<3>(traj_point) << ","
+                       << std::get<4>(traj_point) << "," << std::get<5>(traj_point) << ","
+                       << std::get<6>(traj_point) << "," << std::get<7>(traj_point) << "\n";
+            }
+            traj_ofs.close();
           }
         }
 

@@ -33,3 +33,9 @@ type = "SYMPLECTIC_6TH"
 index_type = "SALI"
 sali_lower_limit = 1e-10
 output_sali_timeseries = false
+
+[output]
+# output_converted_trajectory: 座標変換後の各位相点の状態量をCSV出力するか（バリデーション用）
+# output_impulse_trajectory: インパルス付与後軌道の時刻歴をCSV出力するか (dv>0の軌道のみ)
+output_converted_trajectory = true
+output_impulse_trajectory = false

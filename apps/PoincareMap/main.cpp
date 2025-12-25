@@ -408,6 +408,11 @@ void GenerateGnuplotScript(const std::string& output_dir, const std::string& dat
   std::string gp_path = output_dir + "/poincare_map.gp";
   std::ofstream gp(gp_path);
 
+  // CSVファイルの列順序: x,y,z,vx,vy,vz,time,crossing_index
+  // 変数名から列番号を取得 (1-indexed for gnuplot)
+  int var1_col = GetVarIndex(var1_name) + 1;  // 0-indexed -> 1-indexed
+  int var2_col = GetVarIndex(var2_name) + 1;  // 0-indexed -> 1-indexed
+
   double xrange_min = config.var1_min - std::sqrt(config.var1_min * config.var1_min) * 0.1;
   double xrange_max = config.var1_max + std::sqrt(config.var1_max * config.var1_max) * 0.1;
   double yrange_min = config.var2_min - std::sqrt(config.var2_min * config.var2_min) * 0.1;
@@ -428,7 +433,8 @@ void GenerateGnuplotScript(const std::string& output_dir, const std::string& dat
   gp << "set grid\n";
   gp << "unset key\n";
   gp << "\n";
-  gp << "plot '" << data_filename << "' using 1:2 with points pt 7 ps 0.3 lc rgb '#0066CC'\n";
+  gp << "plot '" << data_filename << "' using " << var1_col << ":" << var2_col
+     << " with points pt 7 ps 0.3 lc rgb '#0066CC'\n";
   gp << "\n";
   gp << "# EPS output\n";
   gp << "set terminal postscript eps enhanced color font 'Arial,12'\n";
@@ -836,22 +842,20 @@ int main(int argc, char* argv[]) {
 
     std::cout << "<>    Total crossings detected: " << all_crossings.size() << std::endl;
 
+    // x座標（位置）でソート
+    std::sort(all_crossings.begin(), all_crossings.end(),
+              [](const PoincareCrossing& a, const PoincareCrossing& b) { return a.x < b.x; });
+
     // ポアンカレマップデータを出力
     std::string poincare_data_path = output_dir + "/poincare_map.csv";
     std::ofstream poincare_file(poincare_data_path);
     poincare_file << std::fixed << std::setprecision(15);
     poincare_file << "# Poincare Map Data\n";
-    poincare_file << "# " << config.var1_name << "," << config.var2_name
-                  << ",time,crossing_index\n";
+    poincare_file << "# x,y,z,vx,vy,vz,time,crossing_index\n";
 
     for (const auto& crossing : all_crossings) {
-      double plot_x = GetStateValue(
-          State<double>{crossing.x, crossing.y, crossing.z, crossing.vx, crossing.vy, crossing.vz},
-          var1_index);
-      double plot_y = GetStateValue(
-          State<double>{crossing.x, crossing.y, crossing.z, crossing.vx, crossing.vy, crossing.vz},
-          var2_index);
-      poincare_file << plot_x << "," << plot_y << "," << crossing.time << ","
+      poincare_file << crossing.x << "," << crossing.y << "," << crossing.z << "," << crossing.vx
+                    << "," << crossing.vy << "," << crossing.vz << "," << crossing.time << ","
                     << crossing.crossing_index << "\n";
     }
     poincare_file.close();

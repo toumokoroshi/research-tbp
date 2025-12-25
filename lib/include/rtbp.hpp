@@ -2620,6 +2620,89 @@ void SymplecticStep6thOrderGALI(const ScalarType mu, GaliState<ScalarType, K>* s
   }
 }
 
+/**
+ * @brief Boost.Odeint用のSALI状態伝搬システム (CRTBP用)
+ * @details 主軌道と2つの偏差ベクトルを同時に伝搬
+ *          CR3BPの変分方程式を解く
+ *          dx/dt = f(x)
+ *          dw/dt = Df(x) * w (Df: ヤコビ行列)
+ */
+template <typename ScalarType>
+class SaliOrbitSystem {
+ private:
+  ScalarType mu_;  ///< 質量比
+
+ public:
+  explicit SaliOrbitSystem(ScalarType mu) : mu_(mu) {}
+
+  /**
+   * @brief SALI状態の時間微分を計算
+   * @param sali SALI状態 (主軌道 + 偏差ベクトル2本)
+   * @param dsali_dt SALI状態の時間微分 (出力)
+   * @param t 時刻 (使用しない)
+   */
+  void operator()(const SaliState<ScalarType>& sali, SaliState<ScalarType>& dsali_dt,
+                  const ScalarType /*t*/) const {
+    // 主軌道の位置
+    const ScalarType qx = sali.state.qx;
+    const ScalarType qy = sali.state.qy;
+    const ScalarType qz = sali.state.qz;
+
+    // 主天体m1, m2からの距離
+    const ScalarType r1_sq = (qx + mu_) * (qx + mu_) + qy * qy + qz * qz;
+    const ScalarType r2_sq = (qx - (1.0 - mu_)) * (qx - (1.0 - mu_)) + qy * qy + qz * qz;
+    const ScalarType r1 = std::sqrt(r1_sq);
+    const ScalarType r2 = std::sqrt(r2_sq);
+    const ScalarType r1_3 = r1 * r1 * r1;
+    const ScalarType r2_3 = r2 * r2 * r2;
+
+    // ポテンシャルのヘッセ行列 (2階微分) を計算
+    const ScalarType mu1 = 1.0 - mu_;
+    const ScalarType r1_5 = r1_3 * r1_sq;
+    const ScalarType r2_5 = r2_3 * r2_sq;
+
+    // H_ij = d²U/dq_i dq_j
+    const ScalarType hxx = 1.0 - mu1 / r1_3 - mu_ / r2_3 +
+                           3.0 * mu1 * (qx + mu_) * (qx + mu_) / r1_5 +
+                           3.0 * mu_ * (qx - (1.0 - mu_)) * (qx - (1.0 - mu_)) / r2_5;
+    const ScalarType hyy =
+        1.0 - mu1 / r1_3 - mu_ / r2_3 + 3.0 * mu1 * qy * qy / r1_5 + 3.0 * mu_ * qy * qy / r2_5;
+    const ScalarType hzz =
+        -mu1 / r1_3 - mu_ / r2_3 + 3.0 * mu1 * qz * qz / r1_5 + 3.0 * mu_ * qz * qz / r2_5;
+    const ScalarType hxy =
+        3.0 * mu1 * (qx + mu_) * qy / r1_5 + 3.0 * mu_ * (qx - (1.0 - mu_)) * qy / r2_5;
+    const ScalarType hxz =
+        3.0 * mu1 * (qx + mu_) * qz / r1_5 + 3.0 * mu_ * (qx - (1.0 - mu_)) * qz / r2_5;
+    const ScalarType hyz = 3.0 * mu1 * qy * qz / r1_5 + 3.0 * mu_ * qy * qz / r2_5;
+
+    // 主軌道の運動方程式: d(qx,qy,qz)/dt = (px+qy, py-qx, pz)
+    dsali_dt.state.qx = sali.state.px + sali.state.qy;
+    dsali_dt.state.qy = sali.state.py - sali.state.qx;
+    dsali_dt.state.qz = sali.state.pz;
+
+    // d(px,py,pz)/dt = -∂H/∂q
+    dsali_dt.state.px = -hxx * sali.state.qx - hxy * sali.state.qy - hxz * sali.state.qz;
+    dsali_dt.state.py = -hxy * sali.state.qx - hyy * sali.state.qy - hyz * sali.state.qz;
+    dsali_dt.state.pz = -hxz * sali.state.qx - hyz * sali.state.qy - hzz * sali.state.qz;
+
+    // 偏差ベクトルw1の伝搬 (変分方程式)
+    dsali_dt.w1.qx = sali.w1.px + sali.w1.qy;
+    dsali_dt.w1.qy = sali.w1.py - sali.w1.qx;
+    dsali_dt.w1.qz = sali.w1.pz;
+    dsali_dt.w1.px = -hxx * sali.w1.qx - hxy * sali.w1.qy - hxz * sali.w1.qz;
+    dsali_dt.w1.py = -hxy * sali.w1.qx - hyy * sali.w1.qy - hyz * sali.w1.qz;
+    dsali_dt.w1.pz = -hxz * sali.w1.qx - hyz * sali.w1.qy - hzz * sali.w1.qz;
+
+    // 偏差ベクトルw2の伝搬 (変分方程式)
+    dsali_dt.w2.qx = sali.w2.px + sali.w2.qy;
+    dsali_dt.w2.qy = sali.w2.py - sali.w2.qx;
+    dsali_dt.w2.qz = sali.w2.pz;
+    dsali_dt.w2.px = -hxx * sali.w2.qx - hxy * sali.w2.qy - hxz * sali.w2.qz;
+    dsali_dt.w2.py = -hxy * sali.w2.qx - hyy * sali.w2.qy - hyz * sali.w2.qz;
+    dsali_dt.w2.pz = -hxz * sali.w2.qx - hyz * sali.w2.qy - hzz * sali.w2.qz;
+  }
+};
+
 }  // namespace crtbp
 
 /**
