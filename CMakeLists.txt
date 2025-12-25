@@ -1,11 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
 
-# WindowsでIntel LLVMコンパイラを使う場合、MSVCプラットフォームとして扱う
-if(WIN32 AND (CMAKE_CXX_COMPILER MATCHES "icpx" OR CMAKE_CXX_COMPILER MATCHES "icx"))
-    set(CMAKE_CXX_COMPILER_ID "MSVC" CACHE STRING "" FORCE)
-    set(CMAKE_C_COMPILER_ID "MSVC" CACHE STRING "" FORCE)
-endif()
-
 # プロジェクト名
 project(MySimulation VERSION 1.0.0 LANGUAGES CXX)
 
@@ -23,7 +17,8 @@ else()
 endif()
 
 # WindowsでIntel LLVMコンパイラを使用する場合の設定
-if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
+# IntelLLVMとして検出される場合と、MSVC互換ドライバー（icx-cl）の両方に対応
+if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" OR CMAKE_CXX_COMPILER MATCHES "icx-cl" OR CMAKE_CXX_COMPILER MATCHES "icx" OR CMAKE_CXX_COMPILER MATCHES "icpx"))
     message(STATUS "Configuring for Intel LLVM compiler on Windows (MSVC-compatible mode)")
 
     # MSVC互換モードのフラグを使用
@@ -65,7 +60,7 @@ FetchContent_MakeAvailable(tomlplusplus)
 find_package(Boost 1.71 REQUIRED)
 
 # Intel oneAPI OpenMP設定
-if(WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM")
+if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" OR CMAKE_CXX_COMPILER MATCHES "icx-cl" OR CMAKE_CXX_COMPILER MATCHES "icx" OR CMAKE_CXX_COMPILER MATCHES "icpx"))
     set(ONEAPI_ROOT "C:/Program Files (x86)/Intel/oneAPI")
 
     if(EXISTS "${ONEAPI_ROOT}/compiler/latest")
