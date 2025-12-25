@@ -83,8 +83,6 @@ int main(int argc, char* argv[]) {
             << std::endl;
 
   // 選択されたモードを表示
-  std::vector<std::string> config_file_list;
-
   if (is_continuous) {
     std::cout << "<>    selected mode : continuous simulation (--continuous)\n" << std::endl;
   } else {
@@ -94,30 +92,19 @@ int main(int argc, char* argv[]) {
   if (skip_wait) {
     std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
-  const std::string calc_config_pattern_str =
-      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".toml$";
-  const std::regex pattern("^" + calc_config_pattern_str);
-  try {
-    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_file_list.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (fs::filesystem_error& e) {
-    std::cerr << "Error accessing directory: " << e.what() << std::endl;
+
+  // 設定ファイルを検索（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kCalcConfigPath, calc_config_prefix, discovery_opts);
+
+  if (config_file_list.empty()) {
+    std::cerr << "<> No config files found in " << kCalcConfigPath << std::endl;
+    return -1;
   }
-  std::sort(config_file_list.begin(), config_file_list.end(),
-            [](const std::string& a, const std::string& b) {
-              auto getNumber = [](const std::string& path_str) -> int {
-                std::string stem = std::filesystem::path(path_str).stem().string();
-                size_t lastUnderscore = stem.find_last_of('_');
-                return std::stoi(stem.substr(lastUnderscore + 1));
-              };
-              return getNumber(a) < getNumber(b);
-            });
+
   std::cout << "<> Loaded config file list:" << std::endl;
   for (const auto& filename : config_file_list) {
     std::cout << "<>    - " << filename << std::endl;

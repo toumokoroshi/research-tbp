@@ -191,30 +191,7 @@ void GenerateGnuplot(const std::string& csv_path, const std::string& output_dir,
   }
 }
 
-/**
- * @brief trajectory_calcディレクトリ内のconfigファイル一覧を取得する
- */
-std::vector<std::string> GetConfigFileList(const std::string& config_dir) {
-  std::vector<std::string> config_files;
-  const std::regex pattern("^trajectory_calc_config.*\\.toml$");
-
-  try {
-    for (const auto& entry : fs::directory_iterator(config_dir)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_files.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (const fs::filesystem_error& e) {
-    std::cerr << "<> !err! Error accessing directory: " << e.what() << std::endl;
-  }
-
-  // ファイル名でソート
-  std::sort(config_files.begin(), config_files.end());
-  return config_files;
-}
+// GetConfigFileList は utils.hpp の DiscoverConfigFilesToml に統合済み
 
 int main(int argc, char* argv[]) {
   using namespace crtbp;
@@ -248,11 +225,16 @@ int main(int argc, char* argv[]) {
   std::cout << "<>    mu parameter: " << std::setprecision(15) << kMU << std::endl;
   std::cout << "<>" << std::endl;
 
-  // configファイル一覧を取得
-  std::vector<std::string> config_files = GetConfigFileList(config_dir);
+  // configファイル一覧を取得（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = args.is_continuous;  // コマンドライン引数で指定
+  std::vector<std::string> config_files =
+      DiscoverConfigFilesToml(config_dir, "trajectory_calc_config", discovery_opts);
   if (config_files.empty()) {
     std::cerr << "<> !err! No config files found in: " << config_dir << std::endl;
-    std::cerr << "<>        Expected pattern: trajectory_calc_config*.txt" << std::endl;
+    std::cerr << "<>        Expected pattern: trajectory_calc_config"
+              << (args.is_continuous ? "_*.toml" : ".toml") << std::endl;
     return -1;
   }
 

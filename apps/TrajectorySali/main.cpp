@@ -371,9 +371,27 @@ int main(int argc, char* argv[]) {
   // パス設定
   const std::string kConfigBasePath = CONFIG_DIR;
   const std::string kOutputBasePath = OUTPUT_DIR;
-  const std::string kConfigFilePath =
-      kConfigBasePath + "/trajectory_SALI/trajectory_sali_config_sample.toml";
+  const std::string kConfigDirPath = kConfigBasePath + "/trajectory_SALI/";
   const std::string kAstroParamFile = kConfigBasePath + "/astro_param/astro_param.txt";
+
+  // configファイル検索（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = args.is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kConfigDirPath, "trajectory_sali_config", discovery_opts);
+
+  if (config_file_list.empty()) {
+    std::cerr << "<> No config files found in " << kConfigDirPath << std::endl;
+    std::cerr << "<>    Expected pattern: trajectory_sali_config"
+              << (args.is_continuous ? "_*.toml" : ".toml") << std::endl;
+    return -1;
+  }
+
+  std::cout << "<> Loaded config file list:" << std::endl;
+  for (const auto& filepath : config_file_list) {
+    std::cout << "<>    - " << filepath << std::endl;
+  }
 
   // 天文定数読み込み
   AstroConstants<double> astro_params = loadConstants<double>(kAstroParamFile);
@@ -381,6 +399,9 @@ int main(int argc, char* argv[]) {
 
   std::cout << "<>    mu parameter: " << std::setprecision(15) << kMU << std::endl;
   std::cout << "<>" << std::endl;
+
+  // 各configファイルを処理（最初の1つのみ使用、今後ループ対応可能）
+  const std::string& kConfigFilePath = config_file_list[0];
 
   // 設定ファイル読み込み
   std::cout << "<>    Loading config file: " << kConfigFilePath << std::endl;

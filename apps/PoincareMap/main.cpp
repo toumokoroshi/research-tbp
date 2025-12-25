@@ -444,34 +444,20 @@ int main(int argc, char* argv[]) {
     std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
 
-  // コンフィグファイルのリストを取得
+  // コンフィグファイルのリストを取得（_sample付きは除外）
   const std::string kCalcConfigPath = kConfigFilePath + "/poincare_map/";
   std::string config_prefix = "poincare_map_config";
-  std::vector<std::string> config_file_list;
 
-  const std::regex pattern(is_continuous ? "^" + config_prefix + "_\\d+\\.toml$"
-                                         : "^" + config_prefix + "\\.toml$");
-
-  try {
-    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_file_list.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (const fs::filesystem_error& e) {
-    std::cerr << "Error accessing config directory: " << e.what() << std::endl;
-    return -1;
-  }
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kCalcConfigPath, config_prefix, discovery_opts);
 
   if (config_file_list.empty()) {
     std::cerr << "<> No config files found in " << kCalcConfigPath << std::endl;
     return -1;
   }
-
-  std::sort(config_file_list.begin(), config_file_list.end());
 
   std::cout << "<> Loaded config file list:" << std::endl;
   for (const auto& filepath : config_file_list) {

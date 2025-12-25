@@ -1070,6 +1070,85 @@ inline std::vector<std::string> DiscoverConfigFiles(const std::string& directory
 }
 
 // ---------------------------------------------------------------------------
+// TOML設定ファイル検出用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 設定ファイル検出オプション
+ */
+struct ConfigDiscoveryOptions {
+  bool exclude_sample = true;  ///< _sample付きを除外するか
+  bool continuous_mode =
+      false;  ///< 連番ファイルのみ対象（true: prefix_1.toml等、false: prefix.toml）
+};
+
+/**
+ * @brief TOML設定ファイルをディレクトリから列挙
+ * @param directory 検索ディレクトリ
+ * @param prefix ファイル名プレフィックス（例: "3DSALIconfig"）
+ * @param options 検出オプション
+ * @return 検出したファイルパスのベクター（数値順にソート済み）
+ */
+inline std::vector<std::string> DiscoverConfigFilesToml(
+    const std::string& directory, const std::string& prefix,
+    const ConfigDiscoveryOptions& options = {}) {
+  std::vector<std::string> files;
+  if (!fs::exists(directory)) {
+    std::cerr << "<> Config directory does not exist: " << directory << std::endl;
+    return files;
+  }
+
+  // パターン: continuous_mode=true -> prefix_数字.toml、false -> prefix.toml
+  std::string pattern_str;
+  if (options.continuous_mode) {
+    pattern_str = "^" + prefix + "_\\d+\\.toml$";
+  } else {
+    pattern_str = "^" + prefix + "\\.toml$";
+  }
+  const std::regex pattern(pattern_str);
+
+  // _sample除外用パターン
+  const std::regex sample_pattern(".*_sample.*", std::regex_constants::icase);
+
+  try {
+    for (const auto& entry : fs::directory_iterator(directory)) {
+      if (!entry.is_regular_file()) continue;
+      const auto filename = entry.path().filename().string();
+
+      // _sample除外チェック
+      if (options.exclude_sample && std::regex_match(filename, sample_pattern)) {
+        continue;
+      }
+
+      if (std::regex_match(filename, pattern)) {
+        files.push_back(fs::absolute(entry.path()).string());
+      }
+    }
+  } catch (const std::exception& e) {
+    std::cerr << "<> Failed to read config directory: " << e.what() << std::endl;
+    return files;
+  }
+
+  // 数値順にソート
+  auto sorter = [](const std::string& a, const std::string& b) {
+    const std::string stem_a = fs::path(a).stem().string();
+    const std::string stem_b = fs::path(b).stem().string();
+    auto number_from_stem = [](const std::string& stem) -> int {
+      const auto pos = stem.find_last_of('_');
+      if (pos == std::string::npos) return 0;
+      try {
+        return std::stoi(stem.substr(pos + 1));
+      } catch (...) {
+        return 0;
+      }
+    };
+    return number_from_stem(stem_a) < number_from_stem(stem_b);
+  };
+  std::sort(files.begin(), files.end(), sorter);
+  return files;
+}
+
+// ---------------------------------------------------------------------------
 // コマンドライン引数パース用の共通構造体・関数
 // ---------------------------------------------------------------------------
 
