@@ -47,49 +47,7 @@ enum class MeshCenter {
   kEARTH = 1,
 };
 
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  SALI,  ///< SALI (K=2) - デフォルト
-  GALI   ///< GALI (K可変)
-};
-
-/**
- * @brief コマンドライン引数をパースする
- * @param argc 引数の数
- * @param argv 引数の配列
- * @param is_continuous 連続シミュレーションモードかどうか（出力）
- * @param skip_wait WaitForEnterをスキップするかどうか（出力）
- * @param output_tag 出力フォルダに付与するタグ（出力）
- */
-void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait,
-                          std::string& output_tag) {
-  is_continuous = false;  // デフォルト: 単発シミュレーション
-  skip_wait = false;      // デフォルト: WaitForEnterを実行
-  output_tag = "";        // デフォルト: タグなし
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--continuous" || arg == "-c") {
-      is_continuous = true;
-    } else if (arg == "--no-wait" || arg == "-n") {
-      skip_wait = true;
-    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
-      output_tag = argv[++i];
-    } else if (arg == "--help" || arg == "-h") {
-      std::cout
-          << "Usage: " << argv[0] << " [options]\n"
-          << "Options:\n"
-          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
-          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
-          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
-          << "  -h, --help        このヘルプを表示\n"
-          << std::endl;
-      std::exit(0);
-    }
-  }
-}
+// ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
 
 int main(int argc, char* argv[]) {
   using namespace param;
@@ -98,10 +56,10 @@ int main(int argc, char* argv[]) {
   namespace fs = std::filesystem;
 
   // コマンドライン引数のパース
-  bool is_continuous = false;
-  bool skip_wait = false;
-  std::string output_tag = "";
-  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait, output_tag);
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool is_continuous = args.is_continuous;
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
 
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
@@ -125,8 +83,6 @@ int main(int argc, char* argv[]) {
             << std::endl;
 
   // 選択されたモードを表示
-  std::vector<std::string> config_file_list;
-
   if (is_continuous) {
     std::cout << "<>    selected mode : continuous simulation (--continuous)\n" << std::endl;
   } else {
@@ -136,30 +92,19 @@ int main(int argc, char* argv[]) {
   if (skip_wait) {
     std::cout << "<>    WaitForEnter : skipped (--no-wait)" << std::endl;
   }
-  const std::string calc_config_pattern_str =
-      "^" + calc_config_prefix + (is_continuous ? "_\\d+\\" : "") + ".toml$";
-  const std::regex pattern("^" + calc_config_pattern_str);
-  try {
-    for (const auto& entry : fs::directory_iterator(kCalcConfigPath)) {
-      if (entry.is_regular_file()) {
-        std::string filename = entry.path().filename().string();
-        if (std::regex_match(filename, pattern)) {
-          config_file_list.push_back(fs::absolute(entry.path()).string());
-        }
-      }
-    }
-  } catch (fs::filesystem_error& e) {
-    std::cerr << "Error accessing directory: " << e.what() << std::endl;
+
+  // 設定ファイルを検索（_sample付きは除外）
+  ConfigDiscoveryOptions discovery_opts;
+  discovery_opts.exclude_sample = true;
+  discovery_opts.continuous_mode = is_continuous;
+  std::vector<std::string> config_file_list =
+      DiscoverConfigFilesToml(kCalcConfigPath, calc_config_prefix, discovery_opts);
+
+  if (config_file_list.empty()) {
+    std::cerr << "<> No config files found in " << kCalcConfigPath << std::endl;
+    return -1;
   }
-  std::sort(config_file_list.begin(), config_file_list.end(),
-            [](const std::string& a, const std::string& b) {
-              auto getNumber = [](const std::string& path_str) -> int {
-                std::string stem = std::filesystem::path(path_str).stem().string();
-                size_t lastUnderscore = stem.find_last_of('_');
-                return std::stoi(stem.substr(lastUnderscore + 1));
-              };
-              return getNumber(a) < getNumber(b);
-            });
+
   std::cout << "<> Loaded config file list:" << std::endl;
   for (const auto& filename : config_file_list) {
     std::cout << "<>    - " << filename << std::endl;
@@ -220,15 +165,12 @@ int main(int argc, char* argv[]) {
   auto start_ofall = std::chrono::system_clock::now();
 
   // 実行ごとのセッション出力ディレクトリを作成
-  std::string output_base_path = OUTPUT_DIR;
-  std::string session_dir_name = getcurrent_date();
-  if (!output_tag.empty()) {
-    session_dir_name += "_" + output_tag;
+  OutputDirResult output_result =
+      CreateSessionOutputDir(OUTPUT_DIR, "3D_crtbp_SALI_v3", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
-  std::string session_output_dir = output_base_path + "/3D_crtbp_SALI_v3/" + session_dir_name;
-  if (!fs::exists(session_output_dir)) {
-    fs::create_directories(session_output_dir);
-  }
+  std::string session_output_dir = output_result.session_dir;
   std::cout << "<>" << std::endl;
   std::cout << "<>    Session output directory: " << session_output_dir << std::endl;
   std::cout << "<>" << std::endl;

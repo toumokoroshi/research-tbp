@@ -3,6 +3,12 @@ cmake_minimum_required(VERSION 3.20)
 # PeriodicOrbitAnalysis アプリケーション
 add_executable(PeriodicOrbitAnalysis main.cpp)
 
+# CONFIG_DIR と OUTPUT_DIR の定義
+target_compile_definitions(PeriodicOrbitAnalysis PRIVATE
+    CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
+    OUTPUT_DIR="${CMAKE_SOURCE_DIR}/data"
+)
+
 # インクルードパス
 target_include_directories(PeriodicOrbitAnalysis PRIVATE ${CMAKE_SOURCE_DIR}/lib/include)
 
