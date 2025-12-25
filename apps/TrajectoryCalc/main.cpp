@@ -244,23 +244,13 @@ int main(int argc, char* argv[]) {
   }
   std::cout << "<>" << std::endl;
 
-  // 出力ディレクトリの作成
-  if (!fs::exists(output_dir)) {
-    fs::create_directories(output_dir);
-    std::cout << "<>    Created output directory: " << output_dir << std::endl;
+  // 出力ディレクトリの作成（セッションディレクトリ）
+  OutputDirResult output_result =
+      CreateSessionOutputDir(output_base_path, "trajectory_calc", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
-
-  // シミュレーション実行ごとのサブフォルダを作成（日時付き）
-  std::string run_timestamp = getcurrent_date();
-  std::string run_output_dir_name = run_timestamp + "_run";
-  if (!output_tag.empty()) {
-    run_output_dir_name += "_" + output_tag;
-  }
-  std::string run_output_dir = output_dir + "/" + run_output_dir_name;
-  if (!fs::exists(run_output_dir)) {
-    fs::create_directories(run_output_dir);
-    std::cout << "<>    Created run output directory: " << run_output_dir << std::endl;
-  }
+  std::string run_output_dir = output_result.session_dir;
 
   // 全体の実行時間計測
   auto start_total = std::chrono::system_clock::now();

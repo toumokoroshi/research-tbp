@@ -165,15 +165,12 @@ int main(int argc, char* argv[]) {
   auto start_ofall = std::chrono::system_clock::now();
 
   // 実行ごとのセッション出力ディレクトリを作成
-  std::string output_base_path = OUTPUT_DIR;
-  std::string session_dir_name = getcurrent_date();
-  if (!output_tag.empty()) {
-    session_dir_name += "_" + output_tag;
+  OutputDirResult output_result =
+      CreateSessionOutputDir(OUTPUT_DIR, "3D_crtbp_SALI_v3", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
-  std::string session_output_dir = output_base_path + "/3D_crtbp_SALI_v3/" + session_dir_name;
-  if (!fs::exists(session_output_dir)) {
-    fs::create_directories(session_output_dir);
-  }
+  std::string session_output_dir = output_result.session_dir;
   std::cout << "<>" << std::endl;
   std::cout << "<>    Session output directory: " << session_output_dir << std::endl;
   std::cout << "<>" << std::endl;

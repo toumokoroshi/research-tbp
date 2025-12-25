@@ -516,32 +516,17 @@ int main(int argc, char* argv[]) {
     }
   };
 
-  // ベース出力ディレクトリ
-  std::string output_base_dir = kOutputBasePath + "/trajectory_SALI";
-  if (!fs::exists(output_base_dir)) {
-    fs::create_directories(output_base_dir);
+  // ベース出力ディレクトリとセッションディレクトリの作成
+  OutputDirResult output_result =
+      CreateSessionOutputDir(kOutputBasePath, "trajectory_SALI", output_tag);
+  if (!output_result.success) {
+    return -1;
   }
+  std::string sim_output_dir = output_result.session_dir;
+  std::cout << "<>" << std::endl;
 
   // 全体時間計測
   auto start_total = std::chrono::system_clock::now();
-
-  // シミュレーション開始時刻のタイムスタンプを生成（全軌道ファイル共通）
-  std::time_t start_time_t = std::chrono::system_clock::to_time_t(start_total);
-  std::tm start_local_tm;
-#ifdef _WIN32
-  localtime_s(&start_local_tm, &start_time_t);
-#else
-  localtime_r(&start_time_t, &start_local_tm);
-#endif
-  std::ostringstream sim_timestamp_ss;
-  sim_timestamp_ss << std::put_time(&start_local_tm, "%y_%m%d_%H%M") << "_run";
-  if (!output_tag.empty()) {
-    sim_timestamp_ss << "_" << output_tag;
-  }
-  std::string sim_output_dir = output_base_dir + "/" + sim_timestamp_ss.str();
-  fs::create_directories(sim_output_dir);
-  std::cout << "<>    Simulation output folder: " << sim_output_dir << std::endl;
-  std::cout << "<>" << std::endl;
 
   // 各軌道ファイルをループ
   for (size_t file_idx = 0; file_idx < orbit_files.size(); ++file_idx) {

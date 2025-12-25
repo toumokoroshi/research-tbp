@@ -1149,6 +1149,68 @@ inline std::vector<std::string> DiscoverConfigFilesToml(
 }
 
 // ---------------------------------------------------------------------------
+// 出力ディレクトリ作成用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 出力ディレクトリ作成結果
+ */
+struct OutputDirResult {
+  std::string session_dir;  ///< 作成されたセッションディレクトリパス
+  bool success = false;     ///< 成功フラグ
+};
+
+/**
+ * @brief 日時付きセッション出力ディレクトリを作成
+ * @param base_path 出力ベースパス（例: OUTPUT_DIR）
+ * @param app_subdir アプリ固有のサブディレクトリ名（例: "3D_crtbp_SALI_v3"）
+ * @param output_tag オプションのタグ（空文字列の場合は付加しない）
+ * @param verbose trueの場合、作成時にコンソール出力
+ * @return OutputDirResult 結果（session_dirとsuccess）
+ */
+inline OutputDirResult CreateSessionOutputDir(const std::string& base_path,
+                                              const std::string& app_subdir,
+                                              const std::string& output_tag = "",
+                                              bool verbose = true) {
+  OutputDirResult result;
+
+  try {
+    // ベースディレクトリの作成
+    std::string app_output_dir = base_path + "/" + app_subdir;
+    if (!fs::exists(app_output_dir)) {
+      fs::create_directories(app_output_dir);
+      if (verbose) {
+        std::cout << "<>    Created app output directory: " << app_output_dir << std::endl;
+      }
+    }
+
+    // 日時付きセッションディレクトリ名を生成
+    std::string session_timestamp = getcurrent_date();
+    std::string session_dir_name = session_timestamp;
+    if (!output_tag.empty()) {
+      session_dir_name += "_" + output_tag;
+    }
+
+    // セッションディレクトリを作成
+    result.session_dir = app_output_dir + "/" + session_dir_name;
+    if (!fs::exists(result.session_dir)) {
+      fs::create_directories(result.session_dir);
+    }
+
+    if (verbose) {
+      std::cout << "<>    Session output directory: " << result.session_dir << std::endl;
+    }
+
+    result.success = true;
+  } catch (const std::exception& e) {
+    std::cerr << "<> !err! Failed to create output directory: " << e.what() << std::endl;
+    result.success = false;
+  }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // コマンドライン引数パース用の共通構造体・関数
 // ---------------------------------------------------------------------------
 
