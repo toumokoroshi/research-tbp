@@ -21,6 +21,31 @@
 namespace utils {
 namespace fs = std::filesystem;
 using namespace my_type;
+
+// ---------------------------------------------------------------------------
+// 共通の列挙型定義
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief 数値積分法の種類
+ */
+enum class IntegratorType {
+  kSymplectic4th,  ///< 4次シンプレクティック法
+  kSymplectic6th,  ///< 6次シンプレクティック法 (デフォルト)
+  kRungeKutta4th,  ///< 4次ルンゲクッタ法
+  kDormandPrince   ///< ドルマンプリンス法 (DOPRI5/RK45)
+};
+
+/**
+ * @brief カオス指標の種類
+ */
+enum class ChaosIndexType {
+  NONE,  ///< カオス指標を計算しない
+  SALI,  ///< SALI (K=2)
+  GALI,  ///< GALI (K可変)
+  LLE    ///< 最大リヤプノフ指数
+};
+
 #ifndef __KEYWAIT__
 #define __KEYWAIT__                                           \
   {                                                           \

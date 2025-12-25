@@ -47,13 +47,7 @@ enum class MeshCenter {
   kEARTH = 1,
 };
 
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  SALI,  ///< SALI (K=2) - デフォルト
-  GALI   ///< GALI (K可変)
-};
+// ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
 
 int main(int argc, char* argv[]) {
   using namespace param;

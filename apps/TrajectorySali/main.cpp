@@ -33,21 +33,7 @@ using namespace crtbp;
 using namespace param;
 using namespace utils;
 
-/**
- * @brief 積分器の種類
- */
-enum class IntegratorType {
-  kSymplectic6th,  ///< 6次吉田法（デフォルト）
-  kSymplectic4th,  ///< 4次吉田法
-};
-
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  SALI,  ///< SALI (K=2) - デフォルト
-  GALI   ///< GALI (K可変)
-};
+// IntegratorType と ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
 
 /**
  * @brief 設定パラメータ構造体

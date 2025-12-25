@@ -38,10 +38,7 @@ enum class CrossingDirection {
   kBoth       // 両方向
 };
 
-// ---------------------------------------------------------------------------
-// 積分器タイプの列挙型
-// ---------------------------------------------------------------------------
-enum class IntegratorType { kSymplectic4, kSymplectic6, kRK4, kRK45 };
+// IntegratorType は utils.hpp で定義されているため、ローカル定義は不要
 
 // ---------------------------------------------------------------------------
 // コンフィグ構造体
@@ -72,7 +69,7 @@ struct PoincareMapConfig {
   double fixed_var2_value = 0.0;
 
   // 積分器設定
-  IntegratorType integrator_type = IntegratorType::kSymplectic6;
+  IntegratorType integrator_type = IntegratorType::kSymplectic6th;
   // RK45（適応ステップ）用パラメータ
   double rk45_atol = 1e-10;          // 絶対誤差許容値
   double rk45_rtol = 1e-10;          // 相対誤差許容値
@@ -199,13 +196,13 @@ bool LoadConfig(const std::string& filepath, PoincareMapConfig* config) {
     // 積分器設定
     std::string integrator_str = parser.GetString("integrator.type", "symplectic6");
     if (integrator_str == "symplectic4") {
-      config->integrator_type = IntegratorType::kSymplectic4;
+      config->integrator_type = IntegratorType::kSymplectic4th;
     } else if (integrator_str == "symplectic6") {
-      config->integrator_type = IntegratorType::kSymplectic6;
+      config->integrator_type = IntegratorType::kSymplectic6th;
     } else if (integrator_str == "rk4") {
-      config->integrator_type = IntegratorType::kRK4;
+      config->integrator_type = IntegratorType::kRungeKutta4th;
     } else if (integrator_str == "rk45" || integrator_str == "dopri5") {
-      config->integrator_type = IntegratorType::kRK45;
+      config->integrator_type = IntegratorType::kDormandPrince;
     }
 
     // RK45適応ステップ用パラメータ
@@ -261,21 +258,21 @@ void PrintConfig(const PoincareMapConfig& config) {
 
   std::string integrator_str;
   switch (config.integrator_type) {
-    case IntegratorType::kSymplectic4:
+    case IntegratorType::kSymplectic4th:
       integrator_str = "symplectic4";
       break;
-    case IntegratorType::kSymplectic6:
+    case IntegratorType::kSymplectic6th:
       integrator_str = "symplectic6";
       break;
-    case IntegratorType::kRK4:
+    case IntegratorType::kRungeKutta4th:
       integrator_str = "rk4";
       break;
-    case IntegratorType::kRK45:
+    case IntegratorType::kDormandPrince:
       integrator_str = "rk45 (Dormand-Prince)";
       break;
   }
   std::cout << "<>        integrator: " << integrator_str << std::endl;
-  if (config.integrator_type == IntegratorType::kRK45) {
+  if (config.integrator_type == IntegratorType::kDormandPrince) {
     std::cout << "<>          rk45_atol: " << config.rk45_atol << std::endl;
     std::cout << "<>          rk45_rtol: " << config.rk45_rtol << std::endl;
     std::cout << "<>          rk45_initial_step: " << config.rk45_initial_step << std::endl;
@@ -660,7 +657,7 @@ int main(int argc, char* argv[]) {
         int crossing_count = 0;
 
         // RK45の場合は適応的ステップ、それ以外は固定ステップ
-        if (config.integrator_type == IntegratorType::kRK45) {
+        if (config.integrator_type == IntegratorType::kDormandPrince) {
           // Dormand-Prince RK45 (適応的ステップサイズ制御)
           namespace odeint = boost::numeric::odeint;
           using Stepper = odeint::runge_kutta_dopri5<State<double>, double, State<double>, double,
@@ -734,13 +731,13 @@ int main(int argc, char* argv[]) {
             State<double> curr_state;
 
             switch (config.integrator_type) {
-              case IntegratorType::kSymplectic4:
+              case IntegratorType::kSymplectic4th:
                 curr_state = SymplecticStep4thOrder(kMU, prev_state, config.timestep);
                 break;
-              case IntegratorType::kSymplectic6:
+              case IntegratorType::kSymplectic6th:
                 curr_state = SymplecticStep6thOrder(kMU, prev_state, config.timestep);
                 break;
-              case IntegratorType::kRK4:
+              case IntegratorType::kRungeKutta4th:
                 curr_state = RungeKutta4Step(eom, prev_state, time, config.timestep);
                 break;
               default:

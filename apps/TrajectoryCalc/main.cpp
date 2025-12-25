@@ -29,25 +29,9 @@
 
 namespace fs = std::filesystem;
 
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  NONE,  ///< カオス指標を計算しない
-  SALI,  ///< SALI (K=2)
-  GALI,  ///< GALI (K可変)
-  LLE    ///< 最大リヤプノフ指数
-};
-
-/**
- * @brief 数値積分法の種類
- */
-enum class IntegratorType {
-  kSymplectic4th,  ///< 4次シンプレクティック法
-  kSymplectic6th,  ///< 6次シンプレクティック法 (デフォルト)
-  kDormandPrince,  ///< ドルマンプリンス法 (DOPRI5)
-  kRungeKutta4th   ///< 4次ルンゲクッタ法
-};
+// IntegratorType と ChaosIndexType は utils.hpp で定義されているため、ローカル定義は不要
+using utils::ChaosIndexType;
+using utils::IntegratorType;
 
 /**
  * @brief 設定ファイルから初期条件を読み込む
