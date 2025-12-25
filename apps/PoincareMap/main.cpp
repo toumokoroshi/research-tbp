@@ -97,37 +97,6 @@ struct PoincareCrossing {
 };
 
 // ---------------------------------------------------------------------------
-// コマンドライン引数をパースする
-// ---------------------------------------------------------------------------
-void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait,
-                          std::string& output_tag) {
-  is_continuous = false;
-  skip_wait = false;
-  output_tag = "";
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--continuous" || arg == "-c") {
-      is_continuous = true;
-    } else if (arg == "--no-wait" || arg == "-n") {
-      skip_wait = true;
-    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
-      output_tag = argv[++i];
-    } else if (arg == "--help" || arg == "-h") {
-      std::cout
-          << "Usage: " << argv[0] << " [options]\n"
-          << "Options:\n"
-          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
-          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
-          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
-          << "  -h, --help        このヘルプを表示\n"
-          << std::endl;
-      std::exit(0);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // 変数名からインデックスを取得
 // ---------------------------------------------------------------------------
 int GetVarIndex(const std::string& var_name) {
@@ -454,10 +423,10 @@ int main(int argc, char* argv[]) {
             << std::endl;
 
   // コマンドライン引数のパース
-  bool is_continuous = false;
-  bool skip_wait = false;
-  std::string cli_output_tag = "";
-  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait, cli_output_tag);
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool is_continuous = args.is_continuous;
+  bool skip_wait = args.skip_wait;
+  std::string cli_output_tag = args.output_tag;
 
   // 天文パラメータの読み込み
   const std::string kConfigFilePath = CONFIG_DIR;

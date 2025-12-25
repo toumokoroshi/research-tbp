@@ -232,9 +232,14 @@ std::vector<std::string> GetConfigFileList(const std::string& config_dir) {
   return config_files;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
   using namespace crtbp;
   using namespace utils;
+
+  // コマンドライン引数のパース
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
 
   // ヘッダー出力 (SALI3dV2スタイル)
   std::cout << "<>----------------------------------------------------------------" << std::endl;
@@ -281,7 +286,11 @@ int main() {
 
   // シミュレーション実行ごとのサブフォルダを作成（日時付き）
   std::string run_timestamp = getcurrent_date();
-  std::string run_output_dir = output_dir + "/" + run_timestamp + "_run";
+  std::string run_output_dir_name = run_timestamp + "_run";
+  if (!output_tag.empty()) {
+    run_output_dir_name += "_" + output_tag;
+  }
+  std::string run_output_dir = output_dir + "/" + run_output_dir_name;
   if (!fs::exists(run_output_dir)) {
     fs::create_directories(run_output_dir);
     std::cout << "<>    Created run output directory: " << run_output_dir << std::endl;

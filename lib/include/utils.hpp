@@ -1044,5 +1044,58 @@ inline std::vector<std::string> DiscoverConfigFiles(const std::string& directory
   return files;
 }
 
+// ---------------------------------------------------------------------------
+// コマンドライン引数パース用の共通構造体・関数
+// ---------------------------------------------------------------------------
+
+/**
+ * @brief コマンドライン引数の解析結果を格納する構造体
+ */
+struct CommonArgs {
+  bool is_continuous = false;   ///< 連続シミュレーションモード
+  bool skip_wait = false;       ///< WaitForEnterをスキップ
+  std::string output_tag = "";  ///< 出力フォルダに付与するタグ
+};
+
+/**
+ * @brief 共通のコマンドライン引数をパースする
+ * @param argc 引数の数
+ * @param argv 引数の配列
+ * @param app_name アプリケーション名（ヘルプ表示用、空の場合argv[0]を使用）
+ * @return パースされた引数
+ *
+ * サポートするオプション:
+ *   -c, --continuous  連続シミュレーションモード
+ *   -n, --no-wait     ユーザー確認の待機をスキップ
+ *   -t, --tag <TAG>   出力フォルダに付与するタグ
+ *   -h, --help        ヘルプを表示して終了
+ */
+inline CommonArgs ParseCommonArgs(int argc, char* argv[], const std::string& app_name = "") {
+  CommonArgs args;
+
+  for (int i = 1; i < argc; ++i) {
+    std::string arg = argv[i];
+    if (arg == "--continuous" || arg == "-c") {
+      args.is_continuous = true;
+    } else if (arg == "--no-wait" || arg == "-n") {
+      args.skip_wait = true;
+    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
+      args.output_tag = argv[++i];
+    } else if (arg == "--help" || arg == "-h") {
+      std::string name = app_name.empty() ? argv[0] : app_name;
+      std::cout
+          << "Usage: " << name << " [options]\n"
+          << "Options:\n"
+          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
+          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
+          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
+          << "  -h, --help        このヘルプを表示\n"
+          << std::endl;
+      std::exit(0);
+    }
+  }
+  return args;
+}
+
 }  // namespace utils
 #endif  // UTILS_HPP

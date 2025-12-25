@@ -369,7 +369,12 @@ void GenerateSaliTimeSeriesPlot(const std::string& csv_path, const std::string& 
   std::system(cmd.c_str());
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+  // コマンドライン引数のパース
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
+
   // ヘッダー出力
   std::cout << "<>----------------------------------------------------------------" << std::endl;
   std::cout << "<>            CRTBP Trajectory-SALI Calculator ver1.0" << std::endl;
@@ -445,21 +450,28 @@ int main() {
   std::cout << "<>" << std::endl;
 
   // ユーザー確認
-  WaitForEnter("<>    Press Enter to start simulation...");
-
-  // OpenMP設定
   int core_max = omp_get_max_threads();
-  int omp_threads = 1;
-  std::cout << "<>" << std::endl;
-  std::cout << "<>  [OpenMP Configuration]" << std::endl;
-  std::cout << "<>    Available threads: " << core_max << std::endl;
-  std::cout << "<>    Enter number of threads to use: ";
-  std::cin >> omp_threads;
-  if (omp_threads > core_max) omp_threads = core_max;
-  if (omp_threads < 1) omp_threads = 1;
-  omp_set_num_threads(omp_threads);
-  std::cout << "<>    Using " << omp_threads << " threads" << std::endl;
-  std::cout << "<>" << std::endl;
+  if (!skip_wait) {
+    WaitForEnter("<>    Press Enter to start simulation...");
+
+    // OpenMP設定
+    int omp_threads = 1;
+    std::cout << "<>" << std::endl;
+    std::cout << "<>  [OpenMP Configuration]" << std::endl;
+    std::cout << "<>    Available threads: " << core_max << std::endl;
+    std::cout << "<>    Enter number of threads to use: ";
+    std::cin >> omp_threads;
+    if (omp_threads > core_max) omp_threads = core_max;
+    if (omp_threads < 1) omp_threads = 1;
+    omp_set_num_threads(omp_threads);
+    std::cout << "<>    Using " << omp_threads << " threads" << std::endl;
+    std::cout << "<>" << std::endl;
+  } else {
+    // skip_wait時は最大スレッド数-1を自動選択
+    int omp_threads = std::max(1, core_max - 1);
+    omp_set_num_threads(omp_threads);
+    std::cout << "<>    Using " << omp_threads << " threads (auto-selected)" << std::endl;
+  }
 
   // SALI積分器ラムダ
   auto sali_integrator = [&](SaliState<double>* state, double h) {
@@ -516,6 +528,9 @@ int main() {
 #endif
   std::ostringstream sim_timestamp_ss;
   sim_timestamp_ss << std::put_time(&start_local_tm, "%y_%m%d_%H%M") << "_run";
+  if (!output_tag.empty()) {
+    sim_timestamp_ss << "_" << output_tag;
+  }
   std::string sim_output_dir = output_base_dir + "/" + sim_timestamp_ss.str();
   fs::create_directories(sim_output_dir);
   std::cout << "<>    Simulation output folder: " << sim_output_dir << std::endl;

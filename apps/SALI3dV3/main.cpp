@@ -55,42 +55,6 @@ enum class ChaosIndexType {
   GALI   ///< GALI (K可変)
 };
 
-/**
- * @brief コマンドライン引数をパースする
- * @param argc 引数の数
- * @param argv 引数の配列
- * @param is_continuous 連続シミュレーションモードかどうか（出力）
- * @param skip_wait WaitForEnterをスキップするかどうか（出力）
- * @param output_tag 出力フォルダに付与するタグ（出力）
- */
-void ParseCommandLineArgs(int argc, char* argv[], bool& is_continuous, bool& skip_wait,
-                          std::string& output_tag) {
-  is_continuous = false;  // デフォルト: 単発シミュレーション
-  skip_wait = false;      // デフォルト: WaitForEnterを実行
-  output_tag = "";        // デフォルト: タグなし
-
-  for (int i = 1; i < argc; ++i) {
-    std::string arg = argv[i];
-    if (arg == "--continuous" || arg == "-c") {
-      is_continuous = true;
-    } else if (arg == "--no-wait" || arg == "-n") {
-      skip_wait = true;
-    } else if ((arg == "--tag" || arg == "-t") && i + 1 < argc) {
-      output_tag = argv[++i];
-    } else if (arg == "--help" || arg == "-h") {
-      std::cout
-          << "Usage: " << argv[0] << " [options]\n"
-          << "Options:\n"
-          << "  -c, --continuous  連続シミュレーションモード（複数configファイルを順次処理）\n"
-          << "  -n, --no-wait     ユーザー確認のための待機をスキップ\n"
-          << "  -t, --tag <TAG>   出力フォルダに付与するタグ\n"
-          << "  -h, --help        このヘルプを表示\n"
-          << std::endl;
-      std::exit(0);
-    }
-  }
-}
-
 int main(int argc, char* argv[]) {
   using namespace param;
   using namespace crtbp;
@@ -98,10 +62,10 @@ int main(int argc, char* argv[]) {
   namespace fs = std::filesystem;
 
   // コマンドライン引数のパース
-  bool is_continuous = false;
-  bool skip_wait = false;
-  std::string output_tag = "";
-  ParseCommandLineArgs(argc, argv, is_continuous, skip_wait, output_tag);
+  CommonArgs args = ParseCommonArgs(argc, argv);
+  bool is_continuous = args.is_continuous;
+  bool skip_wait = args.skip_wait;
+  std::string output_tag = args.output_tag;
 
   // CMakeから渡されたCONFIG_DIRマクロを使用
   const std::string kConfigFilePath = CONFIG_DIR;
