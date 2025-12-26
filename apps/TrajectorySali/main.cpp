@@ -18,8 +18,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <regex>
 #include <rtbp.hpp>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utils.hpp>
@@ -54,6 +56,9 @@ struct TrajectorySaliConfig {
   int gali_k = 2;                                          ///< GALIの偏差ベクトル数 (2, 4, 6)
   bool output_converted_trajectory = false;                ///< 座標変換後軌道の時刻歴出力フラグ
   bool output_impulse_trajectory = false;  ///< インパルス付与後軌道の時刻歴出力フラグ
+  // 交点検出オプション
+  bool enable_intersection_detection = false;  ///< 交点検出機能の有効化
+  double intersection_threshold = 0.001;       ///< 交点判定閾値（2軌道間距離）
 };
 
 /**
@@ -63,6 +68,29 @@ struct OrbitDataRow {
   double time_j2000;       ///< J2000時刻
   State<double> asteroid;  ///< 小惑星状態量（AU, AU/day）
   State<double> earth;     ///< 地球状態量（AU, AU/day）
+};
+
+/**
+ * @brief 安定軌道の初期状態を保持する構造体
+ * escape_flag=0 かつ collision_flag=0 の軌道情報を記憶
+ */
+struct StableOrbitInfo {
+  int phase_idx;                ///< 位相インデックス
+  double dv_mag;                ///< Delta-V量
+  State<double> initial_state;  ///< インパルス付与後の初期状態
+  double jacobi;                ///< ヤコビ定数
+};
+
+/**
+ * @brief 交点情報を保持する構造体
+ */
+struct IntersectionPoint {
+  int phase_idx;                  ///< 位相インデックス
+  double dv_mag;                  ///< Delta-V量
+  double time_nd;                 ///< 交点検出時の無次元時刻
+  State<double> stable_state;     ///< 安定軌道側の状態
+  State<double> reference_state;  ///< 参照軌道側の状態
+  double distance;                ///< 2軌道間の距離
 };
 
 /**
@@ -114,6 +142,12 @@ bool LoadTrajectorySaliConfig(const std::string& filepath, TrajectorySaliConfig*
         toml_config.GetBool("output.output_converted_trajectory", false);
     config->output_impulse_trajectory =
         toml_config.GetBool("output.output_impulse_trajectory", false);
+
+    // 交点検出オプション
+    config->enable_intersection_detection =
+        toml_config.GetBool("intersection.enable_intersection_detection", false);
+    config->intersection_threshold =
+        toml_config.GetDouble("intersection.intersection_threshold", 0.001);
 
   } catch (const std::exception& e) {
     std::cerr << "<> !err! Cannot load config: " << e.what() << std::endl;
@@ -449,6 +483,11 @@ int main(int argc, char* argv[]) {
             << (config.output_converted_trajectory ? "ON" : "OFF") << std::endl;
   std::cout << "<>    OUTPUT_IMPULSE_TRAJ: " << (config.output_impulse_trajectory ? "ON" : "OFF")
             << std::endl;
+  std::cout << "<>    INTERSECTION_DETECT: "
+            << (config.enable_intersection_detection ? "ON" : "OFF") << std::endl;
+  if (config.enable_intersection_detection) {
+    std::cout << "<>    INTERSECTION_THRESHOLD: " << config.intersection_threshold << std::endl;
+  }
   std::cout << "<>" << std::endl;
   std::cout << "<>    Velocity deceleration steps: "
             << static_cast<int>(config.dv_max / config.dv_step) + 1 << std::endl;
@@ -600,6 +639,11 @@ int main(int argc, char* argv[]) {
     int completed = 0;
 
     auto start_file = std::chrono::system_clock::now();
+
+    // 交点検出用: 安定軌道情報を収集するベクター
+    std::vector<StableOrbitInfo> stable_orbits;
+    // 交点検出用: 参照軌道（dv=0）の時刻歴データ（phase_idx -> trajectory）
+    std::map<int, std::vector<std::pair<double, State<double>>>> reference_trajectories;
 
 // 各位相点×各速度変化量でループ
 #pragma omp parallel for schedule(dynamic) shared(completed, ofs)
@@ -822,6 +866,12 @@ int main(int argc, char* argv[]) {
             double progress = static_cast<double>(completed) / total_calcs;
             displayProgressBarThreadSafe(progress);
           }
+
+          // 交点検出用：安定軌道（離脱なし・衝突なし）の初期状態を収集
+          if (config.enable_intersection_detection && !escape_flag && !collision_flag &&
+              dv_idx > 0) {
+            stable_orbits.push_back({phase_idx, dv_mag, modified_state, jacobi});
+          }
         }
       }
     }
@@ -834,6 +884,139 @@ int main(int argc, char* argv[]) {
 
     // gnuplotでカラーコンタ図生成
     GenerateSaliContourPlots(csv_path, output_dir, file_basename);
+
+    // 交点検出処理（設定で有効な場合のみ）
+    if (config.enable_intersection_detection && !stable_orbits.empty()) {
+      std::cout << "<>    Starting intersection detection..." << std::endl;
+      std::cout << "<>    Stable orbits found: " << stable_orbits.size() << std::endl;
+
+      // 安定軌道初期条件をCSVに出力
+      std::string stable_csv_path = output_dir + "/" + file_basename + "_stable_orbits.csv";
+      std::ofstream stable_ofs(stable_csv_path);
+      if (stable_ofs) {
+        stable_ofs << std::setprecision(15) << std::fixed;
+        stable_ofs << "# Stable Orbit Initial Conditions (no escape, no collision)\n";
+        stable_ofs << "# Source: " << orbit_file << "\n";
+        stable_ofs << "phase_idx,dv_mag,x0,y0,z0,vx0,vy0,vz0,jacobi\n";
+        for (const auto& info : stable_orbits) {
+          stable_ofs << info.phase_idx << "," << info.dv_mag << "," << info.initial_state.x << ","
+                     << info.initial_state.y << "," << info.initial_state.z << ","
+                     << info.initial_state.vx << "," << info.initial_state.vy << ","
+                     << info.initial_state.vz << "," << info.jacobi << "\n";
+        }
+        stable_ofs.close();
+        std::cout << "<>    Stable orbits saved: " << stable_csv_path << std::endl;
+      }
+
+      // 交点検出用の参照軌道を位相ごとに伝播して生成
+      // phase_idx -> vector of (time, state)
+      std::map<int, std::vector<std::pair<double, State<double>>>> ref_trajectories;
+
+      // 安定軌道から使用されるphase_idxを収集
+      std::set<int> used_phases;
+      for (const auto& info : stable_orbits) {
+        used_phases.insert(info.phase_idx);
+      }
+
+      // 各位相点の参照軌道（dv=0）を計算
+      std::cout << "<>    Computing reference trajectories for " << used_phases.size()
+                << " phases..." << std::endl;
+      for (int phase_idx : used_phases) {
+        const OrbitDataRow& row = orbit_data[phase_idx];
+        State<double> asteroid_rot =
+            ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
+
+        // 参照軌道を伝播（SaliState経由でシンプレクティック積分器使用）
+        std::vector<std::pair<double, State<double>>> ref_traj;
+        ref_traj.reserve(num_steps + 1);
+        ref_traj.emplace_back(0.0, asteroid_rot);
+
+        SaliState<double> sali_tmp;
+        sali_tmp.state = ConvertToCanonical(asteroid_rot);
+        sali_tmp.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        sali_tmp.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+        for (int step = 0; step < num_steps; ++step) {
+          sali_integrator(&sali_tmp, config.calc_timestep_nd);
+          double current_time = (step + 1) * config.calc_timestep_nd;
+          State<double> current_state = ConvertToPhysical(sali_tmp.state);
+          ref_traj.emplace_back(current_time, current_state);
+        }
+        ref_trajectories[phase_idx] = std::move(ref_traj);
+      }
+
+      // 交点検出
+      std::vector<IntersectionPoint> intersections;
+      std::cout << "<>    Detecting intersections..." << std::endl;
+
+#pragma omp parallel for schedule(dynamic)
+      for (int i = 0; i < static_cast<int>(stable_orbits.size()); ++i) {
+        const StableOrbitInfo& info = stable_orbits[i];
+        const auto& ref_traj = ref_trajectories[info.phase_idx];
+
+        // 安定軌道を伝播（SaliState経由で積分）
+        SaliState<double> sali_tmp;
+        sali_tmp.state = ConvertToCanonical(info.initial_state);
+        sali_tmp.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+        sali_tmp.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+        for (int step = 0; step < num_steps; ++step) {
+          sali_integrator(&sali_tmp, config.calc_timestep_nd);
+          double current_time = (step + 1) * config.calc_timestep_nd;
+          State<double> stable_state = ConvertToPhysical(sali_tmp.state);
+
+          // 同じ時刻の参照軌道状態と比較
+          if (step + 1 < static_cast<int>(ref_traj.size())) {
+            const State<double>& ref_state = ref_traj[step + 1].second;
+            double dx = stable_state.x - ref_state.x;
+            double dy = stable_state.y - ref_state.y;
+            double dz = stable_state.z - ref_state.z;
+            double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+            if (distance < config.intersection_threshold) {
+              IntersectionPoint pt;
+              pt.phase_idx = info.phase_idx;
+              pt.dv_mag = info.dv_mag;
+              pt.time_nd = current_time;
+              pt.stable_state = stable_state;
+              pt.reference_state = ref_state;
+              pt.distance = distance;
+
+#pragma omp critical(intersections)
+              {
+                intersections.push_back(pt);
+              }
+            }
+          }
+        }
+      }
+
+      // 交点をCSVに出力
+      if (!intersections.empty()) {
+        std::string intersect_csv_path = output_dir + "/" + file_basename + "_intersections.csv";
+        std::ofstream intersect_ofs(intersect_csv_path);
+        if (intersect_ofs) {
+          intersect_ofs << std::setprecision(15) << std::fixed;
+          intersect_ofs << "# Intersection Points (stable orbit vs reference orbit)\n";
+          intersect_ofs << "# Threshold: " << config.intersection_threshold << "\n";
+          intersect_ofs << "# Source: " << orbit_file << "\n";
+          intersect_ofs << "phase_idx,dv_mag,time_nd,distance,stable_x,stable_y,stable_z,stable_vx,"
+                           "stable_vy,stable_vz,ref_x,ref_y,ref_z,ref_vx,ref_vy,ref_vz\n";
+          for (const auto& pt : intersections) {
+            intersect_ofs << pt.phase_idx << "," << pt.dv_mag << "," << pt.time_nd << ","
+                          << pt.distance << "," << pt.stable_state.x << "," << pt.stable_state.y
+                          << "," << pt.stable_state.z << "," << pt.stable_state.vx << ","
+                          << pt.stable_state.vy << "," << pt.stable_state.vz << ","
+                          << pt.reference_state.x << "," << pt.reference_state.y << ","
+                          << pt.reference_state.z << "," << pt.reference_state.vx << ","
+                          << pt.reference_state.vy << "," << pt.reference_state.vz << "\n";
+          }
+          intersect_ofs.close();
+          std::cout << "<>    Intersections found: " << intersections.size() << std::endl;
+          std::cout << "<>    Intersections saved: " << intersect_csv_path << std::endl;
+        }
+      } else {
+        std::cout << "<>    No intersections found within threshold" << std::endl;
+      }
+    }
 
     auto end_file = std::chrono::system_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_file - start_file);

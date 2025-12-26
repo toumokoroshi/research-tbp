@@ -18,8 +18,10 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <regex>
 #include <rtbp.hpp>
+#include <set>
 #include <sstream>
 #include <string>
 #include <utils.hpp>
@@ -68,6 +70,10 @@ struct SimulationConfig {
   bool output_gnuplot = true;  ///< gnuplotスクリプト出力
   bool output_png = true;      ///< PNG画像出力
   bool output_eps = true;      ///< EPS画像出力
+
+  // 交点検出設定
+  bool enable_intersection_detection = false;  ///< 交点検出機能の有効化
+  double intersection_threshold = 0.001;       ///< 交点判定閾値（2軌道間距離）
 };
 
 /**
@@ -90,6 +96,27 @@ struct SaliOutputRow {
   int collision;
   int escape;
   double calc_time;
+};
+
+/**
+ * @brief 安定軌道の初期状態を保持する構造体
+ * escape_flag=0 かつ collision_flag=0 の軌道情報を記憶
+ */
+struct StableOrbitInfo {
+  int mesh_idx;                 ///< メッシュインデックス
+  State<double> initial_state;  ///< 初期状態
+  double jacobi;                ///< ヤコビ定数
+};
+
+/**
+ * @brief 交点情報を保持する構造体
+ */
+struct IntersectionPoint {
+  int mesh_idx;                   ///< メッシュインデックス
+  double time_nd;                 ///< 交点検出時の無次元時刻
+  State<double> stable_state;     ///< 安定軌道側の状態
+  State<double> reference_state;  ///< 参照軌道側の状態
+  double distance;                ///< 2軌道間の距離
 };
 
 // 前方宣言
@@ -800,6 +827,12 @@ int main(int argc, char* argv[]) {
     sim_config.output_png = config.GetBool("output.png", true);
     sim_config.output_eps = config.GetBool("output.eps", true);
 
+    // 交点検出設定の読み込み
+    sim_config.enable_intersection_detection =
+        config.GetBool("intersection.enable_intersection_detection", false);
+    sim_config.intersection_threshold =
+        config.GetDouble("intersection.intersection_threshold", 0.001);
+
     // メッシュ設定の読み込み
     sim_config.mesh_type = config.GetString("mesh.type", "concentric");
 
@@ -1017,8 +1050,12 @@ int main(int argc, char* argv[]) {
     // ファイル書き込み間隔
     constexpr int kWriteInterval = 1000;
 
+    // 交点検出用: 安定軌道情報を収集するベクター
+    std::vector<StableOrbitInfo> stable_orbits;
+
 // OpenMP並列化ループ
-#pragma omp parallel shared(meshPoints, completed_count, totalIterations, progress, ofs1)
+#pragma omp parallel shared(meshPoints, completed_count, totalIterations, progress, ofs1, \
+                                stable_orbits)
     {
       // 各スレッドがSALIの結果を一時的に保存する文字列
       std::stringstream local_output_buffer;
@@ -1152,6 +1189,16 @@ int main(int argc, char* argv[]) {
             displayProgressBarThreadSafe(current_progress);
           }
         }
+
+        // 交点検出用：安定軌道（離脱なし・衝突なし）の初期状態を収集
+        if (sim_config.enable_intersection_detection && !velo_err && !escape_flag &&
+            !collision_flag) {
+#pragma omp critical(stable_orbit_collect)
+          {
+            State<double> initial_state = {point.x, point.y, point.z, vx, vy, vz};
+            stable_orbits.push_back({idx, initial_state, sim_config.jacobi});
+          }
+        }
       }
       // ループ終了後に残りのバッファを必ず書き込む
 #pragma omp critical
@@ -1177,6 +1224,245 @@ int main(int argc, char* argv[]) {
     if (sim_config.output_gnuplot) {
       GenerateSaliGnuplot(filename, session_output_dir, config_basename, sim_config.output_png,
                           sim_config.output_eps, chaos_index_str, orbit_rotating_path_for_plot);
+    }
+
+    // 交点検出処理（設定で有効かつ軌道データがある場合のみ）
+    if (sim_config.enable_intersection_detection && !stable_orbits.empty() &&
+        sim_config.use_trajectory_plane) {
+      std::cout << "<>    Starting intersection detection..." << std::endl;
+      std::cout << "<>    Stable orbits found: " << stable_orbits.size() << std::endl;
+
+      // 安定軌道初期条件をCSVに出力
+      std::string stable_csv_path =
+          session_output_dir + "/" + config_basename + "_stable_orbits.csv";
+      std::ofstream stable_ofs(stable_csv_path);
+      if (stable_ofs) {
+        stable_ofs << std::setprecision(15) << std::fixed;
+        stable_ofs << "# Stable Orbit Initial Conditions (no escape, no collision)\n";
+        stable_ofs << "# Jacobi: " << sim_config.jacobi << "\n";
+        stable_ofs << "mesh_idx,x0,y0,z0,vx0,vy0,vz0,jacobi\n";
+        for (const auto& info : stable_orbits) {
+          stable_ofs << info.mesh_idx << "," << info.initial_state.x << "," << info.initial_state.y
+                     << "," << info.initial_state.z << "," << info.initial_state.vx << ","
+                     << info.initial_state.vy << "," << info.initial_state.vz << "," << info.jacobi
+                     << "\n";
+        }
+        stable_ofs.close();
+        std::cout << "<>    Stable orbits saved: " << stable_csv_path << std::endl;
+      }
+
+      // 参照軌道（軌道データを回転座標に変換したもの）を取得
+      std::vector<OrbitDataRow> orbit_data;
+      if (LoadOrbitData(sim_config.orbit_data_path, sim_config.phase_step, &orbit_data)) {
+        std::vector<State<double>> ref_trajectory;
+        ref_trajectory.reserve(orbit_data.size());
+        for (const auto& row : orbit_data) {
+          State<double> rotated = ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
+          ref_trajectory.push_back(rotated);
+        }
+
+        // 交点検出
+        std::vector<IntersectionPoint> intersections;
+        std::cout << "<>    Detecting intersections against reference trajectory ("
+                  << ref_trajectory.size() << " points)..." << std::endl;
+
+#pragma omp parallel for schedule(dynamic)
+        for (int i = 0; i < static_cast<int>(stable_orbits.size()); ++i) {
+          const StableOrbitInfo& info = stable_orbits[i];
+
+          // 安定軌道を伝播（SaliState経由で積分）
+          SaliState<double> sali_tmp;
+          sali_tmp.state = ConvertToCanonical(info.initial_state);
+          sali_tmp.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+          sali_tmp.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+
+          for (int step = 0; step < num_step; ++step) {
+            sali_integrator(&sali_tmp, sim_config.timestep);
+            double current_time = (step + 1) * sim_config.timestep;
+            State<double> stable_state = ConvertToPhysical(sali_tmp.state);
+
+            // 参照軌道の各点との最短距離を計算
+            for (size_t ref_idx = 0; ref_idx < ref_trajectory.size(); ++ref_idx) {
+              const State<double>& ref_state = ref_trajectory[ref_idx];
+              double dx = stable_state.x - ref_state.x;
+              double dy = stable_state.y - ref_state.y;
+              double dz = stable_state.z - ref_state.z;
+              double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+
+              if (distance < sim_config.intersection_threshold) {
+                IntersectionPoint pt;
+                pt.mesh_idx = info.mesh_idx;
+                pt.time_nd = current_time;
+                pt.stable_state = stable_state;
+                pt.reference_state = ref_state;
+                pt.distance = distance;
+
+#pragma omp critical(intersections)
+                {
+                  intersections.push_back(pt);
+                }
+              }
+            }
+          }
+        }
+
+        // 交点をCSVに出力
+        if (!intersections.empty()) {
+          std::string intersect_csv_path =
+              session_output_dir + "/" + config_basename + "_intersections.csv";
+          std::ofstream intersect_ofs(intersect_csv_path);
+          if (intersect_ofs) {
+            intersect_ofs << std::setprecision(15) << std::fixed;
+            intersect_ofs << "# Intersection Points (stable orbit vs reference orbit)\n";
+            intersect_ofs << "# Threshold: " << sim_config.intersection_threshold << "\n";
+            intersect_ofs << "mesh_idx,time_nd,distance,stable_x,stable_y,stable_z,stable_vx,"
+                             "stable_vy,stable_vz,ref_x,ref_y,ref_z,ref_vx,ref_vy,ref_vz\n";
+            for (const auto& pt : intersections) {
+              intersect_ofs << pt.mesh_idx << "," << pt.time_nd << "," << pt.distance << ","
+                            << pt.stable_state.x << "," << pt.stable_state.y << ","
+                            << pt.stable_state.z << "," << pt.stable_state.vx << ","
+                            << pt.stable_state.vy << "," << pt.stable_state.vz << ","
+                            << pt.reference_state.x << "," << pt.reference_state.y << ","
+                            << pt.reference_state.z << "," << pt.reference_state.vx << ","
+                            << pt.reference_state.vy << "," << pt.reference_state.vz << "\n";
+            }
+            intersect_ofs.close();
+            std::cout << "<>    Intersections found: " << intersections.size() << std::endl;
+            std::cout << "<>    Intersections saved: " << intersect_csv_path << std::endl;
+          }
+        } else {
+          std::cout << "<>    No intersections found within threshold" << std::endl;
+        }
+
+        // 参照軌道をCSVに出力
+        std::string ref_traj_path =
+            session_output_dir + "/" + config_basename + "_reference_trajectory.csv";
+        std::ofstream ref_traj_ofs(ref_traj_path);
+        if (ref_traj_ofs) {
+          ref_traj_ofs << std::setprecision(15) << std::fixed;
+          ref_traj_ofs << "# Reference Trajectory (in rotating coordinates)\n";
+          ref_traj_ofs << "x,y,z,vx,vy,vz\n";
+          for (const auto& state : ref_trajectory) {
+            ref_traj_ofs << state.x << "," << state.y << "," << state.z << "," << state.vx << ","
+                         << state.vy << "," << state.vz << "\n";
+          }
+          ref_traj_ofs.close();
+          std::cout << "<>    Reference trajectory saved: " << ref_traj_path << std::endl;
+        }
+
+        // 安定軌道の伝播データを出力（各安定軌道ごとに1ファイル or 全部まとめて1ファイル）
+        std::string stable_traj_dir = session_output_dir + "/stable_trajectories";
+        fs::create_directories(stable_traj_dir);
+
+        std::cout << "<>    Generating stable orbit trajectories..." << std::endl;
+        // 全安定軌道をまとめた1ファイル（軌道ごとに空行で区切る）
+        std::string all_stable_traj_path =
+            session_output_dir + "/" + config_basename + "_all_stable_trajectories.dat";
+        std::ofstream all_stable_ofs(all_stable_traj_path);
+        if (all_stable_ofs) {
+          all_stable_ofs << std::setprecision(15) << std::fixed;
+          all_stable_ofs << "# All Stable Orbit Trajectories\n";
+          all_stable_ofs << "# Each orbit separated by blank line\n";
+          all_stable_ofs << "# mesh_idx time x y z\n";
+
+          for (size_t i = 0; i < stable_orbits.size(); ++i) {
+            const StableOrbitInfo& info = stable_orbits[i];
+
+            // 安定軌道を伝播（SaliState経由で積分）
+            SaliState<double> sali_tmp;
+            sali_tmp.state = ConvertToCanonical(info.initial_state);
+            sali_tmp.w1 = CanonicalState<double>{1.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            sali_tmp.w2 = CanonicalState<double>{0.0, 1.0, 0.0, 0.0, 0.0, 0.0};
+
+            // 初期位置を出力
+            all_stable_ofs << info.mesh_idx << " 0.0 " << info.initial_state.x << " "
+                           << info.initial_state.y << " " << info.initial_state.z << "\n";
+
+            for (int step = 0; step < num_step; ++step) {
+              sali_integrator(&sali_tmp, sim_config.timestep);
+              double current_time = (step + 1) * sim_config.timestep;
+              State<double> stable_state = ConvertToPhysical(sali_tmp.state);
+              all_stable_ofs << info.mesh_idx << " " << current_time << " " << stable_state.x << " "
+                             << stable_state.y << " " << stable_state.z << "\n";
+            }
+            all_stable_ofs << "\n";  // 軌道ごとに空行で区切る
+          }
+          all_stable_ofs.close();
+          std::cout << "<>    All stable trajectories saved: " << all_stable_traj_path << std::endl;
+        }
+
+        // gnuplotスクリプト生成（参照軌道 + 安定軌道 + 交点）
+        std::string gp_intersect_path =
+            session_output_dir + "/" + config_basename + "_intersection_plot.gp";
+        std::ofstream gp_ofs(gp_intersect_path);
+        if (gp_ofs) {
+          std::string png_path =
+              session_output_dir + "/" + config_basename + "_intersection_plot.png";
+          std::string eps_path =
+              session_output_dir + "/" + config_basename + "_intersection_plot.eps";
+
+          gp_ofs << "# Intersection Detection Plot: Reference + Stable Orbits\n\n";
+          gp_ofs << "set datafile separator ','\n";
+          gp_ofs << "set datafile commentschars '#'\n\n";
+
+          gp_ofs << "set xlabel 'x (non-dim)'\n";
+          gp_ofs << "set ylabel 'y (non-dim)'\n";
+          gp_ofs << "set size ratio -1\n";
+          gp_ofs << "set grid\n\n";
+
+          // PNG出力
+          gp_ofs << "set terminal pngcairo enhanced font 'Helvetica,12' size 1400,1200\n";
+          gp_ofs << "set output '" << png_path << "'\n";
+          gp_ofs << "set title 'Reference Orbit vs Stable Orbits (All Points)'\n\n";
+
+          // 安定軌道ファイルはスペース区切りなので別設定
+          gp_ofs << "# Plot reference trajectory (lines) + stable trajectories (points) + "
+                    "intersections\n";
+          gp_ofs << "plot '" << ref_traj_path
+                 << "' using 1:2 with lines lw 2 lc rgb 'blue' title 'Reference Orbit', \\\n";
+          gp_ofs
+              << "     '" << all_stable_traj_path
+              << "' using 3:4 with points pt 7 ps 0.3 lc rgb 'green' title 'Stable Orbit Points'";
+          if (!intersections.empty()) {
+            gp_ofs << ", \\\n";
+            gp_ofs << "     '" << session_output_dir << "/" << config_basename
+                   << "_intersections.csv"
+                   << "' using 4:5 with points pt 7 ps 1.5 lc rgb 'red' title 'Intersections'";
+          }
+          gp_ofs << "\n\n";
+
+          // EPS出力
+          gp_ofs << "set terminal postscript eps enhanced color font 'Helvetica,14'\n";
+          gp_ofs << "set output '" << eps_path << "'\n";
+          gp_ofs << "replot\n\n";
+
+          // 3D plot section
+          gp_ofs << "# --- 3D plot version (all points) ---\n";
+          gp_ofs << "# set terminal pngcairo enhanced font 'Helvetica,12' size 1400,1200\n";
+          gp_ofs << "# set output '" << session_output_dir << "/" << config_basename
+                 << "_intersection_3d.png'\n";
+          gp_ofs << "# set xlabel 'x'\n";
+          gp_ofs << "# set ylabel 'y'\n";
+          gp_ofs << "# set zlabel 'z'\n";
+          gp_ofs << "# set view 60, 30\n";
+          gp_ofs << "# splot '" << ref_traj_path
+                 << "' using 1:2:3 with lines lw 2 lc rgb 'blue' title 'Reference', \\\n";
+          gp_ofs << "#       '" << all_stable_traj_path
+                 << "' using 3:4:5 with lines lw 0.3 lc rgb 'gray60' title 'Stable Orbits'\n";
+
+          gp_ofs.close();
+
+          // gnuplot実行
+          std::string gp_cmd = "gnuplot \"" + gp_intersect_path + "\"";
+          int gp_ret = std::system(gp_cmd.c_str());
+          if (gp_ret == 0) {
+            std::cout << "<>    Intersection plot generated: " << png_path << std::endl;
+          } else {
+            std::cout << "<>    gnuplot script saved (execution failed): " << gp_intersect_path
+                      << std::endl;
+          }
+        }
+      }
     }
 
     auto end = std::chrono::system_clock::now();

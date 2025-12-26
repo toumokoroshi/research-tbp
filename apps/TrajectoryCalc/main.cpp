@@ -34,6 +34,23 @@ using utils::ChaosIndexType;
 using utils::IntegratorType;
 
 /**
+ * @brief インパルス（速度変更）設定
+ */
+struct ImpulseConfig {
+  bool enabled = false;                               ///< インパルス有効フラグ
+  std::string trigger_type = "position";              ///< "position", "time", "distance_from_point"
+  std::string trigger_axis = "x";                     ///< x, y, z, r, r_earth (position型のみ)
+  double trigger_value = 0.0;                         ///< トリガー閾値
+  std::string trigger_direction = "any";              ///< "any", "increasing", "decreasing"
+  std::string velocity_mode = "delta";                ///< "delta", "absolute"
+  std::array<double, 3> delta_v = {0, 0, 0};          ///< 速度増分 (delta モード)
+  std::array<double, 3> target_velocity = {0, 0, 0};  ///< 目標速度 (absolute モード)
+  std::array<double, 3> trigger_point = {0, 0, 0};    ///< トリガー位置 (distance_from_point用)
+  double trigger_radius = 0.01;                       ///< トリガー距離閾値 (distance_from_point用)
+  bool applied = false;                               ///< 適用済みフラグ (one_shot用)
+};
+
+/**
  * @brief 設定ファイルから初期条件を読み込む
  */
 struct TrajectoryConfig {
@@ -61,9 +78,152 @@ struct TrajectoryConfig {
   bool output_orbital_elements = true;  ///< 軌道要素の時系列出力
   bool output_freq_analysis = true;     ///< 周波数解析結果の出力
   bool output_gnuplot = true;           ///< gnuplotスクリプトと画像の生成
+
+  // インパルス設定
+  ImpulseConfig impulse;  ///< インパルス（速度変更）設定
 };
 
 // TrimString -> utils::trim() に置換
+
+/**
+ * @brief トリガー軸の値を取得
+ * @param state 状態ベクトル
+ * @param axis 軸名 ("x", "y", "z", "r", "r_earth")
+ * @param mu 質量パラメータ
+ * @return トリガー軸の値
+ */
+double GetTriggerAxisValue(const my_type::State<double>& state, const std::string& axis,
+                           double mu) {
+  if (axis == "x") return state.x;
+  if (axis == "y") return state.y;
+  if (axis == "z") return state.z;
+  if (axis == "r") return std::sqrt(state.x * state.x + state.y * state.y + state.z * state.z);
+  if (axis == "r_earth") {
+    double dx = state.x - (1.0 - mu);
+    return std::sqrt(dx * dx + state.y * state.y + state.z * state.z);
+  }
+  return 0.0;
+}
+
+/**
+ * @brief インパルストリガー条件をチェック
+ * @param prev_state 前ステップの状態
+ * @param current_state 現在の状態
+ * @param prev_time 前ステップの時刻
+ * @param current_time 現在の時刻
+ * @param impulse インパルス設定
+ * @param mu 質量パラメータ
+ * @return トリガー条件を満たした場合true
+ */
+bool CheckImpulseTrigger(const my_type::State<double>& prev_state,
+                         const my_type::State<double>& current_state, double prev_time,
+                         double current_time, const ImpulseConfig& impulse, double mu) {
+  if (impulse.trigger_type == "time") {
+    // 時刻ベースのトリガー
+    return prev_time < impulse.trigger_value && current_time >= impulse.trigger_value;
+  }
+  if (impulse.trigger_type == "distance_from_point") {
+    // 指定点からの距離ベースのトリガー
+    double prev_dx = prev_state.x - impulse.trigger_point[0];
+    double prev_dy = prev_state.y - impulse.trigger_point[1];
+    double prev_dz = prev_state.z - impulse.trigger_point[2];
+    double prev_dist = std::sqrt(prev_dx * prev_dx + prev_dy * prev_dy + prev_dz * prev_dz);
+
+    double curr_dx = current_state.x - impulse.trigger_point[0];
+    double curr_dy = current_state.y - impulse.trigger_point[1];
+    double curr_dz = current_state.z - impulse.trigger_point[2];
+    double curr_dist = std::sqrt(curr_dx * curr_dx + curr_dy * curr_dy + curr_dz * curr_dz);
+
+    // 距離が閾値を下回った（外から内へ進入）
+    return prev_dist > impulse.trigger_radius && curr_dist <= impulse.trigger_radius;
+  }
+  // 位置ベースのトリガー (position)
+  double prev_val = GetTriggerAxisValue(prev_state, impulse.trigger_axis, mu);
+  double curr_val = GetTriggerAxisValue(current_state, impulse.trigger_axis, mu);
+  double threshold = impulse.trigger_value;
+
+  bool crossed = (prev_val < threshold && curr_val >= threshold) ||
+                 (prev_val > threshold && curr_val <= threshold);
+  if (!crossed) return false;
+
+  // 方向チェック
+  if (impulse.trigger_direction == "increasing") {
+    return prev_val < threshold && curr_val >= threshold;
+  } else if (impulse.trigger_direction == "decreasing") {
+    return prev_val > threshold && curr_val <= threshold;
+  }
+  // "any"
+  return true;
+}
+
+/**
+ * @brief 線形補間でトリガー位置の割合を計算
+ * @param prev_state 前ステップの状態
+ * @param current_state 現在の状態
+ * @param prev_time 前ステップの時刻
+ * @param current_time 現在の時刻
+ * @param impulse インパルス設定
+ * @param mu 質量パラメータ
+ * @return [0, 1] の割合（0=前ステップ、1=現在ステップ）
+ */
+double ComputeTriggerFraction(const my_type::State<double>& prev_state,
+                              const my_type::State<double>& current_state, double prev_time,
+                              double current_time, const ImpulseConfig& impulse, double mu) {
+  if (impulse.trigger_type == "time") {
+    double dt = current_time - prev_time;
+    if (dt <= 0) return 0.0;
+    return (impulse.trigger_value - prev_time) / dt;
+  }
+  if (impulse.trigger_type == "distance_from_point") {
+    // 距離ベースの線形補間
+    double prev_dx = prev_state.x - impulse.trigger_point[0];
+    double prev_dy = prev_state.y - impulse.trigger_point[1];
+    double prev_dz = prev_state.z - impulse.trigger_point[2];
+    double prev_dist = std::sqrt(prev_dx * prev_dx + prev_dy * prev_dy + prev_dz * prev_dz);
+
+    double curr_dx = current_state.x - impulse.trigger_point[0];
+    double curr_dy = current_state.y - impulse.trigger_point[1];
+    double curr_dz = current_state.z - impulse.trigger_point[2];
+    double curr_dist = std::sqrt(curr_dx * curr_dx + curr_dy * curr_dy + curr_dz * curr_dz);
+
+    double ddist = curr_dist - prev_dist;
+    if (std::abs(ddist) < 1e-15) return 0.0;
+    return (impulse.trigger_radius - prev_dist) / ddist;
+  }
+  // 位置ベース (position)
+  double prev_val = GetTriggerAxisValue(prev_state, impulse.trigger_axis, mu);
+  double curr_val = GetTriggerAxisValue(current_state, impulse.trigger_axis, mu);
+  double dval = curr_val - prev_val;
+  if (std::abs(dval) < 1e-15) return 0.0;
+  return (impulse.trigger_value - prev_val) / dval;
+}
+
+/**
+ * @brief 状態を線形補間
+ */
+my_type::State<double> InterpolateState(const my_type::State<double>& s1,
+                                        const my_type::State<double>& s2, double alpha) {
+  return {s1.x + alpha * (s2.x - s1.x),    s1.y + alpha * (s2.y - s1.y),
+          s1.z + alpha * (s2.z - s1.z),    s1.vx + alpha * (s2.vx - s1.vx),
+          s1.vy + alpha * (s2.vy - s1.vy), s1.vz + alpha * (s2.vz - s1.vz)};
+}
+
+/**
+ * @brief インパルスを適用
+ * @param state 状態ベクトル（速度を変更）
+ * @param impulse インパルス設定
+ */
+void ApplyImpulse(my_type::State<double>* state, const ImpulseConfig& impulse) {
+  if (impulse.velocity_mode == "delta") {
+    state->vx += impulse.delta_v[0];
+    state->vy += impulse.delta_v[1];
+    state->vz += impulse.delta_v[2];
+  } else if (impulse.velocity_mode == "absolute") {
+    state->vx = impulse.target_velocity[0];
+    state->vy = impulse.target_velocity[1];
+    state->vz = impulse.target_velocity[2];
+  }
+}
 
 /**
  * @brief 設定ファイルを解析してTrajectoryConfigを返す
@@ -130,6 +290,30 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
 
     // 初期座標の読み込み
     config->initial_coords = parser.GetCoordsArray("coords");
+
+    // インパルス設定の読み込み (オプション)
+    if (parser.HasKey("impulse.trigger_type")) {
+      config->impulse.enabled = true;
+      config->impulse.trigger_type = parser.GetString("impulse.trigger_type", "position");
+      config->impulse.trigger_axis = parser.GetString("impulse.trigger_axis", "x");
+      config->impulse.trigger_value = parser.GetDouble("impulse.trigger_value", 0.0);
+      config->impulse.trigger_direction = parser.GetString("impulse.trigger_direction", "any");
+      config->impulse.velocity_mode = parser.GetString("impulse.velocity_mode", "delta");
+      auto dv = parser.GetDoubleArray("impulse.delta_v");
+      if (dv.size() >= 3) {
+        config->impulse.delta_v = {dv[0], dv[1], dv[2]};
+      }
+      auto tv = parser.GetDoubleArray("impulse.target_velocity");
+      if (tv.size() >= 3) {
+        config->impulse.target_velocity = {tv[0], tv[1], tv[2]};
+      }
+      // distance_from_point 用パラメータ
+      auto tp = parser.GetDoubleArray("impulse.trigger_point");
+      if (tp.size() >= 3) {
+        config->impulse.trigger_point = {tp[0], tp[1], tp[2]};
+      }
+      config->impulse.trigger_radius = parser.GetDouble("impulse.trigger_radius", 0.01);
+    }
 
     return true;
   } catch (const std::exception& e) {
@@ -339,6 +523,36 @@ int main(int argc, char* argv[]) {
     std::cout << "<>        OUTPUT_GNUPLOT: " << (config.output_gnuplot ? "ON" : "OFF")
               << std::endl;
 
+    // インパルス設定表示
+    if (config.impulse.enabled) {
+      std::cout << "<>        IMPULSE: ENABLED" << std::endl;
+      if (config.impulse.trigger_type == "distance_from_point") {
+        std::cout << "<>          Trigger: distance_from_point" << std::endl;
+        std::cout << "<>          Point: (" << config.impulse.trigger_point[0] << ", "
+                  << config.impulse.trigger_point[1] << ", " << config.impulse.trigger_point[2]
+                  << ")" << std::endl;
+        std::cout << "<>          Radius: " << config.impulse.trigger_radius << std::endl;
+      } else if (config.impulse.trigger_type == "time") {
+        std::cout << "<>          Trigger: time = " << config.impulse.trigger_value << std::endl;
+      } else {
+        std::cout << "<>          Trigger: " << config.impulse.trigger_type << " ("
+                  << config.impulse.trigger_axis << " = " << config.impulse.trigger_value << ", "
+                  << config.impulse.trigger_direction << ")" << std::endl;
+      }
+      std::cout << "<>          Mode: " << config.impulse.velocity_mode << std::endl;
+      if (config.impulse.velocity_mode == "delta") {
+        std::cout << "<>          Delta-V: (" << config.impulse.delta_v[0] << ", "
+                  << config.impulse.delta_v[1] << ", " << config.impulse.delta_v[2] << ")"
+                  << std::endl;
+      } else {
+        std::cout << "<>          Target-V: (" << config.impulse.target_velocity[0] << ", "
+                  << config.impulse.target_velocity[1] << ", " << config.impulse.target_velocity[2]
+                  << ")" << std::endl;
+      }
+    } else {
+      std::cout << "<>        IMPULSE: DISABLED" << std::endl;
+    }
+
     // 計算のステップ数
     int num_steps = static_cast<int>(config.time_threshold / config.calc_timestep);
     std::cout << "<>    Total integration steps per trajectory: " << num_steps << std::endl;
@@ -482,8 +696,13 @@ int main(int argc, char* argv[]) {
       double lle_sum = 0.0;      // log(増大率)の累積和
       int lle_renorm_count = 0;  // 再正規化回数
 
+      // インパルス用変数
+      bool impulse_applied = false;
+      my_type::State<double> prev_state = state;  // 前ステップの状態保持
+
       for (int step = 0; step < num_steps; ++step) {
         double chaos_value = 0.0;
+        double prev_time = current_time;  // インパルス検出用に時刻を保存
 
         switch (config.chaos_index_type) {
           case ChaosIndexType::SALI:
@@ -672,6 +891,78 @@ int main(int argc, char* argv[]) {
             break;
         }
         current_time += config.calc_timestep;
+
+        // ===== インパルス適用チェック =====
+        if (config.impulse.enabled && !impulse_applied) {
+          if (CheckImpulseTrigger(prev_state, state, prev_time, current_time, config.impulse,
+                                  kMU)) {
+            // 線形補間で正確なトリガー位置を計算
+            double alpha = ComputeTriggerFraction(prev_state, state, prev_time, current_time,
+                                                  config.impulse, kMU);
+            double trigger_time = prev_time + alpha * config.calc_timestep;
+
+            // トリガー位置での状態を補間（オプション: 精度を上げたい場合）
+            my_type::State<double> trigger_state = InterpolateState(prev_state, state, alpha);
+
+            // インパルス適用前のヤコビ積分
+            double pre_jacobi = crtbp::calc_jacobi_integral(trigger_state, kMU);
+
+            // 速度変更を適用
+            ApplyImpulse(&trigger_state, config.impulse);
+
+            // インパルス適用後のヤコビ積分
+            double post_jacobi = crtbp::calc_jacobi_integral(trigger_state, kMU);
+
+            impulse_applied = true;
+
+            // 状態を更新（インパルス後の状態から継続）
+            state = trigger_state;
+
+            std::cout << "<>        [IMPULSE] Applied at t=" << std::setprecision(6) << trigger_time
+                      << std::endl;
+            if (config.impulse.trigger_type == "distance_from_point") {
+              std::cout << "<>                  Trigger: distance from ("
+                        << config.impulse.trigger_point[0] << ", "
+                        << config.impulse.trigger_point[1] << ", "
+                        << config.impulse.trigger_point[2]
+                        << ") <= " << config.impulse.trigger_radius << std::endl;
+            } else if (config.impulse.trigger_type == "time") {
+              std::cout << "<>                  Trigger: time = " << config.impulse.trigger_value
+                        << std::endl;
+            } else {
+              std::cout << "<>                  Trigger: " << config.impulse.trigger_axis << " = "
+                        << config.impulse.trigger_value << std::endl;
+            }
+            std::cout << "<>                  Mode: " << config.impulse.velocity_mode << std::endl;
+            if (config.impulse.velocity_mode == "delta") {
+              std::cout << "<>                  Delta-V: (" << config.impulse.delta_v[0] << ", "
+                        << config.impulse.delta_v[1] << ", " << config.impulse.delta_v[2] << ")"
+                        << std::endl;
+            } else {
+              std::cout << "<>                  Target V: (" << config.impulse.target_velocity[0]
+                        << ", " << config.impulse.target_velocity[1] << ", "
+                        << config.impulse.target_velocity[2] << ")" << std::endl;
+            }
+            std::cout << "<>                  Jacobi: " << pre_jacobi << " -> " << post_jacobi
+                      << " (delta=" << post_jacobi - pre_jacobi << ")" << std::endl;
+
+            // カオス指標計算用の状態も更新が必要な場合（SALI/GALI使用時）
+            if (config.chaos_index_type == ChaosIndexType::SALI ||
+                config.chaos_index_type == ChaosIndexType::GALI ||
+                config.chaos_index_type == ChaosIndexType::LLE) {
+              sali_state.state = crtbp::ConvertToCanonical(state);
+            }
+            if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 4) {
+              gali4_state.state = crtbp::ConvertToCanonical(state);
+            }
+            if (config.chaos_index_type == ChaosIndexType::GALI && config.gali_k == 6) {
+              gali6_state.state = crtbp::ConvertToCanonical(state);
+            }
+          }
+        }
+
+        // 前ステップの状態を更新
+        prev_state = state;
 
         // 周波数解析用にデータを収集
         freq_buffer.Push(current_time, state);
