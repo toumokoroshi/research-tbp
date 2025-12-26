@@ -1,9 +1,19 @@
 #ifndef UTILS_HPP
 #define UTILS_HPP
 
+// Windows環境でM_PIを使用可能にする
+#ifndef _USE_MATH_DEFINES
+#define _USE_MATH_DEFINES
+#endif
+
 #include <algorithm>
 #include <array>
 #include <cmath>
+
+// M_PIが未定義の場合のフォールバック
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -892,38 +902,150 @@ inline std::vector<State3d<ScalarType>> convertMeshToSimulationUnits(
   return converted;
 }
 
-// template <typename T, typename ScalarType>
-// inline std::vector<T> create_cube_mesh(const ScalarType ROI_length, const int divisions,
-// }
-// template <typename ScalarType>
-// inline std::vector<Coord3D<ScalarType>> create_square_mesh(
-//     const ScalarType ROI_length, const int divisions,
-//     const Coord3D<ScalarType>& center = Coord3D<ScalarType>(0, 0, 0), const double z = 0) {
-//   std::vector<Coord3D<ScalarType>> meshPoints;
-//   if (divisions <= 0) return meshPoints;
+/**
+ * @brief 軌道面上に一定面積密度で同心円状の無次元メッシュを生成する
+ *
+ * 任意の軌道面（法線ベクトルで指定）上に、中心点から放射状に同心円を描くように
+ * メッシュ点を配置する。外側ほど角度分割数を増やし、面積あたりの点密度を一定に保つ
+ *
+ * @tparam ScalarType 座標の型（通常はdouble）
+ * @param center 同心円の中心座標（無次元）
+ * @param plane_normal 直行座標系での軌道面の法線ベクトル（単位ベクトルでなくてもよい、自動正規化）
+ * @param r_min 最小半径（無次元、0より大きい場合は中心付近を除外）
+ * @param r_max 最大半径（無次元）
+ * @param radial_divisions 半径方向の分割数
+ * @param base_angular_divisions 最内円での角度分割数（外側ではr/r_minに比例して増加）
+ * @return 生成されたメッシュ点のベクター
+ * @throws std::invalid_argument 無効なパラメータの場合
+ *
+ * @note 半径rでの角度分割数 = base_angular_divisions × (r / r_min)
+ * @note 総メッシュ点数は半径分割数と各円の角度分割数の合計
+ */
+template <typename ScalarType>
+inline std::vector<State3d<ScalarType>> CreateConcentricDimensionlessMesh(
+    const State3d<ScalarType>& center, const State3d<ScalarType>& plane_normal,
+    const ScalarType r_min, const ScalarType r_max, const int radial_divisions,
+    const int base_angular_divisions) {
+  std::vector<State3d<ScalarType>> meshPoints;
 
-//   double step = (2 * ROI_length) / (divisions - 1);
+  // 入力検証
+  if (r_min < ScalarType(0)) {
+    throw std::invalid_argument("CreateConcentricDimensionlessMesh: r_min must be non-negative.");
+  }
+  if (r_max <= r_min) {
+    throw std::invalid_argument(
+        "CreateConcentricDimensionlessMesh: r_max must be greater than r_min.");
+  }
+  if (radial_divisions <= 0) {
+    throw std::invalid_argument(
+        "CreateConcentricDimensionlessMesh: radial_divisions must be positive.");
+  }
+  if (base_angular_divisions <= 0) {
+    throw std::invalid_argument(
+        "CreateConcentricDimensionlessMesh: base_angular_divisions must be positive.");
+  }
 
-//   for (int i = 0; i < divisions; ++i) {
-//     for (int j = 0; j < divisions; ++j) {
-//       for (int k = 0; k < divisions; ++k) {
-//         ScalarType x = center[0] - ROI_length + i * step;
-//         ScalarType y = center[1] - ROI_length + j * step;
-//         ScalarType z = center[2] - ROI_length + j * step;
-//         meshPoints.push_back({x, y, z});
-//       }
-//     }
-//   }
+  // 法線ベクトルの正規化
+  const ScalarType norm_n =
+      std::sqrt(plane_normal.x * plane_normal.x + plane_normal.y * plane_normal.y +
+                plane_normal.z * plane_normal.z);
+  if (norm_n < ScalarType(1e-12)) {
+    throw std::invalid_argument(
+        "CreateConcentricDimensionlessMesh: plane_normal must be non-zero.");
+  }
+  const State3d<ScalarType> n{plane_normal.x / norm_n, plane_normal.y / norm_n,
+                              plane_normal.z / norm_n};
 
-//   std::sort(meshPoints.begin(), meshPoints.end(),
-//             [](const Coord3D<ScalarType>& a, const Coord3D<ScalarType>& b) {
-//               if (a[2] != b[2]) return a[2] < b[2];
-//               if (a[1] != b[1]) return a[1] < b[1];
-//               return a[0] < b[0];
-//             });
+  // 軌道面上の基底ベクトル（u, v）を構築
+  // uは法線nと非平行なベクトルとの外積で生成
+  State3d<ScalarType> u, v;
+  if (std::abs(n.x) < ScalarType(0.9)) {
+    // nがx軸と十分異なる場合、x軸との外積を使用
+    u = {ScalarType(0), -n.z, n.y};  // (1,0,0) × n
+  } else {
+    // nがx軸に近い場合、y軸との外積を使用
+    u = {n.z, ScalarType(0), -n.x};  // (0,1,0) × n
+  }
+  // uを正規化
+  const ScalarType norm_u = std::sqrt(u.x * u.x + u.y * u.y + u.z * u.z);
+  u = {u.x / norm_u, u.y / norm_u, u.z / norm_u};
 
-//   return meshPoints;
-// }
+  // v = n × u（右手系）
+  v = {n.y * u.z - n.z * u.y, n.z * u.x - n.x * u.z, n.x * u.y - n.y * u.x};
+
+  // 半径ステップの計算
+  const ScalarType r_step = (radial_divisions > 1)
+                                ? (r_max - r_min) / static_cast<ScalarType>(radial_divisions - 1)
+                                : ScalarType(0);
+
+  // r_min が 0 の場合の参照半径（一定面積密度計算用）
+  const ScalarType r_ref = (r_min > ScalarType(0)) ? r_min : r_step;
+
+  // 総点数を概算してメモリ予約
+  std::size_t estimated_points = 0;
+  for (int ir = 0; ir < radial_divisions; ++ir) {
+    const ScalarType r = r_min + static_cast<ScalarType>(ir) * r_step;
+    if (r < ScalarType(1e-12)) {
+      estimated_points += 1;  // 中心点
+    } else {
+      const int angular_div =
+          std::max(base_angular_divisions, static_cast<int>(base_angular_divisions * r / r_ref));
+      estimated_points += static_cast<std::size_t>(angular_div);
+    }
+  }
+  meshPoints.reserve(estimated_points);
+
+  // 同心円状にメッシュ点を生成
+  for (int ir = 0; ir < radial_divisions; ++ir) {
+    const ScalarType r = r_min + static_cast<ScalarType>(ir) * r_step;
+
+    if (r < ScalarType(1e-12)) {
+      // 中心点（r≈0のとき1点のみ）
+      meshPoints.push_back(center);
+      continue;
+    }
+
+    // 一定面積密度: 半径に比例して角度分割数を増加
+    const int angular_divisions =
+        std::max(base_angular_divisions, static_cast<int>(base_angular_divisions * r / r_ref));
+
+    const ScalarType theta_step =
+        (ScalarType(2) * M_PI) / static_cast<ScalarType>(angular_divisions);
+
+    for (int itheta = 0; itheta < angular_divisions; ++itheta) {
+      const ScalarType theta = static_cast<ScalarType>(itheta) * theta_step;
+
+      // 軌道面上の局所座標（u-v平面での極座標）
+      const ScalarType local_x = r * std::cos(theta);
+      const ScalarType local_y = r * std::sin(theta);
+
+      // 3次元空間座標への変換: P = center + local_x * u + local_y * v
+      const ScalarType x = center.x + local_x * u.x + local_y * v.x;
+      const ScalarType y = center.y + local_x * u.y + local_y * v.y;
+      const ScalarType z = center.z + local_x * u.z + local_y * v.z;
+
+      meshPoints.push_back({x, y, z});
+    }
+  }
+
+  // 半径順でソート（安定した出力順序のため）
+  std::sort(meshPoints.begin(), meshPoints.end(),
+            [&center](const State3d<ScalarType>& a, const State3d<ScalarType>& b) {
+              const ScalarType ra = std::sqrt((a.x - center.x) * (a.x - center.x) +
+                                              (a.y - center.y) * (a.y - center.y) +
+                                              (a.z - center.z) * (a.z - center.z));
+              const ScalarType rb = std::sqrt((b.x - center.x) * (b.x - center.x) +
+                                              (b.y - center.y) * (b.y - center.y) +
+                                              (b.z - center.z) * (b.z - center.z));
+              if (std::abs(ra - rb) > ScalarType(1e-12)) return ra < rb;
+              // 同一半径では角度でソート（xy平面への射影で近似）
+              const ScalarType ta = std::atan2(a.y - center.y, a.x - center.x);
+              const ScalarType tb = std::atan2(b.y - center.y, b.x - center.x);
+              return ta < tb;
+            });
+
+  return meshPoints;
+}
 
 inline void displayProgressBar(double progress, int barWidth = 40) {
   std::cout << "[";

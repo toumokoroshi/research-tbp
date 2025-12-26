@@ -76,4 +76,5 @@ TBP/
 
 ### 2.ビルド方法
 https://dexall.co.jp/articles/?p=1968
+https://qiita.com/Sego-don/items/f5c8adf853c4badf8171
 ### 3.シミュレータの使用方法
