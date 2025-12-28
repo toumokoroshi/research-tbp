@@ -20,7 +20,7 @@
 ```batch
 git clone <repository-url>
 cd TBP
-scripts\setup.bat
+tools\setup.bat
 ```
 
 セットアップスクリプトは以下を自動的に行います：
