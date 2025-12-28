@@ -4,7 +4,7 @@ add_subdirectory(SALI3d)
 add_subdirectory(SALI3dV2) 
 add_subdirectory(SALI3dV3) 
 # add_subdirectory(SSBI2SEBR)  # Removed - directory deleted
-add_subdirectory(CalcMethodCompare) 
+# add_subdirectory(CalcMethodCompare) 
 add_subdirectory(TrajectorySali)
 add_subdirectory(SaliOrbPlane)
 add_subdirectory(PoincareMap)

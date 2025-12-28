@@ -1,5 +1,7 @@
 build/
 scripts/.venv/
+# vcpkg will be installed by setup.bat - do not track
+external/vcpkg/
 data/
 test/configs/
 test/data/
