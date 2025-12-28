@@ -17,7 +17,7 @@
       "architecture": "x64",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
+        "Boost_ROOT": "$env{BOOST_ROOT}"
       }
     },
     {
@@ -30,7 +30,33 @@
         "CMAKE_C_COMPILER": "icx-cl",
         "CMAKE_CXX_COMPILER": "icx-cl",
         "CMAKE_BUILD_TYPE": "Debug",
-        "Boost_ROOT": "C:/Program_Languages/cpp_lib/boost-1_88_0"
+        "Boost_ROOT": "$env{BOOST_ROOT}"
+      }
+    },
+    {
+      "name": "mingw-gcc",
+      "displayName": "MinGW-gcc with Ninja",
+      "description": "Using MinGW-gcc compiler with Ninja generator",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "Boost_ROOT": "$env{BOOST_ROOT}"
+      }
+    },
+    {
+      "name": "mingw-gcc-make",
+      "displayName": "MinGW-gcc with MinGW Makefiles",
+      "description": "Using MinGW-gcc compiler with MinGW Makefiles generator (no Ninja required)",
+      "generator": "MinGW Makefiles",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "Boost_ROOT": "$env{BOOST_ROOT}"
       }
     }
   ],
@@ -43,6 +69,14 @@
     {
       "name": "ninja-intel",
       "configurePreset": "ninja-intel"
+    },
+    {
+      "name": "mingw-gcc",
+      "configurePreset": "mingw-gcc"
+    },
+    {
+      "name": "mingw-gcc-make",
+      "configurePreset": "mingw-gcc-make"
     }
   ]
 }

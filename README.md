@@ -1,80 +1,194 @@
-# tabata repo readme
+# TBP - Three Body Problem Simulation
 
-## adgenda
+円制限三体問題（CR3BP）のシミュレーションおよび解析ツール群
 
-1. ディレクトリ構成とファイルの役割
-2. ビルド方法
-3. シミュレータの使用方法
+## 目次
 
-## main
+1. [クイックスタート](#クイックスタート)
+2. [必要な環境](#必要な環境)
+3. [手動セットアップ](#手動セットアップ)
+4. [ディレクトリ構成](#ディレクトリ構成)
+5. [シミュレータの使用方法](#シミュレータの使用方法)
+6. [トラブルシューティング](#トラブルシューティング)
 
-### 1.ディレクトリ構成とファイルの役割
+---
 
+## クイックスタート
+
+リポジトリをクローンした後、以下のコマンドを実行するだけで環境構築とビルドが完了します：
+
+```batch
+git clone <repository-url>
+cd TBP
+scripts\setup.bat
+```
+
+セットアップスクリプトは以下を自動的に行います：
+- 依存関係のチェック（Git, CMake, Ninja, コンパイラ）
+- vcpkg と Boost のインストール（`external/` ディレクトリに）
+- `BOOST_ROOT` 環境変数の永続的な登録
+- プロジェクトのビルド
+
+---
+
+## 必要な環境
+
+### 必須
+
+| ツール | バージョン | インストール方法 |
+|--------|-----------|-----------------|
+| Git | 任意 | https://git-scm.com/ |
+| CMake | 3.15以上 | https://cmake.org/ |
+
+### コンパイラ（いずれか1つ）
+
+| コンパイラ | 推奨度 | インストール方法 |
+|-----------|-------|-----------------|
+| Intel oneAPI + Ninja | ⭐⭐⭐ 推奨 | [Intel oneAPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html) |
+| MinGW-gcc | ⭐⭐ 代替 | `winget install -e --id mingw.mingw-w64-ucrt-x86_64` |
+
+### オプション
+
+| ツール | 用途 | インストール方法 |
+|--------|------|-----------------|
+| Ninja | 高速ビルド | `winget install Ninja-build.Ninja` |
+
+---
+
+## 手動セットアップ
+
+自動セットアップを使用しない場合は、以下の手順で環境を構築できます：
+
+### 1. Boost のインストール
+
+**方法A: vcpkg を使用（推奨）**
+```batch
+cd external
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+bootstrap-vcpkg.bat -disableMetrics
+vcpkg install boost:x64-windows
+```
+
+**方法B: 手動インストール**
+1. [Boost公式サイト](https://www.boost.org/)からダウンロード
+2. 任意の場所に展開
+
+### 2. 環境変数の設定
+
+`BOOST_ROOT` をユーザー環境変数に設定します：
+
+```batch
+rem vcpkg を使用した場合
+setx BOOST_ROOT "C:\path\to\TBP\external\vcpkg\installed\x64-windows"
+
+rem 手動インストールの場合
+setx BOOST_ROOT "C:\path\to\boost_1_xx_0"
+```
+
+### 3. ビルド
+
+**Intel oneAPI + Ninja の場合:**
+```batch
+call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"
+cmake --preset=ninja-intel
+cmake --build build
+```
+
+**MinGW-gcc の場合:**
+```batch
+cmake --preset=mingw-gcc
+cmake --build build
+```
+
+---
+
+## ディレクトリ構成
+
+```
 TBP/
-├── .clang-format             # c/cppフォーマッタ設定　　コードの動作やビルドの挙動には関係ない
-├── .clangd　                  # c/cpp言語サーバーclangdの設定　　コードの動作やビルドの挙動には関係ない
-├── .gitignore　               # gitignore　　コードの動作やビルドの挙動には関係ない
-├── .gitmessage.txt           # コミットメッセージテンプレート　　コードの動作やビルドの挙動には関係ない
-├── compile_flags.txt　        # clangdの設定として必要なはず　　コードの動作やビルドの挙動には関係ない
 ├── CMakeLists.txt            # ルートのCMake設定
-├── CMakePresets.json         # CMakeのビルドのconfig
-├── README.md　                # README
-├── setup.bat                 # インテルコンパイラ用の環境変数設定を行うバッチファイルを走らせた後に、宣言されているすべてのappをcmakeを使いビルドするためのバッチファイル
+├── CMakePresets.json         # CMakeビルドプリセット
+├── README.md                 # このファイル
 │
-├── .vscode/
-│   └── settings.json         # vscodeの設定　フォーマッタの設定ファイルパスを示してあるだけ　コードの動作やビルドの挙動には関係ない
-├── .zed/
-│   └── settings.json　        # zedというエディタの設定　コードの動作やビルドの挙動には関係ない
-├── __past/
+├── scripts/                  # セットアップスクリプト
+│   ├── setup.bat             # メインセットアップスクリプト
+│   ├── check_dependencies.bat # 依存関係チェック
+│   └── install_vcpkg_boost.bat # vcpkg/Boostインストール
 │
-├── _bin/
+├── external/                 # 外部依存ライブラリ
+│   └── vcpkg/                # vcpkg (setup.bat実行後に作成)
 │
-├── apps/                     # シミュレーション本体(app)たちを格納する
-│   ├── CMakeLists.txt        # appを宣言するCMake
-│   ├── SALI2d/
-│   │   ├── CMakeLists.txt    # appのビルドに必要なライブラリをリンクするなどappのビルドに必要な個別設定
-│   │   └── main.cpp
-│   ├── SALI3d/
-│   │   ├── CMakeLists.txt    # appのビルドに必要なライブラリをリンクするなどappのビルドに必要な個別設定
-│   │   └── main.cpp
-│   ├── SALI3dV2/
-│   │   ├── CMakeLists.txt　　　　# appのビルドに必要なライブラリをリンクするなどappのビルドに必要な個別設定
-│   │   └── main.cpp
-│   └── SSBI2SEBR/
-│       ├── CMakeLists.txt　　　　# appのビルドに必要なライブラリをリンクするなどappのビルドに必要な個別設定
-│       └── main.cpp
-├── configs/                  # シミュレータが読む設定ファイル
-│   ├── 3D_crtbp_SALI/
-│   │    └──  .....txt
-│   └── astro_param
-│        └── astro_param.txt  # JPLのデータベースから引っ張ってきた太陽とか地球のデータ
-├── data/                  # シミュレータが読む設定ファイル
-│   ├── 3D_crtbp_SALI/
-│   │
-│   ├── Ephemeris/
-│   │
-│   ├── result/
-│   │
-│   └── SALI/
+├── apps/                     # シミュレーションアプリケーション
+│   ├── SALI2d/               # 2D SALI解析
+│   ├── SALI3d/               # 3D SALI解析
+│   ├── PoincareMap/          # ポアンカレ断面
+│   └── ...
+│
 ├── lib/                      # 共有ライブラリ
-│   ├── CMakeLists.txt
-│   ├── include/              # 公開ヘッダーファイル
-│   │   ├── crtbp.h           # 円制限三体問題での計算用のクラス　実装が汚いのでもう使っていない　テンプレートを使っているためヘッダオンリー
-│   │   ├── rtbp.h　　　　　　　　　　　　# 円制限三体問題での計算用のクラス　テンプレートを使っているためヘッダオンリー
-│   │   ├── utils.h　　　　　　　　　　　# プログレスバーなど汎用の関数をまとめたファイル　テンプレートを使っているためヘッダオンリー
-│   │   └── vector3d.h　　　　　　　　# 基本的な3次元ベクトル演算を行うためのベクトルクラス　ほんとはeigenとか使うべき　テンプレートを使っているためヘッダオンリー
-│   └── src/
-│       └── .gitkeep
-├── scripts/
-│   ├── requirements.txt
-│   └── README.md
-├── test/                     # いろんなテストやデバッグが入ってる
-│   ├── .gitkeep
-│   └── README.md
-└── external/                 # 外部依存ライブラリ（オプション）
-    └── .gitkeep
+│   └── include/              # ヘッダファイル
+│       ├── rtbp.hpp          # CR3BP計算クラス
+│       ├── crtbp.hpp         # CR3BP追加機能
+│       └── utils.hpp         # ユーティリティ関数
+│
+├── configs/                  # シミュレーション設定ファイル
+├── data/                     # 出力データ
+├── test/                     # テストコード
+└── build/                    # ビルド出力 (gitignore)
+```
 
-### 2.ビルド方法
-https://dexall.co.jp/articles/?p=1968
-https://qiita.com/Sego-don/items/f5c8adf853c4badf8171
-### 3.シミュレータの使用方法
+---
+
+## シミュレータの使用方法
+
+ビルド後、実行ファイルは `build/bin/` に生成されます：
+
+```batch
+rem 例: SALI2dの実行
+build\bin\Debug\SALI2d.exe configs\sali2d\config.toml
+
+rem 例: ポアンカレマップの生成
+build\bin\Debug\PoincareMap.exe configs\poincare\config.toml
+```
+
+---
+
+## トラブルシューティング
+
+### BOOST_ROOT が見つからない
+
+```
+CMake Error: Could NOT find Boost
+```
+
+**解決策:**
+1. 新しいターミナルを開き、`echo %BOOST_ROOT%` で環境変数を確認
+2. 環境変数が設定されていない場合は `scripts\setup.bat` を再実行
+
+### Ninja が見つからない
+
+```
+CMake Error: CMake was unable to find a build program corresponding to "Ninja"
+```
+
+**解決策:**
+1. `winget install Ninja-build.Ninja` でインストール
+2. または `mingw-gcc-make` プリセットを使用: `cmake --preset=mingw-gcc-make`
+
+### oneAPI 環境が設定されていない
+
+```
+'icx-cl' is not recognized as an internal or external command
+```
+
+**解決策:**
+1. `call "C:\Program Files (x86)\Intel\oneAPI\setvars.bat"` を実行
+2. または MinGW-gcc プリセットを使用
+
+---
+
+## 参考リンク
+
+- [Intel oneAPI インストールガイド](https://dexall.co.jp/articles/?p=1968)
+- [CMake + Intel コンパイラ設定](https://qiita.com/Sego-don/items/f5c8adf853c4badf8171)
+

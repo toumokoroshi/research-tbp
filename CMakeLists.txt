@@ -16,6 +16,9 @@ else()
     set(ONEAPI_ROOT "/opt/intel/oneapi")  # デフォルトパス
 endif()
 
+# -------------------------------------------------------------
+# コンパイラ別の設定
+# -------------------------------------------------------------
 # WindowsでIntel LLVMコンパイラを使用する場合の設定
 # IntelLLVMとして検出される場合と、MSVC互換ドライバー（icx-cl）の両方に対応
 if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" OR CMAKE_CXX_COMPILER MATCHES "icx-cl" OR CMAKE_CXX_COMPILER MATCHES "icx" OR CMAKE_CXX_COMPILER MATCHES "icpx"))
@@ -28,8 +31,29 @@ if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" OR CMAKE_CXX_COMPILER MA
     # ランタイムライブラリの設定
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
 
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    # MinGW-gcc の場合
+    message(STATUS "Configuring for GNU/MinGW-gcc compiler")
+
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wshadow -Wconversion")
+
+    # MinGW用の追加フラグ（Windows API対応）
+    if(WIN32)
+        add_compile_definitions(_WIN32_WINNT=0x0601)
+    endif()
+
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    # Clang の場合
+    message(STATUS "Configuring for Clang compiler")
+
+    set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wshadow -Wconversion")
+
 else()
-    # Unix系またはGNU/Clangモードの場合
+    # その他のUnix系コンパイラの場合
+    message(STATUS "Configuring for generic Unix compiler")
+
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O3 -Wall -Wextra -Wshadow -Wconversion")
 endif()
