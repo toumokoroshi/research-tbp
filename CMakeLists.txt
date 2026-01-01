@@ -104,7 +104,7 @@ if(WIN32 AND (CMAKE_CXX_COMPILER_ID MATCHES "IntelLLVM" OR CMAKE_CXX_COMPILER MA
     endif()
 endif()
 
-find_package(OpenMP REQUIRED)
+find_package(OpenMP)
 
 # -------------------------------------------------------------
 # サブディレクトリの追加

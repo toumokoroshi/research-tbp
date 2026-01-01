@@ -11,4 +11,6 @@ add_subdirectory(PoincareMap)
 add_subdirectory(TrajectoryCalc)
 add_subdirectory(PeriodicOrbitAnalysis)
 add_subdirectory(JacobiIntegralCalc)
+add_subdirectory(AsteroidOrbitIntersection)
+add_subdirectory(PeriodicOrbitContinuation)
 
