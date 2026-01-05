@@ -49,10 +49,18 @@ struct ImpulseOrbitSearchConfig {
 
   // 速度掃引設定（適応的サンプリング）
   bool enable_adaptive_sampling = true;  ///< 適応的サンプリング使用
-  int theta_divisions_coarse = 12;       ///< 粗いθ分割数
-  int phi_divisions_coarse = 6;          ///< 粗いφ分割数
-  int theta_divisions_fine = 6;          ///< 細かいθ分割数
-  int phi_divisions_fine = 6;            ///< 細かいφ分割数
+  int in_plane_divisions_coarse = 12;    ///< 粗い軌道面内分割数
+  int out_plane_divisions_coarse = 6;    ///< 粗い軌道面外分割数
+  int in_plane_divisions_fine = 6;       ///< 細かい軌道面内分割数
+  int out_plane_divisions_fine = 6;      ///< 細かい軌道面外分割数
+
+  // 走査範囲（度単位）
+  // in_plane: 軌道面内での元の速度からの角度（0=同方向, ±180=逆方向）
+  // out_plane: 軌道面外への角度（0=軌道面内, ±90=法線方向）
+  double in_plane_min_deg = -180.0;  ///< 軌道面内角度 最小値（度）
+  double in_plane_max_deg = 180.0;   ///< 軌道面内角度 最大値（度）
+  double out_plane_min_deg = -90.0;  ///< 軌道面外角度 最小値（度）
+  double out_plane_max_deg = 90.0;   ///< 軌道面外角度 最大値（度）
 
   // 細分化条件
   bool refine_high_sali = true;        ///< 高SALI領域を細分化
@@ -188,7 +196,7 @@ std::vector<std::string> DiscoverOrbitFiles(const std::string& data_dir,
 }
 
 /**
- * @brief 球座標から直交座標への変換
+ * @brief 球座標から直交座標への変換（固定座標系）
  * @param theta 方位角 (rad)
  * @param phi 仰角 (rad)
  * @param magnitude 大きさ
@@ -197,6 +205,84 @@ State3d<double> SphericalToCartesian(double theta, double phi, double magnitude)
   double cos_phi = std::cos(phi);
   return {magnitude * cos_phi * std::cos(theta), magnitude * cos_phi * std::sin(theta),
           magnitude * std::sin(phi)};
+}
+
+/**
+ * @brief 軌道面を基準とした座標系で速度を計算
+ * @param pos 現在位置ベクトル（軌道面定義に使用）
+ * @param orig_vel 元の速度ベクトル
+ * @param in_plane_angle 軌道面内角度 (rad) - 0=元の速度と同方向, ±π=逆方向
+ * @param out_plane_angle 軌道面外角度 (rad) - 0=軌道面内, ±π/2=法線方向
+ * @param magnitude 新しい速度の大きさ
+ * @return 新しい速度ベクトル（CR3BP座標系）
+ *
+ * 座標系:
+ *   e1 = 元の速度方向（正規化）
+ *   e2 = 軌道面内、速度に垂直 (L × e1を正規化, L = r × v)
+ *   e3 = 軌道面法線 (L方向)
+ *
+ * in_plane_angle=0, out_plane_angle=0 → 元の速度と同方向
+ */
+State3d<double> VelocityInOrbitalPlaneFrame(const State3d<double>& pos,
+                                            const State3d<double>& orig_vel, double in_plane_angle,
+                                            double out_plane_angle, double magnitude) {
+  // 元の速度の大きさ
+  double orig_mag =
+      std::sqrt(orig_vel.x * orig_vel.x + orig_vel.y * orig_vel.y + orig_vel.z * orig_vel.z);
+
+  if (orig_mag < 1e-15) {
+    // 元の速度がゼロなら固定座標系を使用
+    return SphericalToCartesian(in_plane_angle, out_plane_angle, magnitude);
+  }
+
+  // e1: 元の速度方向（単位ベクトル）
+  State3d<double> e1 = {orig_vel.x / orig_mag, orig_vel.y / orig_mag, orig_vel.z / orig_mag};
+
+  // 角運動量 L = r × v（軌道面法線）
+  State3d<double> L = {pos.y * orig_vel.z - pos.z * orig_vel.y,
+                       pos.z * orig_vel.x - pos.x * orig_vel.z,
+                       pos.x * orig_vel.y - pos.y * orig_vel.x};
+  double L_mag = std::sqrt(L.x * L.x + L.y * L.y + L.z * L.z);
+
+  State3d<double> e2, e3;
+
+  if (L_mag < 1e-15) {
+    // 位置と速度が平行な場合（直線軌道）、任意の垂直方向を使用
+    if (std::abs(e1.z) < 0.9) {
+      double len = std::sqrt(e1.x * e1.x + e1.y * e1.y);
+      e2 = {e1.y / len, -e1.x / len, 0.0};
+    } else {
+      double len = std::sqrt(e1.y * e1.y + e1.z * e1.z);
+      e2 = {0.0, e1.z / len, -e1.y / len};
+    }
+    e3 = {e1.y * e2.z - e1.z * e2.y, e1.z * e2.x - e1.x * e2.z, e1.x * e2.y - e1.y * e2.x};
+  } else {
+    // e3: 軌道面法線（L方向を正規化）
+    e3 = {L.x / L_mag, L.y / L_mag, L.z / L_mag};
+
+    // e2 = e3 × e1（軌道面内、速度に垂直）
+    e2 = {e3.y * e1.z - e3.z * e1.y, e3.z * e1.x - e3.x * e1.z, e3.x * e1.y - e3.y * e1.x};
+  }
+
+  // 速度成分を計算
+  // in_plane_angle: 軌道面内での回転（e1→e2方向が正）
+  // out_plane_angle: 軌道面からの傾き（e3方向が正）
+  double cos_out = std::cos(out_plane_angle);
+  double sin_out = std::sin(out_plane_angle);
+  double cos_in = std::cos(in_plane_angle);
+  double sin_in = std::sin(in_plane_angle);
+
+  // 軌道面内成分
+  double v_in_plane = magnitude * cos_out;
+  double v_e1 = v_in_plane * cos_in;
+  double v_e2 = v_in_plane * sin_in;
+
+  // 軌道面外成分
+  double v_e3 = magnitude * sin_out;
+
+  // CR3BP座標系に変換
+  return {v_e1 * e1.x + v_e2 * e2.x + v_e3 * e3.x, v_e1 * e1.y + v_e2 * e2.y + v_e3 * e3.y,
+          v_e1 * e1.z + v_e2 * e2.z + v_e3 * e3.z};
 }
 
 /**
@@ -214,10 +300,16 @@ bool LoadConfig(const std::string& filepath, ImpulseOrbitSearchConfig* config) {
 
     config->enable_adaptive_sampling =
         toml.GetBool("velocity_sweep.enable_adaptive_sampling", true);
-    config->theta_divisions_coarse = toml.GetInt("velocity_sweep.theta_divisions_coarse", 12);
-    config->phi_divisions_coarse = toml.GetInt("velocity_sweep.phi_divisions_coarse", 6);
-    config->theta_divisions_fine = toml.GetInt("velocity_sweep.theta_divisions_fine", 6);
-    config->phi_divisions_fine = toml.GetInt("velocity_sweep.phi_divisions_fine", 6);
+    config->in_plane_divisions_coarse = toml.GetInt("velocity_sweep.in_plane_divisions_coarse", 12);
+    config->out_plane_divisions_coarse =
+        toml.GetInt("velocity_sweep.out_plane_divisions_coarse", 6);
+    config->in_plane_divisions_fine = toml.GetInt("velocity_sweep.in_plane_divisions_fine", 6);
+    config->out_plane_divisions_fine = toml.GetInt("velocity_sweep.out_plane_divisions_fine", 6);
+
+    config->in_plane_min_deg = toml.GetDouble("velocity_sweep.in_plane_min_deg", -180.0);
+    config->in_plane_max_deg = toml.GetDouble("velocity_sweep.in_plane_max_deg", 180.0);
+    config->out_plane_min_deg = toml.GetDouble("velocity_sweep.out_plane_min_deg", -90.0);
+    config->out_plane_max_deg = toml.GetDouble("velocity_sweep.out_plane_max_deg", 90.0);
 
     config->refine_high_sali = toml.GetBool("velocity_sweep.refine_high_sali", true);
     config->sali_refine_threshold = toml.GetDouble("velocity_sweep.sali_refine_threshold", 0.1);
@@ -410,8 +502,8 @@ int main(int argc, char* argv[]) {
     std::cout << "<>    Adaptive sampling: " << (config.enable_adaptive_sampling ? "ON" : "OFF")
               << std::endl;
     if (config.enable_adaptive_sampling) {
-      std::cout << "<>      Coarse grid: " << config.theta_divisions_coarse << " x "
-                << config.phi_divisions_coarse << std::endl;
+      std::cout << "<>      Coarse grid: " << config.in_plane_divisions_coarse << " x "
+                << config.out_plane_divisions_coarse << std::endl;
       std::cout << "<>      Refine high SALI: " << (config.refine_high_sali ? "ON" : "OFF")
                 << std::endl;
       if (config.refine_high_sali) {
@@ -474,14 +566,25 @@ int main(int argc, char* argv[]) {
       int stable_count = 0;
 
       // Phase 1: 粗い探索用のグリッドを準備
-      std::vector<std::pair<double, double>> coarse_grid;  // (theta, phi) in radians
-      double theta_step_coarse = 2.0 * M_PI / config.theta_divisions_coarse;
-      double phi_step_coarse = M_PI / config.phi_divisions_coarse;
-      for (int i_theta = 0; i_theta < config.theta_divisions_coarse; ++i_theta) {
-        double theta = i_theta * theta_step_coarse;
-        for (int i_phi = 0; i_phi <= config.phi_divisions_coarse; ++i_phi) {
-          double phi = -M_PI / 2.0 + i_phi * phi_step_coarse;
-          coarse_grid.emplace_back(theta, phi);
+      // in_plane: 軌道面内角度（0=同方向, ±180=逆方向）
+      // out_plane: 軌道面外角度（0=軌道面内, ±90=法線方向）
+      double in_plane_min = config.in_plane_min_deg * M_PI / 180.0;
+      double in_plane_max = config.in_plane_max_deg * M_PI / 180.0;
+      double out_plane_min = config.out_plane_min_deg * M_PI / 180.0;
+      double out_plane_max = config.out_plane_max_deg * M_PI / 180.0;
+
+      std::vector<std::pair<double, double>> coarse_grid;  // (in_plane, out_plane) in radians
+      double in_plane_range = in_plane_max - in_plane_min;
+      double out_plane_range = out_plane_max - out_plane_min;
+      double in_plane_step_coarse = in_plane_range / std::max(1, config.in_plane_divisions_coarse);
+      double out_plane_step_coarse =
+          out_plane_range / std::max(1, config.out_plane_divisions_coarse);
+
+      for (int i_in = 0; i_in <= config.in_plane_divisions_coarse; ++i_in) {
+        double in_plane = in_plane_min + i_in * in_plane_step_coarse;
+        for (int i_out = 0; i_out <= config.out_plane_divisions_coarse; ++i_out) {
+          double out_plane = out_plane_min + i_out * out_plane_step_coarse;
+          coarse_grid.emplace_back(in_plane, out_plane);
         }
       }
 
@@ -497,6 +600,7 @@ int main(int argc, char* argv[]) {
         // J2000 → CR3BP変換
         State<double> asteroid_rot =
             ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
+        State3d<double> orig_vel = {asteroid_rot.vx, asteroid_rot.vy, asteroid_rot.vz};
         State<double> original_velocity = {
             0, 0, 0, asteroid_rot.vx, asteroid_rot.vy, asteroid_rot.vz};
 
@@ -550,8 +654,9 @@ int main(int argc, char* argv[]) {
         std::vector<std::pair<double, double>> refine_candidates;  // 細分化候補
 
         // Phase 1: 粗い探索
-        for (const auto& [theta, phi] : coarse_grid) {
-          State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
+        for (const auto& [in_plane, out_plane] : coarse_grid) {
+          State3d<double> velocity =
+              VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs);
           State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
                                          velocity.x,     velocity.y,     velocity.z};
 
@@ -568,7 +673,7 @@ int main(int argc, char* argv[]) {
 
           SearchResult result =
               RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
-                                 theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
+                                 in_plane * 180.0 / M_PI, out_plane * 180.0 / M_PI, kMU, config);
 
 #ifdef DEBUG_MODE
           // [DEBUG] 最初の軌道点の最初のいくつかの方向についてデバッグ出力
@@ -606,7 +711,7 @@ int main(int argc, char* argv[]) {
           }
 
           if (config.enable_adaptive_sampling && should_refine) {
-            refine_candidates.emplace_back(theta, phi);
+            refine_candidates.emplace_back(in_plane, out_plane);
           }
 
           local_results.push_back(result);
@@ -620,23 +725,26 @@ int main(int argc, char* argv[]) {
 
         // Phase 2: 細分化探索
         if (config.enable_adaptive_sampling) {
-          double theta_step_fine = theta_step_coarse / config.theta_divisions_fine;
-          double phi_step_fine = phi_step_coarse / config.phi_divisions_fine;
+          double in_plane_step_fine =
+              in_plane_step_coarse / std::max(1, config.in_plane_divisions_fine);
+          double out_plane_step_fine =
+              out_plane_step_coarse / std::max(1, config.out_plane_divisions_fine);
 
-          for (const auto& [center_theta, center_phi] : refine_candidates) {
-            for (int di = -config.theta_divisions_fine / 2; di <= config.theta_divisions_fine / 2;
-                 ++di) {
-              for (int dj = -config.phi_divisions_fine / 2; dj <= config.phi_divisions_fine / 2;
-                   ++dj) {
+          for (const auto& [center_in, center_out] : refine_candidates) {
+            for (int di = -config.in_plane_divisions_fine / 2;
+                 di <= config.in_plane_divisions_fine / 2; ++di) {
+              for (int dj = -config.out_plane_divisions_fine / 2;
+                   dj <= config.out_plane_divisions_fine / 2; ++dj) {
                 if (di == 0 && dj == 0) continue;  // 既に計算済み
 
-                double theta = center_theta + di * theta_step_fine;
-                double phi = center_phi + dj * phi_step_fine;
+                double in_plane = center_in + di * in_plane_step_fine;
+                double out_plane = center_out + dj * out_plane_step_fine;
 
                 // 範囲チェック
-                if (phi < -M_PI / 2.0 || phi > M_PI / 2.0) continue;
+                if (out_plane < out_plane_min || out_plane > out_plane_max) continue;
 
-                State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
+                State3d<double> velocity =
+                    VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs);
                 State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
                                                velocity.x,     velocity.y,     velocity.z};
 
@@ -650,9 +758,9 @@ int main(int argc, char* argv[]) {
                   }
                 }
 
-                SearchResult result =
-                    RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
-                                       theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
+                SearchResult result = RunSaliCalculation(
+                    initial_state, original_velocity, orbit_idx, row.time_j2000,
+                    in_plane * 180.0 / M_PI, out_plane * 180.0 / M_PI, kMU, config);
 
                 local_results.push_back(result);
                 total_processed++;
