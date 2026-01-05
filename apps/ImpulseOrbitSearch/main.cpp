@@ -40,8 +40,9 @@ using namespace utils;
  */
 struct ImpulseOrbitSearchConfig {
   // データ設定
-  std::string orbit_data_path;  ///< 軌道データファイルパス
-  int phase_step = 1;           ///< 軌道データの間引きステップ
+  std::string orbit_data_dir;                               ///< 軌道データディレクトリ
+  std::string orbit_file_pattern = "OBT_\\d+_Earth\\.txt";  ///< ファイル名正規表現パターン
+  int phase_step = 1;                                       ///< 軌道データの間引きステップ
 
   // 目標設定
   double target_jacobi = 3.0008;  ///< 目標ヤコビ積分
@@ -160,6 +161,33 @@ bool LoadOrbitData(const std::string& filepath, int phase_step, std::vector<Orbi
 }
 
 /**
+ * @brief ディレクトリから軌道ファイルを発見
+ * @param data_dir ディレクトリパス
+ * @param pattern_str ファイル名の正規表現パターン
+ * @return マッチしたファイルパスのリスト
+ */
+std::vector<std::string> DiscoverOrbitFiles(const std::string& data_dir,
+                                            const std::string& pattern_str) {
+  std::vector<std::string> files;
+  if (!fs::exists(data_dir)) {
+    std::cerr << "<> !err! DATA_DIR does not exist: " << data_dir << std::endl;
+    return files;
+  }
+
+  std::regex pattern(pattern_str);
+  for (const auto& entry : fs::directory_iterator(data_dir)) {
+    if (!entry.is_regular_file()) continue;
+    std::string filename = entry.path().filename().string();
+    if (std::regex_match(filename, pattern)) {
+      files.push_back(entry.path().string());
+    }
+  }
+
+  std::sort(files.begin(), files.end());
+  return files;
+}
+
+/**
  * @brief 球座標から直交座標への変換
  * @param theta 方位角 (rad)
  * @param phi 仰角 (rad)
@@ -178,7 +206,8 @@ bool LoadConfig(const std::string& filepath, ImpulseOrbitSearchConfig* config) {
   try {
     utils::TomlConfigParser toml(filepath);
 
-    config->orbit_data_path = toml.GetString("data.orbit_data_path", "");
+    config->orbit_data_dir = toml.GetString("data.orbit_data_dir", "");
+    config->orbit_file_pattern = toml.GetString("data.orbit_file_pattern", "OBT_\\d+_Earth\\.txt");
     config->phase_step = toml.GetInt("data.phase_step", 1);
 
     config->target_jacobi = toml.GetDouble("target.jacobi_integral", 3.0008);
@@ -376,7 +405,8 @@ int main(int argc, char* argv[]) {
 
     // 設定表示
     std::cout << "<>    Target Jacobi: " << config.target_jacobi << std::endl;
-    std::cout << "<>    Orbit data: " << config.orbit_data_path << std::endl;
+    std::cout << "<>    Orbit data dir: " << config.orbit_data_dir << std::endl;
+    std::cout << "<>    File pattern: " << config.orbit_file_pattern << std::endl;
     std::cout << "<>    Adaptive sampling: " << (config.enable_adaptive_sampling ? "ON" : "OFF")
               << std::endl;
     if (config.enable_adaptive_sampling) {
@@ -389,268 +419,289 @@ int main(int argc, char* argv[]) {
       }
     }
 
-    // 軌道データ読み込み
-    std::vector<OrbitDataRow> orbit_data;
-    if (!LoadOrbitData(config.orbit_data_path, config.phase_step, &orbit_data)) {
-      std::cerr << "<> !err! Failed to load orbit data" << std::endl;
+    // 軌道ファイルを発見
+    std::vector<std::string> orbit_files =
+        DiscoverOrbitFiles(config.orbit_data_dir, config.orbit_file_pattern);
+    if (orbit_files.empty()) {
+      std::cerr << "<> !err! No orbit files found matching pattern" << std::endl;
       continue;
     }
-    std::cout << "<>    Loaded " << orbit_data.size() << " orbit points" << std::endl;
+    std::cout << "<>    Found " << orbit_files.size() << " orbit files" << std::endl;
 
-    // 出力ファイル準備
+    // configファイルごとのサブフォルダを作成
     std::string config_basename = fs::path(config_filepath).stem().string();
-    std::string output_csv = session_output_dir + "/" + config_basename + "_results.csv";
-    std::ofstream ofs(output_csv);
-    if (!ofs) {
-      std::cerr << "<> !err! Cannot create output file: " << output_csv << std::endl;
-      continue;
-    }
-
-    ofs << std::setprecision(15) << std::fixed;
-    ofs << "# Impulse Orbit Search Results\n";
-    ofs << "# Source: " << config.orbit_data_path << "\n";
-    ofs << "# Target Jacobi: " << config.target_jacobi << "\n";
-    ofs << "orbit_idx,time_j2000,x,y,z,vx,vy,vz,v_theta,v_phi,jacobi,"
-        << "dv_x,dv_y,dv_z,dv_mag,sali,escape,collision,residence_time\n";
-
-    int total_processed = 0;
-    int stable_count = 0;
-
-    // Phase 1: 粗い探索用のグリッドを準備
-    std::vector<std::pair<double, double>> coarse_grid;  // (theta, phi) in radians
-    double theta_step_coarse = 2.0 * M_PI / config.theta_divisions_coarse;
-    double phi_step_coarse = M_PI / config.phi_divisions_coarse;
-    for (int i_theta = 0; i_theta < config.theta_divisions_coarse; ++i_theta) {
-      double theta = i_theta * theta_step_coarse;
-      for (int i_phi = 0; i_phi <= config.phi_divisions_coarse; ++i_phi) {
-        double phi = -M_PI / 2.0 + i_phi * phi_step_coarse;
-        coarse_grid.emplace_back(theta, phi);
-      }
-    }
-
-    std::cout << "<>    Coarse grid points: " << coarse_grid.size() << std::endl;
-    std::cout << "<>    Total initial calculations: " << orbit_data.size() * coarse_grid.size()
-              << std::endl;
-
-// 各軌道点を処理
-#pragma omp parallel for schedule(dynamic) reduction(+ : total_processed, stable_count)
-    for (int orbit_idx = 0; orbit_idx < static_cast<int>(orbit_data.size()); ++orbit_idx) {
-      const OrbitDataRow& row = orbit_data[orbit_idx];
-
-      // J2000 → CR3BP変換
-      State<double> asteroid_rot =
-          ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
-      State<double> original_velocity = {
-          0, 0, 0, asteroid_rot.vx, asteroid_rot.vy, asteroid_rot.vz};
-
-      // 目標ヤコビから速度の大きさを計算
-      State3d<double> pos = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z};
-      double v_abs = calc_v_abs(pos, config.target_jacobi, kMU);
-
-#ifdef DEBUG_MODE
-      // [DEBUG] 最初の数点のみデバッグ出力
-      if (orbit_idx < 3) {
-#pragma omp critical
-        {
-          std::cout << std::setprecision(12) << std::fixed;
-          std::cout << "\n[DEBUG] === Orbit Point " << orbit_idx << " ===" << std::endl;
-          std::cout << "[DEBUG] J2000 asteroid pos: (" << row.asteroid.x << ", " << row.asteroid.y
-                    << ", " << row.asteroid.z << ")" << std::endl;
-          std::cout << "[DEBUG] J2000 asteroid vel: (" << row.asteroid.vx << ", " << row.asteroid.vy
-                    << ", " << row.asteroid.vz << ")" << std::endl;
-          std::cout << "[DEBUG] CR3BP rotated pos: (" << asteroid_rot.x << ", " << asteroid_rot.y
-                    << ", " << asteroid_rot.z << ")" << std::endl;
-          std::cout << "[DEBUG] CR3BP rotated vel: (" << asteroid_rot.vx << ", " << asteroid_rot.vy
-                    << ", " << asteroid_rot.vz << ")" << std::endl;
-          double original_jacobi = calc_jacobi_integral(asteroid_rot, kMU);
-          std::cout << "[DEBUG] Original Jacobi (before impulse): " << original_jacobi << std::endl;
-          std::cout << "[DEBUG] Target Jacobi: " << config.target_jacobi << std::endl;
-          std::cout << "[DEBUG] Calculated v_abs from target Jacobi: " << v_abs << std::endl;
-          double original_v_mag =
-              std::sqrt(asteroid_rot.vx * asteroid_rot.vx + asteroid_rot.vy * asteroid_rot.vy +
-                        asteroid_rot.vz * asteroid_rot.vz);
-          std::cout << "[DEBUG] Original velocity magnitude: " << original_v_mag << std::endl;
-        }
-      }
-#endif
-
-      if (v_abs <= 0) {
-        // 禁止領域（速度が虚数）
-#ifdef DEBUG_MODE
-        if (orbit_idx < 3) {
-#pragma omp critical
-          {
-            std::cout << "[DEBUG] SKIPPED: v_abs <= 0 (forbidden region)" << std::endl;
-          }
-        }
-#endif
-        continue;
-      }
-
-      // ローカル結果バッファ
-      std::vector<SearchResult> local_results;
-      std::vector<std::pair<double, double>> refine_candidates;  // 細分化候補
-
-      // Phase 1: 粗い探索
-      for (const auto& [theta, phi] : coarse_grid) {
-        State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
-        State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
-                                       velocity.x,     velocity.y,     velocity.z};
-
-        // Δvフィルタ
-        if (config.enable_dv_filter) {
-          double dv_x = velocity.x - original_velocity.vx;
-          double dv_y = velocity.y - original_velocity.vy;
-          double dv_z = velocity.z - original_velocity.vz;
-          double dv_mag = std::sqrt(dv_x * dv_x + dv_y * dv_y + dv_z * dv_z);
-          if (dv_mag > config.dv_max_threshold) {
-            continue;
-          }
-        }
-
-        SearchResult result =
-            RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
-                               theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
-
-#ifdef DEBUG_MODE
-        // [DEBUG] 最初の軌道点の最初のいくつかの方向についてデバッグ出力
-        if (orbit_idx == 0 && total_processed < 5) {
-#pragma omp critical
-          {
-            std::cout << std::setprecision(12) << std::fixed;
-            std::cout << "\n[DEBUG] --- Velocity direction (theta=" << theta * 180.0 / M_PI
-                      << "°, phi=" << phi * 180.0 / M_PI << "°) ---" << std::endl;
-            std::cout << "[DEBUG] Velocity vector: (" << velocity.x << ", " << velocity.y << ", "
-                      << velocity.z << ")" << std::endl;
-            double v_mag_check = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y +
-                                           velocity.z * velocity.z);
-            std::cout << "[DEBUG] Velocity magnitude (should be " << v_abs << "): " << v_mag_check
-                      << std::endl;
-            std::cout << "[DEBUG] Computed Jacobi: " << result.jacobi << std::endl;
-            std::cout << "[DEBUG] Delta-V magnitude: " << result.dv_mag << std::endl;
-            std::cout << "[DEBUG] SALI: " << result.sali << std::endl;
-            std::cout << "[DEBUG] Escape: " << result.escape_flag
-                      << ", Collision: " << result.collision_flag << std::endl;
-          }
-        }
-#endif
-
-        // 細分化条件のチェック
-        bool should_refine = true;
-        if (config.refine_no_escape && result.escape_flag != 0) {
-          should_refine = false;
-        }
-        if (config.refine_no_collision && result.collision_flag != 0) {
-          should_refine = false;
-        }
-        if (config.refine_high_sali && result.sali < config.sali_refine_threshold) {
-          should_refine = false;
-        }
-
-        if (config.enable_adaptive_sampling && should_refine) {
-          refine_candidates.emplace_back(theta, phi);
-        }
-
-        local_results.push_back(result);
-        total_processed++;
-
-        if (result.escape_flag == 0 && result.collision_flag == 0 &&
-            result.sali >= config.sali_refine_threshold) {
-          stable_count++;
-        }
-      }
-
-      // Phase 2: 細分化探索
-      if (config.enable_adaptive_sampling) {
-        double theta_step_fine = theta_step_coarse / config.theta_divisions_fine;
-        double phi_step_fine = phi_step_coarse / config.phi_divisions_fine;
-
-        for (const auto& [center_theta, center_phi] : refine_candidates) {
-          for (int di = -config.theta_divisions_fine / 2; di <= config.theta_divisions_fine / 2;
-               ++di) {
-            for (int dj = -config.phi_divisions_fine / 2; dj <= config.phi_divisions_fine / 2;
-                 ++dj) {
-              if (di == 0 && dj == 0) continue;  // 既に計算済み
-
-              double theta = center_theta + di * theta_step_fine;
-              double phi = center_phi + dj * phi_step_fine;
-
-              // 範囲チェック
-              if (phi < -M_PI / 2.0 || phi > M_PI / 2.0) continue;
-
-              State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
-              State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
-                                             velocity.x,     velocity.y,     velocity.z};
-
-              if (config.enable_dv_filter) {
-                double dv_x = velocity.x - original_velocity.vx;
-                double dv_y = velocity.y - original_velocity.vy;
-                double dv_z = velocity.z - original_velocity.vz;
-                double dv_mag = std::sqrt(dv_x * dv_x + dv_y * dv_y + dv_z * dv_z);
-                if (dv_mag > config.dv_max_threshold) {
-                  continue;
-                }
-              }
-
-              SearchResult result =
-                  RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
-                                     theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
-
-              local_results.push_back(result);
-              total_processed++;
-
-              if (result.escape_flag == 0 && result.collision_flag == 0 &&
-                  result.sali >= config.sali_refine_threshold) {
-                stable_count++;
-              }
-            }
-          }
-        }
-      }
-
-// 結果をファイルに書き込み
-#pragma omp critical
-      {
-        for (const auto& result : local_results) {
-          if (config.output_stable_only) {
-            if (result.escape_flag != 0 || result.collision_flag != 0) {
-              continue;
-            }
-          }
-          ofs << result.orbit_idx << "," << result.time_j2000 << "," << result.x << "," << result.y
-              << "," << result.z << "," << result.vx << "," << result.vy << "," << result.vz << ","
-              << result.v_theta << "," << result.v_phi << "," << result.jacobi << "," << result.dv_x
-              << "," << result.dv_y << "," << result.dv_z << "," << result.dv_mag << ","
-              << result.sali << "," << result.escape_flag << "," << result.collision_flag << ","
-              << result.residence_time << "\n";
-        }
-      }
-
-      // 進捗表示
-      if (orbit_idx % 10 == 0) {
-#pragma omp critical
-        {
-          std::cout << "\r<>    Progress: " << orbit_idx << " / " << orbit_data.size()
-                    << " orbit points processed" << std::flush;
-        }
-      }
-    }
-
-    std::cout << std::endl;
-    std::cout << "<>    Total calculations: " << total_processed << std::endl;
-    std::cout << "<>    Stable orbits found: " << stable_count << std::endl;
-    std::cout << "<>    Output: " << output_csv << std::endl;
-
-    ofs.close();
+    std::string config_output_dir = session_output_dir + "/" + config_basename;
+    fs::create_directories(config_output_dir);
+    std::cout << "<>    Config output dir: " << config_output_dir << std::endl;
 
     // configファイルをコピー
     std::string config_copy =
-        session_output_dir + "/" + fs::path(config_filepath).filename().string();
+        config_output_dir + "/" + fs::path(config_filepath).filename().string();
     try {
       fs::copy_file(config_filepath, config_copy, fs::copy_options::overwrite_existing);
     } catch (...) {
     }
-  }
+
+    // 各軌道ファイルを処理
+    for (const auto& orbit_file : orbit_files) {
+      std::string orbit_basename = fs::path(orbit_file).stem().string();
+      std::cout << "<>    Processing orbit file: " << orbit_basename << std::endl;
+
+      // 軌道データ読み込み
+      std::vector<OrbitDataRow> orbit_data;
+      if (!LoadOrbitData(orbit_file, config.phase_step, &orbit_data)) {
+        std::cerr << "<> !err! Failed to load orbit data" << std::endl;
+        continue;
+      }
+      std::cout << "<>    Loaded " << orbit_data.size() << " orbit points" << std::endl;
+
+      // 出力ファイル準備
+      std::string output_csv = config_output_dir + "/" + orbit_basename + "_results.csv";
+      std::ofstream ofs(output_csv);
+      if (!ofs) {
+        std::cerr << "<> !err! Cannot create output file: " << output_csv << std::endl;
+        continue;
+      }
+
+      ofs << std::setprecision(15) << std::fixed;
+      ofs << "# Impulse Orbit Search Results\n";
+      ofs << "# Source: " << orbit_file << "\n";
+      ofs << "# Target Jacobi: " << config.target_jacobi << "\n";
+      ofs << "orbit_idx,time_j2000,x,y,z,vx,vy,vz,v_theta,v_phi,jacobi,"
+          << "dv_x,dv_y,dv_z,dv_mag,sali,escape,collision,residence_time\n";
+
+      int total_processed = 0;
+      int stable_count = 0;
+
+      // Phase 1: 粗い探索用のグリッドを準備
+      std::vector<std::pair<double, double>> coarse_grid;  // (theta, phi) in radians
+      double theta_step_coarse = 2.0 * M_PI / config.theta_divisions_coarse;
+      double phi_step_coarse = M_PI / config.phi_divisions_coarse;
+      for (int i_theta = 0; i_theta < config.theta_divisions_coarse; ++i_theta) {
+        double theta = i_theta * theta_step_coarse;
+        for (int i_phi = 0; i_phi <= config.phi_divisions_coarse; ++i_phi) {
+          double phi = -M_PI / 2.0 + i_phi * phi_step_coarse;
+          coarse_grid.emplace_back(theta, phi);
+        }
+      }
+
+      std::cout << "<>    Coarse grid points: " << coarse_grid.size() << std::endl;
+      std::cout << "<>    Total initial calculations: " << orbit_data.size() * coarse_grid.size()
+                << std::endl;
+
+// 各軌道点を処理
+#pragma omp parallel for schedule(dynamic) reduction(+ : total_processed, stable_count)
+      for (int orbit_idx = 0; orbit_idx < static_cast<int>(orbit_data.size()); ++orbit_idx) {
+        const OrbitDataRow& row = orbit_data[orbit_idx];
+
+        // J2000 → CR3BP変換
+        State<double> asteroid_rot =
+            ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
+        State<double> original_velocity = {
+            0, 0, 0, asteroid_rot.vx, asteroid_rot.vy, asteroid_rot.vz};
+
+        // 目標ヤコビから速度の大きさを計算
+        State3d<double> pos = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z};
+        double v_abs = calc_v_abs(pos, config.target_jacobi, kMU);
+
+#ifdef DEBUG_MODE
+        // [DEBUG] 最初の数点のみデバッグ出力
+        if (orbit_idx < 3) {
+#pragma omp critical
+          {
+            std::cout << std::setprecision(12) << std::fixed;
+            std::cout << "\n[DEBUG] === Orbit Point " << orbit_idx << " ===" << std::endl;
+            std::cout << "[DEBUG] J2000 asteroid pos: (" << row.asteroid.x << ", " << row.asteroid.y
+                      << ", " << row.asteroid.z << ")" << std::endl;
+            std::cout << "[DEBUG] J2000 asteroid vel: (" << row.asteroid.vx << ", "
+                      << row.asteroid.vy << ", " << row.asteroid.vz << ")" << std::endl;
+            std::cout << "[DEBUG] CR3BP rotated pos: (" << asteroid_rot.x << ", " << asteroid_rot.y
+                      << ", " << asteroid_rot.z << ")" << std::endl;
+            std::cout << "[DEBUG] CR3BP rotated vel: (" << asteroid_rot.vx << ", "
+                      << asteroid_rot.vy << ", " << asteroid_rot.vz << ")" << std::endl;
+            double original_jacobi = calc_jacobi_integral(asteroid_rot, kMU);
+            std::cout << "[DEBUG] Original Jacobi (before impulse): " << original_jacobi
+                      << std::endl;
+            std::cout << "[DEBUG] Target Jacobi: " << config.target_jacobi << std::endl;
+            std::cout << "[DEBUG] Calculated v_abs from target Jacobi: " << v_abs << std::endl;
+            double original_v_mag =
+                std::sqrt(asteroid_rot.vx * asteroid_rot.vx + asteroid_rot.vy * asteroid_rot.vy +
+                          asteroid_rot.vz * asteroid_rot.vz);
+            std::cout << "[DEBUG] Original velocity magnitude: " << original_v_mag << std::endl;
+          }
+        }
+#endif
+
+        if (v_abs <= 0) {
+          // 禁止領域（速度が虚数）
+#ifdef DEBUG_MODE
+          if (orbit_idx < 3) {
+#pragma omp critical
+            {
+              std::cout << "[DEBUG] SKIPPED: v_abs <= 0 (forbidden region)" << std::endl;
+            }
+          }
+#endif
+          continue;
+        }
+
+        // ローカル結果バッファ
+        std::vector<SearchResult> local_results;
+        std::vector<std::pair<double, double>> refine_candidates;  // 細分化候補
+
+        // Phase 1: 粗い探索
+        for (const auto& [theta, phi] : coarse_grid) {
+          State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
+          State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
+                                         velocity.x,     velocity.y,     velocity.z};
+
+          // Δvフィルタ
+          if (config.enable_dv_filter) {
+            double dv_x = velocity.x - original_velocity.vx;
+            double dv_y = velocity.y - original_velocity.vy;
+            double dv_z = velocity.z - original_velocity.vz;
+            double dv_mag = std::sqrt(dv_x * dv_x + dv_y * dv_y + dv_z * dv_z);
+            if (dv_mag > config.dv_max_threshold) {
+              continue;
+            }
+          }
+
+          SearchResult result =
+              RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
+                                 theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
+
+#ifdef DEBUG_MODE
+          // [DEBUG] 最初の軌道点の最初のいくつかの方向についてデバッグ出力
+          if (orbit_idx == 0 && total_processed < 5) {
+#pragma omp critical
+            {
+              std::cout << std::setprecision(12) << std::fixed;
+              std::cout << "\n[DEBUG] --- Velocity direction (theta=" << theta * 180.0 / M_PI
+                        << "°, phi=" << phi * 180.0 / M_PI << "°) ---" << std::endl;
+              std::cout << "[DEBUG] Velocity vector: (" << velocity.x << ", " << velocity.y << ", "
+                        << velocity.z << ")" << std::endl;
+              double v_mag_check = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y +
+                                             velocity.z * velocity.z);
+              std::cout << "[DEBUG] Velocity magnitude (should be " << v_abs << "): " << v_mag_check
+                        << std::endl;
+              std::cout << "[DEBUG] Computed Jacobi: " << result.jacobi << std::endl;
+              std::cout << "[DEBUG] Delta-V magnitude: " << result.dv_mag << std::endl;
+              std::cout << "[DEBUG] SALI: " << result.sali << std::endl;
+              std::cout << "[DEBUG] Escape: " << result.escape_flag
+                        << ", Collision: " << result.collision_flag << std::endl;
+            }
+          }
+#endif
+
+          // 細分化条件のチェック
+          bool should_refine = true;
+          if (config.refine_no_escape && result.escape_flag != 0) {
+            should_refine = false;
+          }
+          if (config.refine_no_collision && result.collision_flag != 0) {
+            should_refine = false;
+          }
+          if (config.refine_high_sali && result.sali < config.sali_refine_threshold) {
+            should_refine = false;
+          }
+
+          if (config.enable_adaptive_sampling && should_refine) {
+            refine_candidates.emplace_back(theta, phi);
+          }
+
+          local_results.push_back(result);
+          total_processed++;
+
+          if (result.escape_flag == 0 && result.collision_flag == 0 &&
+              result.sali >= config.sali_refine_threshold) {
+            stable_count++;
+          }
+        }
+
+        // Phase 2: 細分化探索
+        if (config.enable_adaptive_sampling) {
+          double theta_step_fine = theta_step_coarse / config.theta_divisions_fine;
+          double phi_step_fine = phi_step_coarse / config.phi_divisions_fine;
+
+          for (const auto& [center_theta, center_phi] : refine_candidates) {
+            for (int di = -config.theta_divisions_fine / 2; di <= config.theta_divisions_fine / 2;
+                 ++di) {
+              for (int dj = -config.phi_divisions_fine / 2; dj <= config.phi_divisions_fine / 2;
+                   ++dj) {
+                if (di == 0 && dj == 0) continue;  // 既に計算済み
+
+                double theta = center_theta + di * theta_step_fine;
+                double phi = center_phi + dj * phi_step_fine;
+
+                // 範囲チェック
+                if (phi < -M_PI / 2.0 || phi > M_PI / 2.0) continue;
+
+                State3d<double> velocity = SphericalToCartesian(theta, phi, v_abs);
+                State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
+                                               velocity.x,     velocity.y,     velocity.z};
+
+                if (config.enable_dv_filter) {
+                  double dv_x = velocity.x - original_velocity.vx;
+                  double dv_y = velocity.y - original_velocity.vy;
+                  double dv_z = velocity.z - original_velocity.vz;
+                  double dv_mag = std::sqrt(dv_x * dv_x + dv_y * dv_y + dv_z * dv_z);
+                  if (dv_mag > config.dv_max_threshold) {
+                    continue;
+                  }
+                }
+
+                SearchResult result =
+                    RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
+                                       theta * 180.0 / M_PI, phi * 180.0 / M_PI, kMU, config);
+
+                local_results.push_back(result);
+                total_processed++;
+
+                if (result.escape_flag == 0 && result.collision_flag == 0 &&
+                    result.sali >= config.sali_refine_threshold) {
+                  stable_count++;
+                }
+              }
+            }
+          }
+        }
+
+// 結果をファイルに書き込み
+#pragma omp critical
+        {
+          for (const auto& result : local_results) {
+            if (config.output_stable_only) {
+              if (result.escape_flag != 0 || result.collision_flag != 0) {
+                continue;
+              }
+            }
+            ofs << result.orbit_idx << "," << result.time_j2000 << "," << result.x << ","
+                << result.y << "," << result.z << "," << result.vx << "," << result.vy << ","
+                << result.vz << "," << result.v_theta << "," << result.v_phi << "," << result.jacobi
+                << "," << result.dv_x << "," << result.dv_y << "," << result.dv_z << ","
+                << result.dv_mag << "," << result.sali << "," << result.escape_flag << ","
+                << result.collision_flag << "," << result.residence_time << "\n";
+          }
+        }
+
+        // 進捗表示
+        if (orbit_idx % 10 == 0) {
+#pragma omp critical
+          {
+            std::cout << "\r<>    Progress: " << orbit_idx << " / " << orbit_data.size()
+                      << " orbit points processed" << std::flush;
+          }
+        }
+      }
+
+      std::cout << std::endl;
+      std::cout << "<>    Total calculations: " << total_processed << std::endl;
+      std::cout << "<>    Stable orbits found: " << stable_count << std::endl;
+      std::cout << "<>    Output: " << output_csv << std::endl;
+
+      ofs.close();
+    }  // end orbit_files loop
+  }  // end config_file_list loop
 
   auto end_total = std::chrono::system_clock::now();
   auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(end_total - start_total);
