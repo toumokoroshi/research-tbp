@@ -104,9 +104,11 @@ State<ScalarType> ApplyPoincareMapImpl(const State<ScalarType>& state, ScalarTyp
     dsdt.vz = -(1.0 - mu) * s.z * r1_inv3 - mu * s.z * r2_inv3;
   };
 
-  // 断面交差検出（正方向のみ）
+  // 断面交差検出（両方向）
   auto detect_crossing = [](ScalarType prev_val, ScalarType curr_val, ScalarType sec_val) {
-    return (prev_val < sec_val && curr_val > sec_val);
+    // 正方向: prev < sec && curr > sec
+    // 負方向: prev > sec && curr < sec
+    return (prev_val < sec_val && curr_val > sec_val) || (prev_val > sec_val && curr_val < sec_val);
   };
 
   // 線形補間で交差点を求める
@@ -129,7 +131,8 @@ State<ScalarType> ApplyPoincareMapImpl(const State<ScalarType>& state, ScalarTyp
   State<ScalarType> prev_state = state;
   ScalarType time = 0.0;
   ScalarType prev_time = 0.0;
-  int crossing_count = 0;
+  int same_direction_count = 0;
+  int first_crossing_direction = 0;  // +1 for positive, -1 for negative, 0 for unknown
 
   while (time < max_time) {
     prev_state = current_state;
@@ -147,21 +150,32 @@ State<ScalarType> ApplyPoincareMapImpl(const State<ScalarType>& state, ScalarTyp
     ScalarType curr_val = GetStateValue(current_state, section_index);
 
     if (detect_crossing(prev_val, curr_val, section_value)) {
-      crossing_count++;
+      // クロッシング方向を判定
+      int crossing_direction = (curr_val > prev_val) ? +1 : -1;
 
-      // 最初の交差はスキップ（出発点）
-      if (crossing_count == 2) {
-        State<ScalarType> crossing_state =
-            interpolate(prev_state, current_state, prev_val, curr_val, section_value);
-        ScalarType alpha = (section_value - prev_val) / (curr_val - prev_val);
-        ScalarType crossing_time = prev_time + alpha * (time - prev_time);
+      if (first_crossing_direction == 0) {
+        // 最初のクロッシング：方向を記録
+        first_crossing_direction = crossing_direction;
+        same_direction_count = 1;
+      } else if (crossing_direction == first_crossing_direction) {
+        // 同じ方向のクロッシング
+        same_direction_count++;
 
-        if (period != nullptr) {
-          *period = crossing_time;
+        if (same_direction_count == 2) {
+          // 2回目の同方向クロッシング = 1周期完了
+          State<ScalarType> crossing_state =
+              interpolate(prev_state, current_state, prev_val, curr_val, section_value);
+          ScalarType alpha = (section_value - prev_val) / (curr_val - prev_val);
+          ScalarType crossing_time = prev_time + alpha * (time - prev_time);
+
+          if (period != nullptr) {
+            *period = crossing_time;
+          }
+
+          return crossing_state;
         }
-
-        return crossing_state;
       }
+      // 反対方向のクロッシングはカウントしない
     }
   }
 
@@ -380,9 +394,20 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitImpl(
       dx[i] /= augmented[i][i];
     }
 
+    // 適応的ダンピング: 残差が増加した場合はステップを縮小
+    // 発散を防ぎながら収束時には高速化
+    ScalarType alpha = 1.0;
+    if (residual_norm > prev_residual * 1.1) {
+      // 残差が10%以上増加した場合、ステップを半減
+      alpha = 0.3;
+    } else if (residual_norm > prev_residual) {
+      // 若干増加した場合
+      alpha = 0.5;
+    }
+
     // 解を更新
     for (int i = 0; i < FREE_DIM; ++i) {
-      x[i] += dx[i];
+      x[i] += alpha * dx[i];
     }
 
     auto solver_end = std::chrono::high_resolution_clock::now();
@@ -392,7 +417,7 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitImpl(
     auto iter_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(iter_end - iter_start).count();
 
-    std::cout << "done(" << solver_ms << "ms), total=" << iter_ms << "ms\n";
+    std::cout << "done(" << solver_ms << "ms), alpha=" << alpha << ", total=" << iter_ms << "ms\n";
 
     // Update previous residual for next iteration
     prev_residual = residual_norm;

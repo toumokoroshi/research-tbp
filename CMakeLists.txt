@@ -50,6 +50,16 @@ elseif(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG")
     set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -Wall -Wextra -Wshadow -Wconversion")
 
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    # Microsoft Visual C++ の場合
+    message(STATUS "Configuring for MSVC compiler")
+
+    set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+    set(CMAKE_CXX_FLAGS_DEBUG "/Od /Zi /W4")
+
+    # ランタイムライブラリの設定
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreadedDLL")
+
 else()
     # その他のUnix系コンパイラの場合
     message(STATUS "Configuring for generic Unix compiler")

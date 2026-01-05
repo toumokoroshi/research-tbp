@@ -12,5 +12,6 @@ add_subdirectory(TrajectoryCalc)
 add_subdirectory(PeriodicOrbitAnalysis)
 add_subdirectory(JacobiIntegralCalc)
 add_subdirectory(AsteroidOrbitIntersection)
-add_subdirectory(PeriodicOrbitContinuation)
+# add_subdirectory(PeriodicOrbitContinuation)  # Directory does not exist
+add_subdirectory(ImpulseOrbitSearch)
 

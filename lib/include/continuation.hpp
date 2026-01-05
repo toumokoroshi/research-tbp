@@ -255,7 +255,7 @@ class OrbitContinuator {
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic)
 #endif
-    for (size_t i = 0; i < points.size(); ++i) {
+    for (int i = 0; i < static_cast<int>(points.size()); ++i) {
       families[i] = ContinueLyapunovFamily(points[i]);
     }
 
