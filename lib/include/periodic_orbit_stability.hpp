@@ -10,6 +10,9 @@
 #include <cmath>
 #include <complex>
 
+#include <Eigen/Dense>
+#include <Eigen/Eigenvalues>
+
 #include "periodic_orbit.hpp"
 
 namespace periodic_orbit {
@@ -332,26 +335,100 @@ ScalarType PowerMethod(const std::array<std::array<ScalarType, 6>, 6>& matrix, i
 }
 
 /**
- * @brief 安定性解析の実装
+ * @brief 安定性解析の実装（Eigenライブラリによる完全固有値計算）
  */
 template <typename ScalarType>
 void AnalyzeStabilityImpl(PeriodicOrbit<ScalarType>* orbit, ScalarType eigenvalue_threshold) {
-  if (orbit->monodromy_matrix[0][0] == 0.0) {
+  if (orbit->monodromy_matrix[0][0] == 0.0 && orbit->monodromy_matrix[1][1] == 0.0) {
     throw std::runtime_error("AnalyzeStability: Monodromy matrix not computed");
   }
 
-  // Power法で最大固有値（の絶対値）を計算
-  ScalarType max_eigenvalue = PowerMethod(orbit->monodromy_matrix, 1000);
-  orbit->stability_index = std::abs(max_eigenvalue);
+  // std::array → Eigen::Matrix への変換
+  Eigen::Matrix<ScalarType, 6, 6> M;
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      M(i, j) = orbit->monodromy_matrix[i][j];
+    }
+  }
 
-  // 安定性判定
-  orbit->is_stable = (orbit->stability_index <= eigenvalue_threshold);
-  orbit->stability_computed = true;
+  // 固有値計算
+  Eigen::EigenSolver<Eigen::Matrix<ScalarType, 6, 6>> solver(M);
+  auto eigenvalues = solver.eigenvalues();
 
-  // 簡易的な固有値リスト（実装簡略化のため最大固有値のみ）
-  // 完全な固有値計算はEigenライブラリ等が必要
+  // 固有値をPeriodicOrbitに格納
   orbit->eigenvalues.clear();
-  orbit->eigenvalues.push_back(std::complex<ScalarType>(max_eigenvalue, 0.0));
+  orbit->eigenvalues.reserve(6);
+  ScalarType max_abs = 0.0;
+
+  for (int i = 0; i < 6; ++i) {
+    std::complex<ScalarType> ev(eigenvalues[i].real(), eigenvalues[i].imag());
+    orbit->eigenvalues.push_back(ev);
+
+    ScalarType abs_ev = std::abs(ev);
+    if (abs_ev > max_abs) {
+      max_abs = abs_ev;
+    }
+  }
+
+  orbit->stability_index = max_abs;
+
+  // 安定性判定: 全ての固有値の絶対値が1以下なら安定
+  orbit->is_stable = (max_abs <= eigenvalue_threshold);
+  orbit->stability_computed = true;
+}
+
+/**
+ * @brief 分岐方向ベクトルを抽出
+ * @details ピッチフォーク分岐（λ=+1）の固有ベクトルを返す
+ * @param orbit 分岐点の周期軌道（モノドロミー行列計算済み）
+ * @return z成分を持つ分岐方向ベクトル (6次元)
+ */
+template <typename ScalarType>
+std::array<ScalarType, 6> ComputeBifurcationEigenvector(const PeriodicOrbit<ScalarType>& orbit) {
+  // std::array → Eigen::Matrix への変換
+  Eigen::Matrix<ScalarType, 6, 6> M;
+  for (int i = 0; i < 6; ++i) {
+    for (int j = 0; j < 6; ++j) {
+      M(i, j) = orbit.monodromy_matrix[i][j];
+    }
+  }
+
+  // 固有値・固有ベクトル計算
+  Eigen::EigenSolver<Eigen::Matrix<ScalarType, 6, 6>> solver(M);
+  auto eigenvalues = solver.eigenvalues();
+  auto eigenvectors = solver.eigenvectors();
+
+  // λ ≈ +1 に最も近い固有値を探す
+  int closest_idx = 0;
+  ScalarType min_dist = std::abs(eigenvalues[0] - std::complex<ScalarType>(1.0, 0.0));
+
+  for (int i = 1; i < 6; ++i) {
+    ScalarType dist = std::abs(eigenvalues[i] - std::complex<ScalarType>(1.0, 0.0));
+    if (dist < min_dist) {
+      min_dist = dist;
+      closest_idx = i;
+    }
+  }
+
+  // 対応する固有ベクトルを抽出（実部のみ）
+  std::array<ScalarType, 6> bifurcation_vector;
+  for (int i = 0; i < 6; ++i) {
+    bifurcation_vector[i] = eigenvectors.col(closest_idx)(i).real();
+  }
+
+  // 正規化
+  ScalarType norm = 0.0;
+  for (int i = 0; i < 6; ++i) {
+    norm += bifurcation_vector[i] * bifurcation_vector[i];
+  }
+  norm = std::sqrt(norm);
+  if (norm > 1e-14) {
+    for (int i = 0; i < 6; ++i) {
+      bifurcation_vector[i] /= norm;
+    }
+  }
+
+  return bifurcation_vector;
 }
 
 }  // namespace periodic_orbit

@@ -1,2 +1,3 @@
 # 各アプリケーションのサブディレクトリを追加
 add_subdirectory(test_lyapunov)
+add_subdirectory(test_halo_bifurcation)

@@ -262,6 +262,85 @@ class OrbitContinuator {
     return families;
   }
 
+  /**
+   * @brief ピッチフォーク分岐点からHalo族を生成して継続
+   * @param bifurcation_orbit 分岐が検出されたLyapunov軌道
+   * @param north_branch trueならNorth Halo, falseならSouth Halo
+   * @return Halo族
+   */
+  PeriodicOrbitFamily<ScalarType> ContinueHaloFromBifurcation(
+      const PeriodicOrbit<ScalarType>& bifurcation_orbit, bool north_branch = true) {
+    PeriodicOrbitFamily<ScalarType> family;
+
+    // 分岐方向ベクトルを取得
+    std::array<ScalarType, 6> bif_vec = ComputeBifurcationEigenvector(bifurcation_orbit);
+
+    // z成分の符号でNorth/Southを判定
+    // North: z > 0, South: z < 0
+    ScalarType z_sign = north_branch ? 1.0 : -1.0;
+    if (bif_vec[2] * z_sign < 0) {
+      // 分岐ベクトルの符号を反転
+      for (auto& v : bif_vec) v = -v;
+    }
+
+    // 分岐点から分岐方向に小さく摂動した初期条件を生成
+    ScalarType epsilon = 1e-4;  // 小さな摂動量
+    State<ScalarType> initial_guess;
+    initial_guess.x = bifurcation_orbit.initial_state.x + epsilon * bif_vec[0];
+    initial_guess.y = bifurcation_orbit.initial_state.y + epsilon * bif_vec[1];
+    initial_guess.z = bifurcation_orbit.initial_state.z + epsilon * bif_vec[2];
+    initial_guess.vx = bifurcation_orbit.initial_state.vx + epsilon * bif_vec[3];
+    initial_guess.vy = bifurcation_orbit.initial_state.vy + epsilon * bif_vec[4];
+    initial_guess.vz = bifurcation_orbit.initial_state.vz + epsilon * bif_vec[5];
+
+    std::cout << "=== Starting Halo family continuation from bifurcation point ===" << std::endl;
+    std::cout << "  Branch: " << (north_branch ? "North" : "South") << std::endl;
+    std::cout << "  Initial z: " << initial_guess.z << ", vz: " << initial_guess.vz << std::endl;
+
+    // Newton法で周期軌道として収束させる
+    NewtonConvergenceInfo<ScalarType> conv_info;
+    PeriodicOrbit<ScalarType> initial_orbit;
+
+    try {
+      initial_orbit = RefinePeriodicOrbit(initial_guess, mu_, config_.section_index,
+                                          config_.section_value, config_.newton_max_iterations,
+                                          config_.newton_tolerance, config_.max_integration_time,
+                                          config_.integration_timestep, &conv_info);
+
+      if (!conv_info.converged) {
+        throw std::runtime_error("Halo orbit refinement failed to converge");
+      }
+
+      std::cout << "  Halo orbit refined successfully!" << std::endl;
+      std::cout << "  Period: " << initial_orbit.period << std::endl;
+      std::cout << "  Final z: " << initial_orbit.initial_state.z << std::endl;
+
+    } catch (const std::exception& e) {
+      std::cerr << "Failed to refine Halo orbit: " << e.what() << std::endl;
+      family.family_type = north_branch ? OrbitFamilyType::HALO_L2_NORTH
+                                        : OrbitFamilyType::HALO_L2_SOUTH;
+      family.family_name = GetFamilyName(family.family_type);
+      family.termination_reason = std::string("Initial Halo orbit refinement failed: ") + e.what();
+      return family;
+    }
+
+    // モノドロミー行列と安定性を計算
+    initial_orbit.monodromy_matrix =
+        ComputeMonodromyMatrix(initial_orbit, mu_, config_.integration_timestep);
+    AnalyzeStability(&initial_orbit, 1.0);
+
+    // 継続を実行
+    family = ContinueFamily(initial_orbit);
+
+    // 族の種類を設定（分岐元のLagrange点に基づいて設定する必要があるが、
+    // ここでは簡略化してL2を仮定）
+    family.family_type = north_branch ? OrbitFamilyType::HALO_L2_NORTH
+                                      : OrbitFamilyType::HALO_L2_SOUTH;
+    family.family_name = GetFamilyName(family.family_type);
+
+    return family;
+  }
+
  private:
   ScalarType mu_;
   ContinuationConfig<ScalarType> config_;
