@@ -97,22 +97,33 @@ struct OrbitDataRow {
 };
 
 /**
+ * @brief 軌道時刻歴1点分
+ */
+struct TrajectoryPoint {
+  double time;        ///< 経過時間（無次元）
+  double x, y, z;     ///< 位置
+  double vx, vy, vz;  ///< 速度
+  double sali;        ///< SALI値
+};
+
+/**
  * @brief 探索結果1件分
  */
 struct SearchResult {
-  int orbit_idx;            ///< 軌道点インデックス
-  double time_j2000;        ///< 元軌道時刻
-  double x, y, z;           ///< 初期位置
-  double vx, vy, vz;        ///< インパルス後速度
-  double v_theta;           ///< 速度方位角(deg)
-  double v_phi;             ///< 速度仰角(deg)
-  double jacobi;            ///< ヤコビ積分
-  double dv_x, dv_y, dv_z;  ///< Δvベクトル
-  double dv_mag;            ///< Δv量
-  double sali;              ///< SALI値
-  int escape_flag;          ///< 脱出フラグ
-  int collision_flag;       ///< 衝突フラグ
-  double residence_time;    ///< 滞在時間
+  int orbit_idx;                            ///< 軌道点インデックス
+  double time_j2000;                        ///< 元軌道時刻
+  double x, y, z;                           ///< 初期位置
+  double vx, vy, vz;                        ///< インパルス後速度
+  double v_theta;                           ///< 速度方位角(deg)
+  double v_phi;                             ///< 速度仰角(deg)
+  double jacobi;                            ///< ヤコビ積分
+  double dv_x, dv_y, dv_z;                  ///< Δvベクトル
+  double dv_mag;                            ///< Δv量
+  double sali;                              ///< SALI値
+  int escape_flag;                          ///< 脱出フラグ
+  int collision_flag;                       ///< 衝突フラグ
+  double residence_time;                    ///< 滞在時間
+  std::vector<TrajectoryPoint> trajectory;  ///< 軌道時刻歴（オプション）
 };
 
 /**
@@ -208,24 +219,27 @@ State3d<double> SphericalToCartesian(double theta, double phi, double magnitude)
 }
 
 /**
- * @brief 軌道面を基準とした座標系で速度を計算
- * @param pos 現在位置ベクトル（軌道面定義に使用）
- * @param orig_vel 元の速度ベクトル
+ * @brief 地球周りの軌道面を基準とした座標系で速度を計算
+ * @param pos 現在位置ベクトル（CR3BP座標系）
+ * @param orig_vel 元の速度ベクトル（CR3BP座標系）
  * @param in_plane_angle 軌道面内角度 (rad) - 0=元の速度と同方向, ±π=逆方向
  * @param out_plane_angle 軌道面外角度 (rad) - 0=軌道面内, ±π/2=法線方向
  * @param magnitude 新しい速度の大きさ
+ * @param mu CR3BPの質量パラメータ（地球位置計算用、デフォルト=0で従来動作）
  * @return 新しい速度ベクトル（CR3BP座標系）
  *
  * 座標系:
+ *   地球位置からの相対位置と速度で軌道面を定義
  *   e1 = 元の速度方向（正規化）
- *   e2 = 軌道面内、速度に垂直 (L × e1を正規化, L = r × v)
+ *   e2 = 軌道面内、速度に垂直 (L × e1を正規化, L = r_rel × v)
  *   e3 = 軌道面法線 (L方向)
  *
  * in_plane_angle=0, out_plane_angle=0 → 元の速度と同方向
  */
 State3d<double> VelocityInOrbitalPlaneFrame(const State3d<double>& pos,
                                             const State3d<double>& orig_vel, double in_plane_angle,
-                                            double out_plane_angle, double magnitude) {
+                                            double out_plane_angle, double magnitude,
+                                            double mu = 0.0) {
   // 元の速度の大きさ
   double orig_mag =
       std::sqrt(orig_vel.x * orig_vel.x + orig_vel.y * orig_vel.y + orig_vel.z * orig_vel.z);
@@ -238,10 +252,13 @@ State3d<double> VelocityInOrbitalPlaneFrame(const State3d<double>& pos,
   // e1: 元の速度方向（単位ベクトル）
   State3d<double> e1 = {orig_vel.x / orig_mag, orig_vel.y / orig_mag, orig_vel.z / orig_mag};
 
-  // 角運動量 L = r × v（軌道面法線）
-  State3d<double> L = {pos.y * orig_vel.z - pos.z * orig_vel.y,
-                       pos.z * orig_vel.x - pos.x * orig_vel.z,
-                       pos.x * orig_vel.y - pos.y * orig_vel.x};
+  // 地球からの相対位置を計算（CR3BPでの地球位置は (1-mu, 0, 0)）
+  State3d<double> pos_rel = {pos.x - (1.0 - mu), pos.y, pos.z};
+
+  // 角運動量 L = r_rel × v（地球周りの軌道面法線）
+  State3d<double> L = {pos_rel.y * orig_vel.z - pos_rel.z * orig_vel.y,
+                       pos_rel.z * orig_vel.x - pos_rel.x * orig_vel.z,
+                       pos_rel.x * orig_vel.y - pos_rel.y * orig_vel.x};
   double L_mag = std::sqrt(L.x * L.x + L.y * L.y + L.z * L.z);
 
   State3d<double> e2, e3;
@@ -348,11 +365,14 @@ bool LoadConfig(const std::string& filepath, ImpulseOrbitSearchConfig* config) {
 
 /**
  * @brief 単一の初期条件でSALI計算を実行
+ * @param record_trajectory trueの場合、軌道時刻歴を記録する
+ * @param trajectory_interval 軌道記録の間引き間隔（ステップ数）
  */
 SearchResult RunSaliCalculation(const State<double>& initial_state,
                                 const State<double>& original_velocity, int orbit_idx,
                                 double time_j2000, double v_theta_deg, double v_phi_deg, double mu,
-                                const ImpulseOrbitSearchConfig& config) {
+                                const ImpulseOrbitSearchConfig& config,
+                                bool record_trajectory = false, int trajectory_interval = 1000) {
   SearchResult result;
   result.orbit_idx = orbit_idx;
   result.time_j2000 = time_j2000;
@@ -387,6 +407,21 @@ SearchResult RunSaliCalculation(const State<double>& initial_state,
 
   int num_steps = static_cast<int>(config.calc_duration_nd / config.calc_timestep_nd);
 
+  // 軌道時刻歴を記録する場合、初期点を追加
+  if (record_trajectory) {
+    State<double> state_cart = ConvertToPhysical(sali_state.state);
+    TrajectoryPoint tp;
+    tp.time = 0.0;
+    tp.x = state_cart.x;
+    tp.y = state_cart.y;
+    tp.z = state_cart.z;
+    tp.vx = state_cart.vx;
+    tp.vy = state_cart.vy;
+    tp.vz = state_cart.vz;
+    tp.sali = 0.0;
+    result.trajectory.push_back(tp);
+  }
+
   for (int step = 0; step < num_steps; ++step) {
     SymplecticStep6thOrderSALI(mu, &sali_state, config.calc_timestep_nd);
     sali_state.w1.Normalize();
@@ -397,6 +432,21 @@ SearchResult RunSaliCalculation(const State<double>& initial_state,
     result.sali = std::min(norm_plus, norm_minus);
 
     double current_time = (step + 1) * config.calc_timestep_nd;
+
+    // 軌道時刻歴を記録
+    if (record_trajectory && (step + 1) % trajectory_interval == 0) {
+      State<double> state_cart = ConvertToPhysical(sali_state.state);
+      TrajectoryPoint tp;
+      tp.time = current_time;
+      tp.x = state_cart.x;
+      tp.y = state_cart.y;
+      tp.z = state_cart.z;
+      tp.vx = state_cart.vx;
+      tp.vy = state_cart.vy;
+      tp.vz = state_cart.vz;
+      tp.sali = result.sali;
+      result.trajectory.push_back(tp);
+    }
 
     // 衝突・脱出判定
     double r2 = calc_r2(sali_state.state.qx, sali_state.state.qy, sali_state.state.qz, mu);
@@ -410,6 +460,21 @@ SearchResult RunSaliCalculation(const State<double>& initial_state,
       result.residence_time = current_time;
       break;
     }
+  }
+
+  // 最終時刻点を追加（脱出・衝突時も含む）
+  if (record_trajectory) {
+    State<double> state_cart = ConvertToPhysical(sali_state.state);
+    TrajectoryPoint tp;
+    tp.time = result.residence_time;
+    tp.x = state_cart.x;
+    tp.y = state_cart.y;
+    tp.z = state_cart.z;
+    tp.vx = state_cart.vx;
+    tp.vy = state_cart.vy;
+    tp.vz = state_cart.vz;
+    tp.sali = result.sali;
+    result.trajectory.push_back(tp);
   }
 
   return result;
@@ -562,6 +627,27 @@ int main(int argc, char* argv[]) {
       ofs << "orbit_idx,time_j2000,x,y,z,vx,vy,vz,v_theta,v_phi,jacobi,"
           << "dv_x,dv_y,dv_z,dv_mag,sali,escape,collision,residence_time\n";
 
+      // 座標変換後の小惑星軌道を出力（インパルス前）
+      std::string pre_impulse_csv = config_output_dir + "/" + orbit_basename + "_pre_impulse.csv";
+      std::ofstream ofs_pre(pre_impulse_csv);
+      if (ofs_pre) {
+        ofs_pre << std::setprecision(15) << std::fixed;
+        ofs_pre << "# Pre-impulse asteroid orbit in CR3BP rotating frame\n";
+        ofs_pre << "# Source: " << orbit_file << "\n";
+        ofs_pre << "orbit_idx,time_j2000,x,y,z,vx,vy,vz,jacobi\n";
+        for (int i = 0; i < static_cast<int>(orbit_data.size()); ++i) {
+          const OrbitDataRow& row = orbit_data[i];
+          State<double> asteroid_rot =
+              ConvertInertial2RotatingV2(row.asteroid, row.earth, astro_params);
+          double jacobi = calc_jacobi_integral(asteroid_rot, kMU);
+          ofs_pre << i << "," << row.time_j2000 << "," << asteroid_rot.x << "," << asteroid_rot.y
+                  << "," << asteroid_rot.z << "," << asteroid_rot.vx << "," << asteroid_rot.vy
+                  << "," << asteroid_rot.vz << "," << jacobi << "\n";
+        }
+        ofs_pre.close();
+        std::cout << "<>    Pre-impulse orbit saved: " << pre_impulse_csv << std::endl;
+      }
+
       int total_processed = 0;
       int stable_count = 0;
 
@@ -656,7 +742,7 @@ int main(int argc, char* argv[]) {
         // Phase 1: 粗い探索
         for (const auto& [in_plane, out_plane] : coarse_grid) {
           State3d<double> velocity =
-              VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs);
+              VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs, kMU);
           State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
                                          velocity.x,     velocity.y,     velocity.z};
 
@@ -720,6 +806,13 @@ int main(int argc, char* argv[]) {
           if (result.escape_flag == 0 && result.collision_flag == 0 &&
               result.sali >= config.sali_refine_threshold) {
             stable_count++;
+            // 安定軌道が見つかった場合、軌道時刻歴を記録するために再計算
+            if (config.output_trajectory) {
+              local_results.back() =
+                  RunSaliCalculation(initial_state, original_velocity, orbit_idx, row.time_j2000,
+                                     in_plane * 180.0 / M_PI, out_plane * 180.0 / M_PI, kMU, config,
+                                     true, 1000);  // record_trajectory=true, interval=1000 steps
+            }
           }
         }
 
@@ -744,7 +837,7 @@ int main(int argc, char* argv[]) {
                 if (out_plane < out_plane_min || out_plane > out_plane_max) continue;
 
                 State3d<double> velocity =
-                    VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs);
+                    VelocityInOrbitalPlaneFrame(pos, orig_vel, in_plane, out_plane, v_abs, kMU);
                 State<double> initial_state = {asteroid_rot.x, asteroid_rot.y, asteroid_rot.z,
                                                velocity.x,     velocity.y,     velocity.z};
 
@@ -768,6 +861,13 @@ int main(int argc, char* argv[]) {
                 if (result.escape_flag == 0 && result.collision_flag == 0 &&
                     result.sali >= config.sali_refine_threshold) {
                   stable_count++;
+                  // 安定軌道が見つかった場合、軌道時刻歴を記録するために再計算
+                  if (config.output_trajectory) {
+                    local_results.back() = RunSaliCalculation(
+                        initial_state, original_velocity, orbit_idx, row.time_j2000,
+                        in_plane * 180.0 / M_PI, out_plane * 180.0 / M_PI, kMU, config, true,
+                        1000);  // record_trajectory=true, interval=1000 steps
+                  }
                 }
               }
             }
@@ -777,6 +877,7 @@ int main(int argc, char* argv[]) {
 // 結果をファイルに書き込み
 #pragma omp critical
         {
+          static int stable_trajectory_id = 0;  // 安定軌道の連番ID
           for (const auto& result : local_results) {
             if (config.output_stable_only) {
               if (result.escape_flag != 0 || result.collision_flag != 0) {
@@ -789,6 +890,33 @@ int main(int argc, char* argv[]) {
                 << "," << result.dv_x << "," << result.dv_y << "," << result.dv_z << ","
                 << result.dv_mag << "," << result.sali << "," << result.escape_flag << ","
                 << result.collision_flag << "," << result.residence_time << "\n";
+
+            // 安定軌道の時刻歴を個別ファイルに出力
+            if (config.output_trajectory && !result.trajectory.empty() && result.escape_flag == 0 &&
+                result.collision_flag == 0) {
+              std::string traj_dir = config_output_dir + "/trajectories";
+              fs::create_directories(traj_dir);
+              std::stringstream traj_filename;
+              traj_filename << traj_dir << "/stable_traj_" << std::setfill('0') << std::setw(6)
+                            << stable_trajectory_id++ << "_orb" << result.orbit_idx << "_th"
+                            << std::fixed << std::setprecision(1) << result.v_theta << "_ph"
+                            << result.v_phi << ".csv";
+              std::ofstream traj_ofs(traj_filename.str());
+              if (traj_ofs) {
+                traj_ofs << std::setprecision(15) << std::fixed;
+                traj_ofs << "# Stable orbit trajectory\n";
+                traj_ofs << "# orbit_idx=" << result.orbit_idx << ", v_theta=" << result.v_theta
+                         << ", v_phi=" << result.v_phi << "\n";
+                traj_ofs << "# jacobi=" << result.jacobi << ", sali=" << result.sali << "\n";
+                traj_ofs << "# dv_mag=" << result.dv_mag << "\n";
+                traj_ofs << "time,x,y,z,vx,vy,vz,sali\n";
+                for (const auto& tp : result.trajectory) {
+                  traj_ofs << tp.time << "," << tp.x << "," << tp.y << "," << tp.z << "," << tp.vx
+                           << "," << tp.vy << "," << tp.vz << "," << tp.sali << "\n";
+                }
+                traj_ofs.close();
+              }
+            }
           }
         }
 
@@ -808,6 +936,51 @@ int main(int argc, char* argv[]) {
       std::cout << "<>    Output: " << output_csv << std::endl;
 
       ofs.close();
+
+      // gnuplotスクリプトを生成して3Dプロットを作成
+      std::string gnuplot_script = config_output_dir + "/" + orbit_basename + "_plot.gp";
+      std::string plot_png = config_output_dir + "/" + orbit_basename + "_pre_impulse_3d.png";
+      std::ofstream gp(gnuplot_script);
+      if (gp) {
+        // 地球とラグランジュ点の位置を計算
+        double earth_x = 1.0 - kMU;
+        double hill_radius = std::pow(kMU / 3.0, 1.0 / 3.0);
+        double L1_x = earth_x - hill_radius;
+        double L2_x = earth_x + hill_radius;
+
+        gp << std::setprecision(15) << std::fixed;
+        gp << "# Gnuplot script for pre-impulse orbit visualization\n";
+        gp << "set terminal pngcairo size 1200,1000 enhanced font 'Arial,12'\n";
+        gp << "set output '" << plot_png << "'\n\n";
+        gp << "set title 'Pre-impulse Asteroid Orbit in CR3BP Rotating Frame'\n";
+        gp << "set xlabel 'X'\n";
+        gp << "set ylabel 'Y'\n";
+        gp << "set zlabel 'Z'\n";
+        gp << "set grid\n";
+        gp << "set key outside right\n\n";
+        gp << "set datafile separator ','\n\n";
+        gp << "splot '" << pre_impulse_csv
+           << "' using 3:4:5 with lines lw 1 lc rgb 'blue' title 'Asteroid Orbit', \\\n";
+        gp << "      '-' with points pt 7 ps 2 lc rgb 'green' title 'Earth', \\\n";
+        gp << "      '-' with points pt 5 ps 1.5 lc rgb 'red' title 'L1', \\\n";
+        gp << "      '-' with points pt 5 ps 1.5 lc rgb 'orange' title 'L2'\n";
+        gp << earth_x << " 0 0\n";
+        gp << "e\n";
+        gp << L1_x << " 0 0\n";
+        gp << "e\n";
+        gp << L2_x << " 0 0\n";
+        gp << "e\n";
+        gp.close();
+
+        // gnuplotを実行
+        std::string gnuplot_cmd = "gnuplot \"" + gnuplot_script + "\"";
+        int ret = std::system(gnuplot_cmd.c_str());
+        if (ret == 0) {
+          std::cout << "<>    3D plot saved: " << plot_png << std::endl;
+        } else {
+          std::cout << "<>    gnuplot execution failed (code " << ret << ")" << std::endl;
+        }
+      }
     }  // end orbit_files loop
   }  // end config_file_list loop
 

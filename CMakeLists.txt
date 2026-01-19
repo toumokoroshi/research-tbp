@@ -90,6 +90,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(tomlplusplus)
 
+# Eigen3 (線形代数ライブラリ - 固有値計算用)
+FetchContent_Declare(
+  eigen
+  GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+  GIT_TAG 3.4.0
+)
+FetchContent_MakeAvailable(eigen)
+
 # Boost
 find_package(Boost 1.71 REQUIRED)
 

@@ -132,9 +132,23 @@ State<ScalarType> ApplyPoincareMapImpl(const State<ScalarType>& state, ScalarTyp
   ScalarType time = 0.0;
   ScalarType prev_time = 0.0;
   int same_direction_count = 0;
-  int first_crossing_direction = 0;  // +1 for positive, -1 for negative, 0 for unknown
+  int first_crossing_direction = 0;       // +1 for positive, -1 for negative, 0 for unknown
+  ScalarType next_progress_print = 10.0;  // Debug: print progress every 10 time units
+
+  // Debug: print initial state
+  std::cout << "\n        [Poincare] Starting: state=(" << state.x << ", " << state.y << ", "
+            << state.z << ", " << state.vx << ", " << state.vy << ", " << state.vz
+            << "), max_t=" << max_time << std::flush;
+  std::cout << std::endl;
 
   while (time < max_time) {
+    // Debug progress output
+    if (time > next_progress_print) {
+      std::cout << "        [Poincare] t=" << time << ", y=" << current_state.y
+                << ", crossings=" << same_direction_count << std::endl;
+      next_progress_print += 10.0;
+    }
+
     prev_state = current_state;
     prev_time = time;
 

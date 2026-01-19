@@ -240,36 +240,39 @@ void AnalyzeStability(PeriodicOrbit<ScalarType>* orbit, ScalarType eigenvalue_th
 template <typename ScalarType>
 std::vector<ManifoldTrajectory<ScalarType>> ComputeInvariantManifolds(
     const PeriodicOrbit<ScalarType>& orbit, ScalarType mu, const ManifoldConfig<ScalarType>& config,
-    ScalarType dt) {
-  // TODO: 実装予定
-  // 固有ベクトル方向に変位を加えて時間反転積分
-  throw std::runtime_error("ComputeInvariantManifolds: Not implemented yet");
-}
+    ScalarType dt);  // 実装は periodic_orbit_manifold.hpp に移動
 
 /**
- * @brief 固有値計算（詳細実装は後ほど追加）
+ * @brief 固有値計算（Eigenライブラリを使用）
  */
 template <typename ScalarType>
 std::vector<std::complex<ScalarType>> ComputeEigenvalues(
-    const std::array<std::array<ScalarType, 6>, 6>& matrix) {
-  // TODO: 実装予定
-  // QR法またはEigenライブラリを使用
-  throw std::runtime_error("ComputeEigenvalues: Not implemented yet");
-}
+    const std::array<std::array<ScalarType, 6>, 6>& matrix);
 
 /**
- * @brief 固有ベクトル計算（詳細実装は後ほど追加）
+ * @brief 固有ベクトル計算（Eigenライブラリを使用）
  */
 template <typename ScalarType>
 std::array<ScalarType, 6> ComputeEigenvector(const std::array<std::array<ScalarType, 6>, 6>& matrix,
-                                             const std::complex<ScalarType>& eigenvalue) {
-  // TODO: 実装予定
-  throw std::runtime_error("ComputeEigenvector: Not implemented yet");
-}
+                                             const std::complex<ScalarType>& eigenvalue);
+
+/**
+ * @brief 固有値と固有ベクトルを同時に計算
+ */
+template <typename ScalarType>
+struct EigenDecomposition {
+  std::vector<std::complex<ScalarType>> eigenvalues;
+  std::vector<std::array<std::complex<ScalarType>, 6>> eigenvectors;
+};
+
+template <typename ScalarType>
+EigenDecomposition<ScalarType> ComputeEigenDecomposition(
+    const std::array<std::array<ScalarType, 6>, 6>& matrix);
 
 }  // namespace periodic_orbit
 
 // 実装部をインクルード
 #include "periodic_orbit_impl.hpp"
+#include "periodic_orbit_manifold.hpp"
 
 #endif  // PERIODIC_ORBIT_HPP

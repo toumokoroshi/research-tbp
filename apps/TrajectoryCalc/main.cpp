@@ -292,8 +292,14 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     config->initial_coords = parser.GetCoordsArray("coords");
 
     // インパルス設定の読み込み (オプション)
-    if (parser.HasKey("impulse.trigger_type")) {
-      config->impulse.enabled = true;
+    // enabledフラグがあればそれを優先、なければtrigger_typeの有無で判断
+    if (parser.HasKey("impulse.enabled")) {
+      config->impulse.enabled = parser.GetBool("impulse.enabled", false);
+    } else {
+      config->impulse.enabled = parser.HasKey("impulse.trigger_type");
+    }
+
+    if (config->impulse.enabled) {
       config->impulse.trigger_type = parser.GetString("impulse.trigger_type", "position");
       config->impulse.trigger_axis = parser.GetString("impulse.trigger_axis", "x");
       config->impulse.trigger_value = parser.GetDouble("impulse.trigger_value", 0.0);
