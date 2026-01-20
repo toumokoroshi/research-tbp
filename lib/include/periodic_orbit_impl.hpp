@@ -875,6 +875,185 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitSymmetric(
   return orbit;
 }
 
+// ---------------------------------------------------------------------------
+// Halo軌道用の対称性ベース精密化（3変数Newton法）
+// ---------------------------------------------------------------------------
+/**
+ * @brief Halo軌道の精密化（3変数Newton法）
+ * @details Halo軌道の対称性を利用: y=0, vx=0で開始し、半周期後にy=0でvx=0, vz=0となる
+ *          変数: (x₀, z₀, vy₀)
+ *          目標: vx(T/2) = 0, vz(T/2) = 0
+ * @param initial_guess 初期推定状態 (y=0, vx=0, vz=0 を想定、z≠0)
+ * @param mu 質量パラメータ
+ * @param max_iterations 最大反復回数
+ * @param tolerance 収束許容誤差
+ * @param max_time 最大積分時間
+ * @param dt 積分刻み
+ * @param convergence_info 収束情報（オプション）
+ * @return 精密化されたHalo周期軌道
+ */
+template <typename ScalarType>
+PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
+    const State<ScalarType>& initial_guess,
+    ScalarType mu,
+    int max_iterations,
+    ScalarType tolerance,
+    ScalarType max_time,
+    ScalarType dt,
+    NewtonConvergenceInfo<ScalarType>* convergence_info = nullptr) {
+  
+  // 2変数Newton法: x₀, vy₀ を変数として解く
+  // z₀ は固定パラメータとして扱う（これにより Lyapunov解(z=0)への収束を防ぐ）
+  ScalarType x0 = initial_guess.x;
+  const ScalarType z0 = initial_guess.z;  // 固定！
+  ScalarType vy0 = initial_guess.vy;
+  
+  bool converged = false;
+  int iteration = 0;
+  ScalarType residual = 0.0;
+  ScalarType half_period = 0.0;
+  State<ScalarType> crossing_state;
+  
+  std::cout << "    [HaloRefine] Starting 2-variable Newton (z0 fixed) for Halo orbit...\n";
+  std::cout << "    [HaloRefine] Initial: x0=" << x0 << ", z0=" << z0 << " (FIXED), vy0=" << vy0 << "\n";
+  
+  // z0 が 0 に近すぎる場合は警告
+  if (std::abs(z0) < 1e-10) {
+    std::cout << "    [HaloRefine] WARNING: z0 is nearly zero! Halo orbit requires z0 != 0.\n";
+  }
+  
+  for (iteration = 0; iteration < max_iterations; ++iteration) {
+    // 現在の初期条件で状態を構築（Halo対称性: y=0, vx=0, vz=0）
+    State<ScalarType> state;
+    state.x = x0;
+    state.y = 0.0;
+    state.z = z0;  // 固定値を使用
+    state.vx = 0.0;
+    state.vy = vy0;
+    state.vz = 0.0;
+    
+    // 半周期積分（y=0 負→正への交差を検出）
+    auto result = IntegrateToHalfPeriodCrossing(state, mu, max_time, dt);
+    if (!result) {
+      std::cout << "      Iteration " << (iteration + 1) << ": FAILED (no y=0 crossing)\n";
+      if (convergence_info) {
+        convergence_info->converged = false;
+        convergence_info->iterations = iteration;
+        convergence_info->final_residual = std::numeric_limits<ScalarType>::infinity();
+        convergence_info->message = "No y=0 crossing found";
+      }
+      throw std::runtime_error("RefinePeriodicOrbitHalo: No half-period crossing found");
+    }
+    
+    crossing_state = result->first;
+    half_period = result->second;
+    
+    // 残差 = sqrt(vx² + vz²) at crossing（Halo対称軌道では vx = 0, vz = 0）
+    ScalarType vx_error = crossing_state.vx;
+    ScalarType vz_error = crossing_state.vz;
+    residual = std::sqrt(vx_error * vx_error + vz_error * vz_error);
+    
+    std::cout << "      Iteration " << (iteration + 1) << "/" << max_iterations
+              << ": |vx|=" << std::scientific << std::abs(vx_error)
+              << ", |vz|=" << std::abs(vz_error)
+              << ", residual=" << residual
+              << ", T/2=" << std::fixed << half_period << "\n";
+    
+    // 収束判定
+    if (residual < tolerance) {
+      std::cout << "      CONVERGED!\n";
+      converged = true;
+      break;
+    }
+    
+    // ヤコビアン計算（2x2: 2変数、2条件）
+    // J = [∂vx/∂x₀  ∂vx/∂vy₀]
+    //     [∂vz/∂x₀  ∂vz/∂vy₀]
+    const ScalarType eps_x = 1e-8 * std::max(1.0, std::abs(x0));
+    const ScalarType eps_vy = 1e-8 * std::max(1.0, std::abs(vy0));
+    
+    // ∂/∂x₀
+    State<ScalarType> state_px = state;
+    state_px.x = x0 + eps_x;
+    auto result_px = IntegrateToHalfPeriodCrossing(state_px, mu, max_time, dt);
+    ScalarType dvx_dx = 0.0, dvz_dx = 0.0;
+    if (result_px) {
+      dvx_dx = (result_px->first.vx - crossing_state.vx) / eps_x;
+      dvz_dx = (result_px->first.vz - crossing_state.vz) / eps_x;
+    }
+    
+    // ∂/∂vy₀
+    State<ScalarType> state_pvy = state;
+    state_pvy.vy = vy0 + eps_vy;
+    auto result_pvy = IntegrateToHalfPeriodCrossing(state_pvy, mu, max_time, dt);
+    ScalarType dvx_dvy = 0.0, dvz_dvy = 0.0;
+    if (result_pvy) {
+      dvx_dvy = (result_pvy->first.vx - crossing_state.vx) / eps_vy;
+      dvz_dvy = (result_pvy->first.vz - crossing_state.vz) / eps_vy;
+    }
+    
+    // 2x2 線形方程式を解く: J * [dx; dvy] = -[vx_error; vz_error]
+    // J = [dvx_dx  dvx_dvy]
+    //     [dvz_dx  dvz_dvy]
+    ScalarType det = dvx_dx * dvz_dvy - dvx_dvy * dvz_dx;
+    if (std::abs(det) < 1e-20) {
+      std::cout << "      WARNING: Jacobian singular, using small random step\n";
+      // 発振を避けるため、小さなランダムステップ
+      x0 -= 0.001 * vx_error;
+      vy0 -= 0.0001 * vz_error;
+      continue;
+    }
+    
+    // クラメルの公式で解く
+    ScalarType dx = (-vx_error * dvz_dvy + dvx_dvy * vz_error) / det;
+    ScalarType dvy = (-dvx_dx * vz_error + vx_error * dvz_dx) / det;
+    
+    // ステップサイズ制限
+    const ScalarType max_dx = 0.01;   // x方向最大変化
+    const ScalarType max_dvy = 0.001; // vy方向最大変化
+    
+    ScalarType scale = 1.0;
+    if (std::abs(dx) > max_dx) scale = std::min(scale, max_dx / std::abs(dx));
+    if (std::abs(dvy) > max_dvy) scale = std::min(scale, max_dvy / std::abs(dvy));
+    
+    dx *= scale;
+    dvy *= scale;
+    
+    // 更新（z0は更新しない！）
+    x0 += dx;
+    vy0 += dvy;
+  }
+  
+  // 収束情報
+  if (convergence_info) {
+    convergence_info->converged = converged;
+    convergence_info->iterations = iteration;
+    convergence_info->final_residual = residual;
+    convergence_info->message = converged ? "Converged successfully" : "Max iterations reached";
+  }
+  
+  if (!converged) {
+    throw std::runtime_error("RefinePeriodicOrbitHalo: Failed to converge");
+  }
+  
+  // 周期軌道を構築
+  PeriodicOrbit<ScalarType> orbit;
+  orbit.initial_state.x = x0;
+  orbit.initial_state.y = 0.0;
+  orbit.initial_state.z = z0;  // 固定値
+  orbit.initial_state.vx = 0.0;
+  orbit.initial_state.vy = vy0;
+  orbit.initial_state.vz = 0.0;
+  orbit.period = 2.0 * half_period;  // 全周期 = 2 × 半周期
+  orbit.jacobi_constant = calc_jacobi_integral(orbit.initial_state, mu);
+  
+  std::cout << "    [HaloRefine] Final Halo orbit:\n";
+  std::cout << "      x0=" << x0 << ", z0=" << z0 << " (FIXED), vy0=" << vy0 << "\n";
+  std::cout << "      Period=" << orbit.period << ", C=" << orbit.jacobi_constant << "\n";
+  
+  return orbit;
+}
+
 }  // namespace periodic_orbit
 
 #endif  // PERIODIC_ORBIT_IMPL_HPP

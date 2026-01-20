@@ -271,45 +271,54 @@ class OrbitContinuator {
    * @param bifurcation_orbit 分岐が検出されたLyapunov軌道
    * @param north_branch trueならNorth Halo, falseならSouth Halo
    * @return Halo族
+   * 
+   * @details Lyapunov軌道はxy平面内（z=0）なので、モノドロミー行列の固有ベクトルも
+   *          z成分がほぼゼロになる。Halo軌道を生成するには、z方向に明示的に
+   *          摂動を与える必要がある。摂動量はLyapunov軌道のx振幅に比例させる。
    */
   PeriodicOrbitFamily<ScalarType> ContinueHaloFromBifurcation(
       const PeriodicOrbit<ScalarType>& bifurcation_orbit, bool north_branch = true) {
     PeriodicOrbitFamily<ScalarType> family;
 
-    // 分岐方向ベクトルを取得
-    std::array<ScalarType, 6> bif_vec = ComputeBifurcationEigenvector(bifurcation_orbit);
-
-    // z成分の符号でNorth/Southを判定
-    // North: z > 0, South: z < 0
+    // L2点の位置を推定
+    ScalarType x_L2 = 1.0 + std::cbrt(mu_ / 3.0);
+    
+    // Lyapunov軌道のx振幅
+    ScalarType x_amplitude = std::abs(bifurcation_orbit.initial_state.x - x_L2);
+    
+    // z方向の摂動量: x振幅に比例（Halo軌道の典型的なスケール）
+    // 小さすぎるとNewtonが収束しにくい、大きすぎると別の軌道に飛ぶ
+    ScalarType z_perturbation = x_amplitude * 0.1;  // x振幅の10%
+    
+    // North/Southの符号
     ScalarType z_sign = north_branch ? 1.0 : -1.0;
-    if (bif_vec[2] * z_sign < 0) {
-      // 分岐ベクトルの符号を反転
-      for (auto& v : bif_vec) v = -v;
-    }
 
-    // 分岐点から分岐方向に小さく摂動した初期条件を生成
-    ScalarType epsilon = 1e-4;  // 小さな摂動量
-    State<ScalarType> initial_guess;
-    initial_guess.x = bifurcation_orbit.initial_state.x + epsilon * bif_vec[0];
-    initial_guess.y = bifurcation_orbit.initial_state.y + epsilon * bif_vec[1];
-    initial_guess.z = bifurcation_orbit.initial_state.z + epsilon * bif_vec[2];
-    initial_guess.vx = bifurcation_orbit.initial_state.vx + epsilon * bif_vec[3];
-    initial_guess.vy = bifurcation_orbit.initial_state.vy + epsilon * bif_vec[4];
-    initial_guess.vz = bifurcation_orbit.initial_state.vz + epsilon * bif_vec[5];
+    // 分岐点から z方向に摂動した初期条件を生成
+    State<ScalarType> initial_guess = bifurcation_orbit.initial_state;
+    initial_guess.z = z_sign * z_perturbation;
+    // vz は対称性から初期条件で0（y=0断面でのHalo対称性）
 
     std::cout << "=== Starting Halo family continuation from bifurcation point ===" << std::endl;
     std::cout << "  Branch: " << (north_branch ? "North" : "South") << std::endl;
-    std::cout << "  Initial z: " << initial_guess.z << ", vz: " << initial_guess.vz << std::endl;
+    std::cout << "  Lyapunov x-amplitude: " << x_amplitude << std::endl;
+    std::cout << "  Initial z perturbation: " << initial_guess.z << std::endl;
+    std::cout << "  Initial state: (" << initial_guess.x << ", " << initial_guess.y 
+              << ", " << initial_guess.z << ", " << initial_guess.vx 
+              << ", " << initial_guess.vy << ", " << initial_guess.vz << ")" << std::endl;
 
     // Newton法で周期軌道として収束させる
+    // Halo軌道はz対称性を使える: y=0で開始し、次のy=0交差まで積分
     NewtonConvergenceInfo<ScalarType> conv_info;
     PeriodicOrbit<ScalarType> initial_orbit;
 
     try {
-      initial_orbit = RefinePeriodicOrbit(initial_guess, mu_, config_.section_index,
-                                          config_.section_value, config_.newton_max_iterations,
-                                          config_.newton_tolerance, config_.max_integration_time,
-                                          config_.integration_timestep, &conv_info);
+      // Halo軌道用の3変数対称Newton法を使用
+      // 変数: (x₀, z₀, vy₀), 目標: vx(T/2)=0, vz(T/2)=0
+      initial_orbit = RefinePeriodicOrbitHalo(initial_guess, mu_,
+                                               config_.newton_max_iterations,
+                                               config_.newton_tolerance,
+                                               config_.max_integration_time,
+                                               config_.integration_timestep, &conv_info);
 
       if (!conv_info.converged) {
         throw std::runtime_error("Halo orbit refinement failed to converge");
@@ -318,6 +327,7 @@ class OrbitContinuator {
       std::cout << "  Halo orbit refined successfully!" << std::endl;
       std::cout << "  Period: " << initial_orbit.period << std::endl;
       std::cout << "  Final z: " << initial_orbit.initial_state.z << std::endl;
+      std::cout << "  Jacobi: " << initial_orbit.jacobi_constant << std::endl;
 
     } catch (const std::exception& e) {
       std::cerr << "Failed to refine Halo orbit: " << e.what() << std::endl;
@@ -333,11 +343,12 @@ class OrbitContinuator {
         ComputeMonodromyMatrix(initial_orbit, mu_, config_.integration_timestep);
     AnalyzeStability(&initial_orbit, 1.0);
 
-    // 継続を実行
+    // 継続を実行（Halo継続モードを有効化）
+    is_halo_continuation_ = true;
     family = ContinueFamily(initial_orbit);
+    is_halo_continuation_ = false;  // 終了後にリセット
 
-    // 族の種類を設定（分岐元のLagrange点に基づいて設定する必要があるが、
-    // ここでは簡略化してL2を仮定）
+    // 族の種類を設定
     family.family_type = north_branch ? OrbitFamilyType::HALO_L2_NORTH
                                       : OrbitFamilyType::HALO_L2_SOUTH;
     family.family_name = GetFamilyName(family.family_type);
@@ -345,10 +356,12 @@ class OrbitContinuator {
     return family;
   }
 
+
  private:
   ScalarType mu_;
   ContinuationConfig<ScalarType> config_;
   ScalarType current_step_size_;
+  bool is_halo_continuation_ = false;  ///< Halo継続モードフラグ
 
   /**
    * @brief 自然パラメータ継続法
@@ -374,11 +387,20 @@ class OrbitContinuator {
       // Newton法で補正
       try {
         NewtonConvergenceInfo<ScalarType> conv_info;
-        // Lyapunov軌道用の対称性ベース微分修正を使用
-        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
-            predicted_state, mu_,
-            config_.newton_max_iterations, config_.newton_tolerance,
-            config_.max_integration_time, config_.integration_timestep, &conv_info);
+        PeriodicOrbit<ScalarType> next_orbit;
+        if (is_halo_continuation_) {
+          // Halo軌道用の3変数対称Newton法を使用
+          next_orbit = RefinePeriodicOrbitHalo(
+              predicted_state, mu_,
+              config_.newton_max_iterations, config_.newton_tolerance,
+              config_.max_integration_time, config_.integration_timestep, &conv_info);
+        } else {
+          // Lyapunov軌道用の2変数対称Newton法を使用
+          next_orbit = RefinePeriodicOrbitSymmetric(
+              predicted_state, mu_,
+              config_.newton_max_iterations, config_.newton_tolerance,
+              config_.max_integration_time, config_.integration_timestep, &conv_info);
+        }
 
         if (!conv_info.converged) {
           // ステップサイズを縮小して再試行
@@ -475,11 +497,20 @@ class OrbitContinuator {
       // Newton法で補正（擬似弧長条件付き）
       try {
         NewtonConvergenceInfo<ScalarType> conv_info;
-        // Lyapunov軌道用の対称性ベース微分修正を使用
-        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
-            predicted_state, mu_,
-            config_.newton_max_iterations, config_.newton_tolerance,
-            config_.max_integration_time, config_.integration_timestep, &conv_info);
+        PeriodicOrbit<ScalarType> next_orbit;
+        if (is_halo_continuation_) {
+          // Halo軌道用の3変数対称Newton法を使用
+          next_orbit = RefinePeriodicOrbitHalo(
+              predicted_state, mu_,
+              config_.newton_max_iterations, config_.newton_tolerance,
+              config_.max_integration_time, config_.integration_timestep, &conv_info);
+        } else {
+          // Lyapunov軌道用の2変数対称Newton法を使用
+          next_orbit = RefinePeriodicOrbitSymmetric(
+              predicted_state, mu_,
+              config_.newton_max_iterations, config_.newton_tolerance,
+              config_.max_integration_time, config_.integration_timestep, &conv_info);
+        }
 
         if (!conv_info.converged) {
           current_step_size_ *= 0.5;
@@ -546,11 +577,20 @@ class OrbitContinuator {
 
     try {
       NewtonConvergenceInfo<ScalarType> conv_info;
-      // Lyapunov軌道用の対称性ベース微分修正を使用
-      PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
-          predicted_state, mu_,
-          config_.newton_max_iterations, config_.newton_tolerance,
-          config_.max_integration_time, config_.integration_timestep, &conv_info);
+      PeriodicOrbit<ScalarType> next_orbit;
+      if (is_halo_continuation_) {
+        // Halo軌道用の3変数対称Newton法を使用
+        next_orbit = RefinePeriodicOrbitHalo(
+            predicted_state, mu_,
+            config_.newton_max_iterations, config_.newton_tolerance,
+            config_.max_integration_time, config_.integration_timestep, &conv_info);
+      } else {
+        // Lyapunov軌道用の2変数対称Newton法を使用
+        next_orbit = RefinePeriodicOrbitSymmetric(
+            predicted_state, mu_,
+            config_.newton_max_iterations, config_.newton_tolerance,
+            config_.max_integration_time, config_.integration_timestep, &conv_info);
+      }
 
       if (conv_info.converged) {
         next_orbit.monodromy_matrix =
@@ -569,6 +609,11 @@ class OrbitContinuator {
    *          ステップサイズは振幅の相対増加率として解釈
    */
   State<ScalarType> PredictNextState(const PeriodicOrbit<ScalarType>& orbit) {
+    // Halo継続モードの場合はHalo用予測を使用
+    if (is_halo_continuation_) {
+      return PredictNextStateHalo(orbit);
+    }
+    
     State<ScalarType> predicted = orbit.initial_state;
 
     // L2点の位置を推定（mu << 1 のとき x_L2 ≈ 1 + (mu/3)^(1/3)）
@@ -587,6 +632,28 @@ class OrbitContinuator {
     
     // x と vy を同じ比率でスケール
     predicted.x = x_L2 + new_amplitude;
+    predicted.vy = orbit.initial_state.vy * scale_factor;
+    
+    return predicted;
+  }
+  
+  /**
+   * @brief Halo軌道用の次の状態を予測（3D振幅増加方向）
+   * @details Halo軌道では x, z, vy を同じ比率でスケールする
+   */
+  State<ScalarType> PredictNextStateHalo(const PeriodicOrbit<ScalarType>& orbit) {
+    State<ScalarType> predicted = orbit.initial_state;
+
+    // L2点の位置を推定
+    ScalarType x_L2 = 1.0 + std::cbrt(mu_ / 3.0);
+    
+    // ステップサイズを相対増加率として使用
+    ScalarType relative_step = std::max(0.05, std::min(0.5, current_step_size_ * 100.0));
+    ScalarType scale_factor = 1.0 + relative_step;
+    
+    // x, z, vy を同じ比率でスケール（Halo軌道の形状を保持）
+    predicted.x = x_L2 + (orbit.initial_state.x - x_L2) * scale_factor;
+    predicted.z = orbit.initial_state.z * scale_factor;
     predicted.vy = orbit.initial_state.vy * scale_factor;
     
     return predicted;

@@ -57,3 +57,23 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 add_test(NAME test_l2_known_ic COMMAND test_l2_known_ic)
+
+# Halo軌道継続テスト（分岐点から生成）
+add_executable(test_halo_continuation test_halo_continuation.cpp)
+
+target_include_directories(test_halo_continuation PRIVATE
+  ${CMAKE_SOURCE_DIR}/lib/include
+)
+
+target_link_libraries(test_halo_continuation PRIVATE
+  Boost::boost
+  tomlplusplus::tomlplusplus
+  Eigen3::Eigen
+)
+
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(test_halo_continuation PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+add_test(NAME test_halo_continuation COMMAND test_halo_continuation)
+
