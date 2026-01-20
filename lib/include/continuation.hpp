@@ -26,6 +26,7 @@
 
 #include "lyapunov_initial.hpp"
 #include "periodic_orbit.hpp"
+#include "periodic_orbit_impl.hpp"
 #include "rtbp.hpp"
 
 namespace continuation {
@@ -208,10 +209,13 @@ class OrbitContinuator {
     PeriodicOrbit<ScalarType> initial_orbit;
 
     try {
-      initial_orbit = RefinePeriodicOrbit(initial_guess, mu_, config_.section_index,
-                                          config_.section_value, config_.newton_max_iterations,
-                                          config_.newton_tolerance, config_.max_integration_time,
-                                          config_.integration_timestep, &conv_info);
+      // Lyapunov軌道用の対称性ベース微分修正を使用
+      initial_orbit = RefinePeriodicOrbitSymmetric(
+          initial_guess, mu_,
+          config_.newton_max_iterations,
+          config_.newton_tolerance,
+          config_.max_integration_time,
+          config_.integration_timestep, &conv_info);
 
       if (!conv_info.converged) {
         throw std::runtime_error("Initial orbit refinement failed to converge");
@@ -370,10 +374,11 @@ class OrbitContinuator {
       // Newton法で補正
       try {
         NewtonConvergenceInfo<ScalarType> conv_info;
-        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbit(
-            predicted_state, mu_, config_.section_index, config_.section_value,
-            config_.newton_max_iterations, config_.newton_tolerance, config_.max_integration_time,
-            config_.integration_timestep, &conv_info);
+        // Lyapunov軌道用の対称性ベース微分修正を使用
+        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
+            predicted_state, mu_,
+            config_.newton_max_iterations, config_.newton_tolerance,
+            config_.max_integration_time, config_.integration_timestep, &conv_info);
 
         if (!conv_info.converged) {
           // ステップサイズを縮小して再試行
@@ -470,10 +475,11 @@ class OrbitContinuator {
       // Newton法で補正（擬似弧長条件付き）
       try {
         NewtonConvergenceInfo<ScalarType> conv_info;
-        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbit(
-            predicted_state, mu_, config_.section_index, config_.section_value,
-            config_.newton_max_iterations, config_.newton_tolerance, config_.max_integration_time,
-            config_.integration_timestep, &conv_info);
+        // Lyapunov軌道用の対称性ベース微分修正を使用
+        PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
+            predicted_state, mu_,
+            config_.newton_max_iterations, config_.newton_tolerance,
+            config_.max_integration_time, config_.integration_timestep, &conv_info);
 
         if (!conv_info.converged) {
           current_step_size_ *= 0.5;
@@ -540,10 +546,11 @@ class OrbitContinuator {
 
     try {
       NewtonConvergenceInfo<ScalarType> conv_info;
-      PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbit(
-          predicted_state, mu_, config_.section_index, config_.section_value,
-          config_.newton_max_iterations, config_.newton_tolerance, config_.max_integration_time,
-          config_.integration_timestep, &conv_info);
+      // Lyapunov軌道用の対称性ベース微分修正を使用
+      PeriodicOrbit<ScalarType> next_orbit = RefinePeriodicOrbitSymmetric(
+          predicted_state, mu_,
+          config_.newton_max_iterations, config_.newton_tolerance,
+          config_.max_integration_time, config_.integration_timestep, &conv_info);
 
       if (conv_info.converged) {
         next_orbit.monodromy_matrix =
@@ -558,21 +565,30 @@ class OrbitContinuator {
 
   /**
    * @brief 次の状態を予測（振幅増加方向）
+   * @details Lyapunov軌道では振幅(x - x_L)に比例してvyもスケールする
+   *          ステップサイズは振幅の相対増加率として解釈
    */
   State<ScalarType> PredictNextState(const PeriodicOrbit<ScalarType>& orbit) {
     State<ScalarType> predicted = orbit.initial_state;
 
-    // x方向（振幅方向）に摂動を与える
-    // Lyapunov軌道ではL点からのx方向の変位が振幅に対応
-    ScalarType delta_x = current_step_size_;
-
-    // ヤコビ積分を保存するためにvyを調整
-    predicted.x += delta_x;
-
-    // ヤコビ積分の変化を補正するためのvy調整（近似）
-    // dC/dvy = -2*vy なので、dvy ≈ -dC / (2*vy)
-    // ただし、ここでは簡略化して単純な増加のみ
-
+    // L2点の位置を推定（mu << 1 のとき x_L2 ≈ 1 + (mu/3)^(1/3)）
+    ScalarType x_L2 = 1.0 + std::cbrt(mu_ / 3.0);
+    
+    // 現在の振幅 = x - x_L2
+    ScalarType current_amplitude = std::abs(orbit.initial_state.x - x_L2);
+    
+    // ステップサイズを相対増加率として使用（例：0.1 = 10%増加）
+    // current_step_size_ を絶対値から相対率に再解釈
+    ScalarType relative_step = std::max(0.05, std::min(0.5, current_step_size_ * 100.0));
+    ScalarType scale_factor = 1.0 + relative_step;
+    
+    // 新しい振幅
+    ScalarType new_amplitude = current_amplitude * scale_factor;
+    
+    // x と vy を同じ比率でスケール
+    predicted.x = x_L2 + new_amplitude;
+    predicted.vy = orbit.initial_state.vy * scale_factor;
+    
     return predicted;
   }
 

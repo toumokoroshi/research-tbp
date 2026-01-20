@@ -267,24 +267,18 @@ std::array<std::array<ScalarType, 6>, 6> ComputeMonodromyMatrixImpl(
   // 変分方程式の積分器
   using Stepper = runge_kutta_dopri5<STMState<ScalarType>, ScalarType, STMState<ScalarType>,
                                      ScalarType, vector_space_algebra>;
-  using ControlledStepper = controlled_runge_kutta<Stepper>;
 
   VariationalEquation<ScalarType> var_eq(mu);
-  ControlledStepper stepper = make_controlled(1e-12, 1e-12, Stepper());
 
   // 初期状態: 軌道 + 単位行列
   STMState<ScalarType> state;
   state.orbit = orbit.initial_state;
   // state.stm は constructor で単位行列に初期化済み
 
-  // 1周期分積分
-  ScalarType time = 0.0;
+  // 1周期分積分（integrate_adaptiveを使用）
   ScalarType period = orbit.period;
-
-  while (time < period) {
-    ScalarType step = std::min(dt, period - time);
-    stepper.try_step(var_eq, state, time, step);
-  }
+  integrate_adaptive(make_controlled(1e-10, 1e-10, Stepper()),
+                     var_eq, state, 0.0, period, dt);
 
   // 最終的なSTMがモノドロミー行列
   return state.stm;

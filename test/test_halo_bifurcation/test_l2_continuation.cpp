@@ -41,21 +41,22 @@ int main() {
   config.max_steps = 500;               // 十分な継続ステップ数
   
   // ヤコビ積分の範囲（L2周りの適切な範囲）
-  config.jacobi_min = 2.98;
+  // ピッチフォーク分岐を探すため、より広い範囲を設定
+  config.jacobi_min = 2.85;  // 大振幅軌道まで探索
   config.jacobi_max = 3.02;
   
   // Newton法パラメータ
   config.newton_max_iterations = 50;
-  config.newton_tolerance = 1e-12;
-  config.max_integration_time = 5.0;   // L2周期(~3.1)の約1.5倍
-  config.integration_timestep = 0.0001;
+  config.newton_tolerance = 1e-9;  // 1e-12は厳しすぎるため緩和
+  config.max_integration_time = 10.0;  // L2周期(~3.1)の約3倍
+  config.integration_timestep = 0.001;  // モノドロミー行列計算用（0.0001は遅すぎる）
   
   // 分岐検出を有効化
   config.detect_bifurcations = true;
   config.eigenvalue_threshold = 1e-4;  // 分岐検出の閾値
   
-  // 初期振幅（小さめから開始）
-  config.initial_amplitude = 0.0005;
+  // 初期振幅（線形近似が有効な小さい値）
+  config.initial_amplitude = 0.0001;  // 小振幅で線形近似を適用
   
   // ポアンカレ断面設定
   config.section_index = 1;      // y = 0
@@ -74,6 +75,21 @@ int main() {
   std::cout << "\n[Starting L2 Lyapunov Family Continuation]" << std::endl;
   
   OrbitContinuator<double> continuator(kMuSunEarth, config);
+  
+  // 推定周期を表示（デバッグ用）
+  auto generator = std::make_unique<lyapunov::LyapunovOrbitGenerator<double>>(LagrangePoint::L2, kMuSunEarth);
+  double estimated_period = generator->EstimatePeriod(config.initial_amplitude);
+  std::cout << "  Estimated period: " << estimated_period << std::endl;
+  std::cout << "  max_integration_time: " << config.max_integration_time << std::endl;
+  
+  // max_integration_timeが周期より短い場合は調整
+  if (config.max_integration_time < estimated_period * 2.0) {
+    config.max_integration_time = estimated_period * 5.0;
+    std::cout << "  [ADJUSTED] max_integration_time -> " << config.max_integration_time << std::endl;
+    
+    // configを再設定
+    continuator = OrbitContinuator<double>(kMuSunEarth, config);
+  }
   
   PeriodicOrbitFamily<double> family;
   try {

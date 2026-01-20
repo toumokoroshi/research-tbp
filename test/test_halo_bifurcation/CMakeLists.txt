@@ -38,3 +38,22 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 add_test(NAME test_l2_continuation COMMAND test_l2_continuation)
+
+# L2 既知初期条件検証テスト
+add_executable(test_l2_known_ic test_l2_known_ic.cpp)
+
+target_include_directories(test_l2_known_ic PRIVATE
+  ${CMAKE_SOURCE_DIR}/lib/include
+)
+
+target_link_libraries(test_l2_known_ic PRIVATE
+  Boost::boost
+  tomlplusplus::tomlplusplus
+  Eigen3::Eigen
+)
+
+if(OpenMP_CXX_FOUND)
+  target_link_libraries(test_l2_known_ic PRIVATE OpenMP::OpenMP_CXX)
+endif()
+
+add_test(NAME test_l2_known_ic COMMAND test_l2_known_ic)
