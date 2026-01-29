@@ -8,11 +8,14 @@
  * @date 2026-01-05
  */
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <toml++/toml.hpp>
@@ -21,6 +24,26 @@
 #include "periodic_orbit.hpp"
 #include "rtbp.hpp"
 #include "utils.hpp"
+
+// BOOST_NO_EXCEPTIONS が定義されている場合、boost::throw_exception を提供する必要がある
+#include <boost/config.hpp>
+#include <boost/throw_exception.hpp>
+
+#ifdef BOOST_NO_EXCEPTIONS
+namespace boost {
+BOOST_NORETURN void throw_exception(std::exception const& e) {
+  std::cerr << "Boost exception: " << e.what() << std::endl;
+  std::abort();
+}
+
+BOOST_NORETURN void throw_exception(std::exception const& e,
+                                     boost::source_location const& loc) {
+  std::cerr << "Boost exception at " << loc.file_name() << ":" << loc.line()
+            << " - " << e.what() << std::endl;
+  std::abort();
+}
+}  // namespace boost
+#endif
 
 
 namespace fs = std::filesystem;
@@ -37,6 +60,7 @@ struct StableManifoldConfig {
   // 入力モード
   std::string input_mode = "direct";  // "direct" or "file"
   std::string orbit_data_file;
+  std::string orbit_type = "lyapunov";  // "lyapunov" or "halo"
 
   // 直接指定の場合の初期条件
   double initial_x = 0.9899;
@@ -55,6 +79,9 @@ struct StableManifoldConfig {
   ManifoldConfig<double> manifold_config;
 
   // 積分器設定
+  std::string integrator_type = "rk4";
+  double abs_tolerance = 1e-12;
+  double rel_tolerance = 1e-12;
   double timestep = 0.0001;
   double max_integration_time = 50.0;
 
@@ -86,6 +113,9 @@ bool LoadConfig(const std::string& filepath, StableManifoldConfig* config) {
     }
     if (auto val = data["orbit_input"]["orbit_data_file"].value<std::string>()) {
       config->orbit_data_file = *val;
+    }
+    if (auto val = data["orbit_input"]["orbit_type"].value<std::string>()) {
+      config->orbit_type = *val;
     }
     if (auto val = data["orbit_input"]["initial_x"].value<double>()) {
       config->initial_x = *val;
@@ -138,12 +168,25 @@ bool LoadConfig(const std::string& filepath, StableManifoldConfig* config) {
     }
 
     // 積分器設定
+    if (auto val = data["integrator"]["type"].value<std::string>()) {
+      config->integrator_type = *val;
+    }
+    if (auto val = data["integrator"]["abs_tolerance"].value<double>()) {
+      config->abs_tolerance = *val;
+    }
+    if (auto val = data["integrator"]["rel_tolerance"].value<double>()) {
+      config->rel_tolerance = *val;
+    }
     if (auto val = data["integrator"]["timestep"].value<double>()) {
       config->timestep = *val;
     }
     if (auto val = data["integrator"]["max_integration_time"].value<double>()) {
       config->max_integration_time = *val;
     }
+
+    config->manifold_config.integrator_type = config->integrator_type;
+    config->manifold_config.abs_tolerance = config->abs_tolerance;
+    config->manifold_config.rel_tolerance = config->rel_tolerance;
 
     // システムパラメータ
     if (auto val = data["system"]["mu"].value<double>()) {
@@ -225,7 +268,28 @@ void PrintConfig(const StableManifoldConfig& config) {
 // ---------------------------------------------------------------------------
 
 void SaveManifolds(const std::vector<ManifoldTrajectory<double>>& manifolds,
-                   const std::string& output_dir, bool output_velocity_map) {
+                   const std::string& output_dir, double mu, double target_cj,
+                   const std::string& section_var, double section_value,
+                   bool output_velocity_map) {
+  struct CjDeviationStats {
+    size_t count = 0;
+    double mean = 0.0;
+    double m2 = 0.0;
+    double min = std::numeric_limits<double>::infinity();
+    double max = 0.0;
+  };
+
+  auto UpdateStats = [](CjDeviationStats* stats, double value) {
+    stats->count += 1;
+    stats->min = std::min(stats->min, value);
+    stats->max = std::max(stats->max, value);
+    const double delta = value - stats->mean;
+    stats->mean += delta / static_cast<double>(stats->count);
+    const double delta2 = value - stats->mean;
+    stats->m2 += delta * delta2;
+  };
+
+  CjDeviationStats cj_stats;
   // 個別の軌道ファイル
   for (size_t i = 0; i < manifolds.size(); ++i) {
     const auto& manifold = manifolds[i];
@@ -242,7 +306,7 @@ void SaveManifolds(const std::vector<ManifoldTrajectory<double>>& manifolds,
 
     for (size_t j = 0; j < manifold.trajectory.size(); ++j) {
       const auto& state = manifold.trajectory[j];
-      double jacobi = crtbp::calc_jacobi_integral(state, 3.0404233870218e-06);
+      double jacobi = crtbp::calc_jacobi_integral(state, mu);
       file << manifold.times[j] << "," << state.x << "," << state.y << "," << state.z << ","
            << state.vx << "," << state.vy << "," << state.vz << "," << jacobi << "\n";
     }
@@ -266,7 +330,9 @@ void SaveManifolds(const std::vector<ManifoldTrajectory<double>>& manifolds,
 
       for (size_t j = 0; j < manifold.trajectory.size(); ++j) {
         const auto& state = manifold.trajectory[j];
-        double jacobi = crtbp::calc_jacobi_integral(state, 3.0404233870218e-06);
+        double jacobi = crtbp::calc_jacobi_integral(state, mu);
+        double cj_dev = std::abs(jacobi - target_cj);
+        UpdateStats(&cj_stats, cj_dev);
         map_file << state.x << "," << state.y << "," << state.z << "," << state.vx << ","
                  << state.vy << "," << state.vz << "," << jacobi << "," << i << ","
                  << manifold.times[j] << "\n";
@@ -274,6 +340,126 @@ void SaveManifolds(const std::vector<ManifoldTrajectory<double>>& manifolds,
     }
     map_file.close();
     std::cout << "Saved velocity_map.csv\n";
+
+    if (cj_stats.count > 0) {
+      const double variance =
+          cj_stats.m2 / static_cast<double>(cj_stats.count);
+      const double stddev = std::sqrt(variance);
+
+      std::ofstream stats_file(fs::path(output_dir) / "velocity_map_cj_stats.txt");
+      stats_file << std::setprecision(16);
+      stats_file << "Cj Deviation Statistics (|Cj - target|)\n";
+      stats_file << "========================================\n";
+      stats_file << "Target Cj: " << target_cj << "\n";
+      stats_file << "Count: " << cj_stats.count << "\n";
+      stats_file << "Min: " << cj_stats.min << "\n";
+      stats_file << "Max: " << cj_stats.max << "\n";
+      stats_file << "Mean: " << cj_stats.mean << "\n";
+      stats_file << "StdDev: " << stddev << "\n";
+      stats_file.close();
+      std::cout << "Saved velocity_map_cj_stats.txt\n";
+    }
+  }
+
+  // 断面交点の抽出（速度マップとは独立に出力）
+  auto GetComponent = [](const State<double>& s, int index) -> double {
+    switch (index) {
+      case 0:
+        return s.x;
+      case 1:
+        return s.y;
+      case 2:
+        return s.z;
+      case 3:
+        return s.vx;
+      case 4:
+        return s.vy;
+      case 5:
+        return s.vz;
+      default:
+        return 0.0;
+    }
+  };
+
+  int section_index = -1;
+  if (section_var == "x")
+    section_index = 0;
+  else if (section_var == "y")
+    section_index = 1;
+  else if (section_var == "z")
+    section_index = 2;
+  else if (section_var == "vx")
+    section_index = 3;
+  else if (section_var == "vy")
+    section_index = 4;
+  else if (section_var == "vz")
+    section_index = 5;
+
+  if (section_index >= 0) {
+    std::ofstream section_file(fs::path(output_dir) / "manifold_section_hits.csv");
+    section_file << std::setprecision(16);
+    section_file
+        << "# manifold_idx,type,time,x,y,z,vx,vy,vz,jacobi,section_var,section_value,sign\n";
+
+    const double eps = 1e-14;
+    for (size_t i = 0; i < manifolds.size(); ++i) {
+      const auto& manifold = manifolds[i];
+      const std::string type_str =
+          (manifold.type == ManifoldTrajectory<double>::Type::STABLE) ? "stable" : "unstable";
+
+      for (size_t j = 1; j < manifold.trajectory.size(); ++j) {
+        const auto& prev = manifold.trajectory[j - 1];
+        const auto& curr = manifold.trajectory[j];
+        const double v_prev = GetComponent(prev, section_index) - section_value;
+        const double v_curr = GetComponent(curr, section_index) - section_value;
+
+        if (std::abs(v_prev) < eps && std::abs(v_curr) < eps) {
+          continue;
+        }
+
+        if (v_prev == 0.0) {
+          const double jacobi = crtbp::calc_jacobi_integral(prev, mu);
+          const int sign = (v_curr > 0.0) ? 1 : -1;
+          section_file << i << "," << type_str << "," << manifold.times[j - 1] << ","
+                       << prev.x << "," << prev.y << "," << prev.z << "," << prev.vx << ","
+                       << prev.vy << "," << prev.vz << "," << jacobi << "," << section_var << ","
+                       << section_value << "," << sign << "\n";
+          continue;
+        }
+
+        if ((v_prev > 0.0 && v_curr > 0.0) || (v_prev < 0.0 && v_curr < 0.0)) {
+          continue;
+        }
+
+        const double denom = v_curr - v_prev;
+        if (std::abs(denom) < eps) {
+          continue;
+        }
+        const double alpha = -v_prev / denom;
+        if (alpha < 0.0 || alpha > 1.0) {
+          continue;
+        }
+
+        State<double> hit;
+        hit.x = prev.x + alpha * (curr.x - prev.x);
+        hit.y = prev.y + alpha * (curr.y - prev.y);
+        hit.z = prev.z + alpha * (curr.z - prev.z);
+        hit.vx = prev.vx + alpha * (curr.vx - prev.vx);
+        hit.vy = prev.vy + alpha * (curr.vy - prev.vy);
+        hit.vz = prev.vz + alpha * (curr.vz - prev.vz);
+        const double hit_time = manifold.times[j - 1] +
+                                alpha * (manifold.times[j] - manifold.times[j - 1]);
+        const double jacobi = crtbp::calc_jacobi_integral(hit, mu);
+        const int sign = (v_curr > v_prev) ? 1 : -1;
+
+        section_file << i << "," << type_str << "," << hit_time << "," << hit.x << "," << hit.y
+                     << "," << hit.z << "," << hit.vx << "," << hit.vy << "," << hit.vz << ","
+                     << jacobi << "," << section_var << "," << section_value << "," << sign
+                     << "\n";
+      }
+    }
+    section_file.close();
+    std::cout << "Saved manifold_section_hits.csv\n";
   }
 }
 
@@ -400,9 +586,22 @@ int main(int argc, char* argv[]) {
 
     try {
       NewtonConvergenceInfo<double> conv_info;
-      orbit = RefinePeriodicOrbit(initial_guess, config.mu, section_index, config.section_value,
-                                  config.newton_max_iterations, config.newton_tolerance,
-                                  config.max_integration_time, config.timestep, &conv_info);
+
+      if (config.orbit_type == "halo") {
+        // Halo軌道は2変数Newton法（z₀固定）を使用
+        // (x₀, vy₀) を調整して半周期で vx(T/2) = 0, vz(T/2) = 0 となる条件を満たす
+        std::cout << "  Orbit type: Halo (z0 = " << config.initial_z << " fixed)\n";
+        orbit = RefinePeriodicOrbitHalo(initial_guess, config.mu,
+                                        config.newton_max_iterations, config.newton_tolerance,
+                                        config.max_integration_time, config.timestep, &conv_info);
+      } else {
+        // Lyapunov軌道は対称性を利用した2変数Newton法を使用
+        // (x₀, vy₀) を調整して半周期で vx(T/2) = 0 となる条件を満たす
+        std::cout << "  Orbit type: Lyapunov (z = 0)\n";
+        orbit = RefinePeriodicOrbitSymmetric(initial_guess, config.mu,
+                                             config.newton_max_iterations, config.newton_tolerance,
+                                             config.max_integration_time, config.timestep, &conv_info);
+      }
 
       std::cout << "  Converged in " << conv_info.iterations << " iterations\n";
       std::cout << "  Final residual: " << std::scientific << conv_info.final_residual << std::fixed
@@ -458,7 +657,8 @@ int main(int argc, char* argv[]) {
   std::cout << "\n[Step 4] Saving results...\n";
 
   SaveOrbitInfo(orbit, output_dir);
-  SaveManifolds(manifolds, output_dir, config.output_velocity_map);
+  SaveManifolds(manifolds, output_dir, config.mu, orbit.jacobi_constant,
+                config.section_var, config.section_value, config.output_velocity_map);
 
   auto end_time = std::chrono::system_clock::now();
   auto elapsed =

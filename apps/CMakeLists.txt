@@ -16,4 +16,5 @@ add_subdirectory(AsteroidOrbitIntersection)
 add_subdirectory(ImpulseOrbitSearch)
 add_subdirectory(StableManifoldComputation)
 add_subdirectory(CoordTransformVerify)
-
+add_subdirectory(ChaosIndicator)
+add_subdirectory(ZvcSurface)

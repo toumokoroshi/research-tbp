@@ -13,6 +13,8 @@
 #include <boost/numeric/odeint.hpp>
 #include <cmath>
 
+#include "periodic_orbit_stability.hpp"
+
 namespace periodic_orbit {
 
 using namespace my_type;
@@ -108,6 +110,29 @@ std::array<ScalarType, 6> ComputeEigenvector(const std::array<std::array<ScalarT
 }
 
 // ---------------------------------------------------------------------------
+// Jacobi surface projection
+// ---------------------------------------------------------------------------
+
+template <typename ScalarType>
+inline void ProjectToJacobiSurface(State<ScalarType>* state, ScalarType mu, ScalarType target_cj) {
+  const ScalarType v_sq = state->vx * state->vx + state->vy * state->vy + state->vz * state->vz;
+  if (v_sq <= static_cast<ScalarType>(0)) {
+    throw std::runtime_error("ProjectToJacobiSurface: zero velocity magnitude");
+  }
+
+  const ScalarType U_star = calc_potential_U(state->x, state->y, state->z, mu);
+  const ScalarType v_desired_sq = 2.0 * U_star - target_cj;
+  if (v_desired_sq < static_cast<ScalarType>(0)) {
+    throw std::runtime_error("ProjectToJacobiSurface: negative v^2 for target Cj");
+  }
+
+  const ScalarType scale = std::sqrt(v_desired_sq / v_sq);
+  state->vx *= scale;
+  state->vy *= scale;
+  state->vz *= scale;
+}
+
+// ---------------------------------------------------------------------------
 // 安定多様体計算
 // ---------------------------------------------------------------------------
 
@@ -151,14 +176,39 @@ std::vector<ManifoldTrajectory<ScalarType>> ComputeInvariantManifolds(
 
   // 周期軌道上の点を取得するために軌道を積分
   std::vector<State<ScalarType>> orbit_points;
+  std::vector<std::array<std::array<ScalarType, 6>, 6>> orbit_stms;
   std::vector<ScalarType> orbit_times;
 
-  State<ScalarType> current_state = orbit.initial_state;
   ScalarType t = 0.0;
   ScalarType phase_step = orbit.period / config.num_initial_points;
 
-  // boost::odeintを使用して周期軌道上の点を取得
-  // CR3BPの運動方程式（インライン実装）
+  VariationalEquation<ScalarType> var_eq(mu);
+  STMState<ScalarType> state;
+  state.orbit = orbit.initial_state;
+
+  using Stepper =
+      boost::numeric::odeint::runge_kutta_dopri5<STMState<ScalarType>, ScalarType,
+                                                 STMState<ScalarType>, ScalarType,
+                                                 boost::numeric::odeint::vector_space_algebra>;
+  auto controlled_stepper = boost::numeric::odeint::make_controlled(
+      static_cast<ScalarType>(1e-12), static_cast<ScalarType>(1e-12), Stepper());
+
+  std::cout << "    Computing orbit points..." << std::flush;
+  for (int i = 0; i < config.num_initial_points; ++i) {
+    ScalarType target_time = i * phase_step;
+    boost::numeric::odeint::integrate_adaptive(controlled_stepper, var_eq, state, t, target_time,
+                                               dt);
+    t = target_time;
+
+    State<ScalarType> point = state.orbit;
+    orbit_points.push_back(point);
+    orbit_stms.push_back(state.stm);
+    orbit_times.push_back(t);
+  }
+
+  std::cout << " done (" << orbit_points.size() << " points)\n";
+
+  // CR3BP equations of motion for manifold propagation
   auto cr3bp_eom = [mu](const std::array<ScalarType, 6>& s, std::array<ScalarType, 6>& dsdt,
                         ScalarType /* t */) {
     ScalarType x1 = s[0] + mu;
@@ -181,40 +231,89 @@ std::vector<ManifoldTrajectory<ScalarType>> ComputeInvariantManifolds(
     dsdt[5] = -(1.0 - mu) * s[2] * r1_inv3 - mu * s[2] * r2_inv3;                      // dvz/dt
   };
 
-  std::array<ScalarType, 6> state_array = {orbit.initial_state.x,  orbit.initial_state.y,
-                                           orbit.initial_state.z,  orbit.initial_state.vx,
-                                           orbit.initial_state.vy, orbit.initial_state.vz};
+  auto AddState = [](const std::array<ScalarType, 6>& s,
+                     std::vector<State<ScalarType>>* states,
+                     std::vector<ScalarType>* times, ScalarType t) {
+    State<ScalarType> state = {s[0], s[1], s[2], s[3], s[4], s[5]};
+    states->push_back(state);
+    times->push_back(t);
+  };
 
-  boost::numeric::odeint::runge_kutta_dopri5<std::array<ScalarType, 6>> stepper;
-  auto controlled_stepper = boost::numeric::odeint::make_controlled(
-      static_cast<ScalarType>(1e-12), static_cast<ScalarType>(1e-12), stepper);
+  auto IntegrateTrajectory = [&](std::array<ScalarType, 6>& manifold_state, ScalarType start_time,
+                                 ScalarType end_time, ScalarType dt_step,
+                                 std::vector<State<ScalarType>>* states,
+                                 std::vector<ScalarType>* times) {
+    const ScalarType dt_signed = (end_time >= start_time) ? std::abs(dt_step) : -std::abs(dt_step);
 
-  for (int i = 0; i < config.num_initial_points; ++i) {
-    ScalarType target_time = i * phase_step;
-    boost::numeric::odeint::integrate_adaptive(controlled_stepper, cr3bp_eom, state_array, t,
-                                               target_time, dt);
-    t = target_time;
+    if (config.integrator_type == "rk45") {
+      using Stepper = boost::numeric::odeint::runge_kutta_dopri5<std::array<ScalarType, 6>>;
+      auto controlled_stepper = boost::numeric::odeint::make_controlled(
+          static_cast<ScalarType>(config.abs_tolerance),
+          static_cast<ScalarType>(config.rel_tolerance), Stepper());
 
-    State<ScalarType> point = {state_array[0], state_array[1], state_array[2],
-                               state_array[3], state_array[4], state_array[5]};
-    orbit_points.push_back(point);
-    orbit_times.push_back(t);
-  }
+      auto observer = [&](const std::array<ScalarType, 6>& s, ScalarType t) {
+        if (!times->empty()) {
+          const ScalarType dt_last = std::abs(t - times->back());
+          if (dt_last <= static_cast<ScalarType>(1e-15)) {
+            return;
+          }
+        }
+        AddState(s, states, times, t);
+      };
 
-  // 安定多様体の計算（逆時間積分）
+      AddState(manifold_state, states, times, start_time);
+      boost::numeric::odeint::integrate_adaptive(controlled_stepper, cr3bp_eom, manifold_state,
+                                                 start_time, end_time, dt_signed, observer);
+    } else {
+      const ScalarType total_time = std::abs(end_time - start_time);
+      const int num_steps = static_cast<int>(total_time / std::abs(dt_signed));
+      ScalarType t = start_time;
+
+      AddState(manifold_state, states, times, t);
+      for (int step = 0; step < num_steps; ++step) {
+        boost::numeric::odeint::integrate_const(
+            boost::numeric::odeint::runge_kutta4<std::array<ScalarType, 6>>(), cr3bp_eom,
+            manifold_state, t, t + dt_signed, dt_signed / 10.0);
+        t += dt_signed;
+        AddState(manifold_state, states, times, t);
+      }
+    }
+  };
+
+  // 安定多様体�計算（逆時間�分）
   if (config.compute_stable && !stable_indices.empty()) {
-    int stable_idx = stable_indices[0];  // 最も強い安定方向
+    int stable_idx = stable_indices[0];  // 最も強�安定方�
     auto& eigenvec = decomp.eigenvectors[stable_idx];
 
-    // 固有ベクトルの実数部を正規化
-    ScalarType norm = 0.0;
+    // 固有ベクトル�実数部（t=0）
+    std::array<ScalarType, 6> eigenvec0{};
     for (int i = 0; i < 6; ++i) {
-      norm += eigenvec[i].real() * eigenvec[i].real();
+      eigenvec0[i] = eigenvec[i].real();
     }
-    norm = std::sqrt(norm);
 
+    std::cout << "    Computing stable manifolds: " << std::flush;
     for (size_t pt_idx = 0; pt_idx < orbit_points.size(); ++pt_idx) {
+      if (pt_idx % 10 == 0) {
+        std::cout << pt_idx << "/" << orbit_points.size() << "..." << std::flush;
+      }
       const auto& base_point = orbit_points[pt_idx];
+      const auto& stm = orbit_stms[pt_idx];
+
+      // Transport eigenvector using STM at this phase
+      std::array<ScalarType, 6> transported{};
+      for (int i = 0; i < 6; ++i) {
+        ScalarType sum = 0.0;
+        for (int j = 0; j < 6; ++j) {
+          sum += stm[i][j] * eigenvec0[j];
+        }
+        transported[i] = sum;
+      }
+
+      ScalarType norm = 0.0;
+      for (int i = 0; i < 6; ++i) {
+        norm += transported[i] * transported[i];
+      }
+      norm = std::sqrt(norm);
 
       // +方向と-方向の両方に摂動
       for (int dir = -1; dir <= 1; dir += 2) {
@@ -223,41 +322,28 @@ std::vector<ManifoldTrajectory<ScalarType>> ComputeInvariantManifolds(
 
         // 固有ベクトル方向に微小摂動を加える
         State<ScalarType> perturbed;
-        perturbed.x = base_point.x + dir * config.epsilon * eigenvec[0].real() / norm;
-        perturbed.y = base_point.y + dir * config.epsilon * eigenvec[1].real() / norm;
-        perturbed.z = base_point.z + dir * config.epsilon * eigenvec[2].real() / norm;
-        perturbed.vx = base_point.vx + dir * config.epsilon * eigenvec[3].real() / norm;
-        perturbed.vy = base_point.vy + dir * config.epsilon * eigenvec[4].real() / norm;
-        perturbed.vz = base_point.vz + dir * config.epsilon * eigenvec[5].real() / norm;
+        perturbed.x = base_point.x + dir * config.epsilon * transported[0] / norm;
+        perturbed.y = base_point.y + dir * config.epsilon * transported[1] / norm;
+        perturbed.z = base_point.z + dir * config.epsilon * transported[2] / norm;
+        perturbed.vx = base_point.vx + dir * config.epsilon * transported[3] / norm;
+        perturbed.vy = base_point.vy + dir * config.epsilon * transported[4] / norm;
+        perturbed.vz = base_point.vz + dir * config.epsilon * transported[5] / norm;
+
+        ProjectToJacobiSurface(&perturbed, mu, orbit.jacobi_constant);
 
         traj.initial_displacement = perturbed;
 
         // 逆時間積分
         std::array<ScalarType, 6> manifold_state = {perturbed.x,  perturbed.y,  perturbed.z,
                                                     perturbed.vx, perturbed.vy, perturbed.vz};
-        ScalarType manifold_t = 0.0;
-        ScalarType backward_time = std::abs(config.backward_time);
-        int num_steps = static_cast<int>(backward_time / std::abs(dt));
-        ScalarType negative_dt = -std::abs(dt);
-
-        traj.trajectory.push_back(perturbed);
-        traj.times.push_back(manifold_t);
-
-        for (int step = 0; step < num_steps; ++step) {
-          boost::numeric::odeint::integrate_const(
-              boost::numeric::odeint::runge_kutta4<std::array<ScalarType, 6>>(), cr3bp_eom,
-              manifold_state, manifold_t, manifold_t + negative_dt, negative_dt / 10.0);
-          manifold_t += negative_dt;
-
-          State<ScalarType> state = {manifold_state[0], manifold_state[1], manifold_state[2],
-                                     manifold_state[3], manifold_state[4], manifold_state[5]};
-          traj.trajectory.push_back(state);
-          traj.times.push_back(manifold_t);
-        }
+        IntegrateTrajectory(manifold_state, static_cast<ScalarType>(0.0),
+                           static_cast<ScalarType>(config.backward_time), dt,
+                           &traj.trajectory, &traj.times);
 
         result.push_back(traj);
       }
     }
+    std::cout << "done\n";
   }
 
   // 不安定多様体の計算（正時間積分）
@@ -265,56 +351,64 @@ std::vector<ManifoldTrajectory<ScalarType>> ComputeInvariantManifolds(
     int unstable_idx = unstable_indices[0];  // 最も強い不安定方向
     auto& eigenvec = decomp.eigenvectors[unstable_idx];
 
-    // 固有ベクトルの実数部を正規化
-    ScalarType norm = 0.0;
+    // Eigenvector at t=0
+    std::array<ScalarType, 6> eigenvec0{};
     for (int i = 0; i < 6; ++i) {
-      norm += eigenvec[i].real() * eigenvec[i].real();
+      eigenvec0[i] = eigenvec[i].real();
     }
-    norm = std::sqrt(norm);
 
+    std::cout << "    Computing unstable manifolds: " << std::flush;
     for (size_t pt_idx = 0; pt_idx < orbit_points.size(); ++pt_idx) {
+      if (pt_idx % 10 == 0) {
+        std::cout << pt_idx << "/" << orbit_points.size() << "..." << std::flush;
+      }
       const auto& base_point = orbit_points[pt_idx];
+
+      const auto& stm = orbit_stms[pt_idx];
+
+      // Transport eigenvector using STM at this phase
+      std::array<ScalarType, 6> transported{};
+      for (int i = 0; i < 6; ++i) {
+        ScalarType sum = 0.0;
+        for (int j = 0; j < 6; ++j) {
+          sum += stm[i][j] * eigenvec0[j];
+        }
+        transported[i] = sum;
+      }
+
+      ScalarType norm = 0.0;
+      for (int i = 0; i < 6; ++i) {
+        norm += transported[i] * transported[i];
+      }
+      norm = std::sqrt(norm);
 
       for (int dir = -1; dir <= 1; dir += 2) {
         ManifoldTrajectory<ScalarType> traj;
         traj.type = ManifoldTrajectory<ScalarType>::Type::UNSTABLE;
 
         State<ScalarType> perturbed;
-        perturbed.x = base_point.x + dir * config.epsilon * eigenvec[0].real() / norm;
-        perturbed.y = base_point.y + dir * config.epsilon * eigenvec[1].real() / norm;
-        perturbed.z = base_point.z + dir * config.epsilon * eigenvec[2].real() / norm;
-        perturbed.vx = base_point.vx + dir * config.epsilon * eigenvec[3].real() / norm;
-        perturbed.vy = base_point.vy + dir * config.epsilon * eigenvec[4].real() / norm;
-        perturbed.vz = base_point.vz + dir * config.epsilon * eigenvec[5].real() / norm;
+        perturbed.x = base_point.x + dir * config.epsilon * transported[0] / norm;
+        perturbed.y = base_point.y + dir * config.epsilon * transported[1] / norm;
+        perturbed.z = base_point.z + dir * config.epsilon * transported[2] / norm;
+        perturbed.vx = base_point.vx + dir * config.epsilon * transported[3] / norm;
+        perturbed.vy = base_point.vy + dir * config.epsilon * transported[4] / norm;
+        perturbed.vz = base_point.vz + dir * config.epsilon * transported[5] / norm;
+
+        ProjectToJacobiSurface(&perturbed, mu, orbit.jacobi_constant);
 
         traj.initial_displacement = perturbed;
 
         // 正時間積分
         std::array<ScalarType, 6> manifold_state = {perturbed.x,  perturbed.y,  perturbed.z,
                                                     perturbed.vx, perturbed.vy, perturbed.vz};
-        ScalarType manifold_t = 0.0;
-        ScalarType forward_time = std::abs(config.forward_time);
-        int num_steps = static_cast<int>(forward_time / std::abs(dt));
-        ScalarType positive_dt = std::abs(dt);
-
-        traj.trajectory.push_back(perturbed);
-        traj.times.push_back(manifold_t);
-
-        for (int step = 0; step < num_steps; ++step) {
-          boost::numeric::odeint::integrate_const(
-              boost::numeric::odeint::runge_kutta4<std::array<ScalarType, 6>>(), cr3bp_eom,
-              manifold_state, manifold_t, manifold_t + positive_dt, positive_dt / 10.0);
-          manifold_t += positive_dt;
-
-          State<ScalarType> state = {manifold_state[0], manifold_state[1], manifold_state[2],
-                                     manifold_state[3], manifold_state[4], manifold_state[5]};
-          traj.trajectory.push_back(state);
-          traj.times.push_back(manifold_t);
-        }
+        IntegrateTrajectory(manifold_state, static_cast<ScalarType>(0.0),
+                           static_cast<ScalarType>(config.forward_time), dt,
+                           &traj.trajectory, &traj.times);
 
         result.push_back(traj);
       }
     }
+    std::cout << "done\n";
   }
 
   std::cout << "[Info] Computed " << result.size() << " manifold trajectories\n";

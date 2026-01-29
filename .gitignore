@@ -9,7 +9,7 @@ test/data/
 configs/**
 !configs/
 !configs/3D_crtbp_SALI_v3/
-!configs/3D_crtbp_SALI_v3/config_sample.toml
+!configs/3D_crtbp_SALI_v3/3DSALIconfig_sample.toml
 !configs/poincare_map/
 !configs/poincare_map/poincare_config_sample.toml
 !configs/trajectory_calc/

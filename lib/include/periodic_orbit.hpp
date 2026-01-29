@@ -13,6 +13,7 @@
 #include <functional>
 #include <iostream>
 #include <limits>
+#include <string>
 #include <vector>
 
 #include "rtbp.hpp"
@@ -74,6 +75,9 @@ struct ManifoldConfig {
   int num_initial_points = 20;        ///< 各多様体の初期点数
   bool compute_stable = true;         ///< 安定多様体を計算するか
   bool compute_unstable = true;       ///< 不安定多様体を計算するか
+  std::string integrator_type = "rk4";     ///< "rk4" or "rk45"
+  ScalarType abs_tolerance = 1e-12;        ///< RK45用 abs tol
+  ScalarType rel_tolerance = 1e-12;        ///< RK45用 rel tol
 };
 
 /**

@@ -79,6 +79,12 @@ struct TrajectoryConfig {
   bool output_freq_analysis = true;     ///< 周波数解析結果の出力
   bool output_gnuplot = true;           ///< gnuplotスクリプトと画像の生成
 
+  // 出力間引き設定
+  // thinning_mode: "none" = 間引きなし, "fixed" = 固定点数, "adaptive" = 変化量に応じた適応的間引き
+  std::string output_thinning_mode = "fixed";  ///< 出力間引きモード
+  int output_max_points = 1000;                ///< fixed モード時の最大出力点数
+  double adaptive_threshold = 0.001;           ///< adaptive モード時の変化閾値 (無次元距離)
+
   // インパルス設定
   ImpulseConfig impulse;  ///< インパルス（速度変更）設定
 };
@@ -287,6 +293,11 @@ bool LoadTrajectoryConfig(const std::string& filepath, TrajectoryConfig* config)
     config->output_orbital_elements = parser.GetBool("output.output_orbital_elements", true);
     config->output_freq_analysis = parser.GetBool("output.output_freq_analysis", true);
     config->output_gnuplot = parser.GetBool("output.output_gnuplot", true);
+
+    // 出力間引き設定
+    config->output_thinning_mode = parser.GetString("output.thinning_mode", "fixed");
+    config->output_max_points = parser.GetInt("output.max_points", 1000);
+    config->adaptive_threshold = parser.GetDouble("output.adaptive_threshold", 0.001);
 
     // 初期座標の読み込み
     config->initial_coords = parser.GetCoordsArray("coords");
@@ -528,6 +539,13 @@ int main(int argc, char* argv[]) {
               << std::endl;
     std::cout << "<>        OUTPUT_GNUPLOT: " << (config.output_gnuplot ? "ON" : "OFF")
               << std::endl;
+    std::cout << "<>        OUTPUT_THINNING: " << config.output_thinning_mode;
+    if (config.output_thinning_mode == "fixed") {
+      std::cout << " (max " << config.output_max_points << " points)";
+    } else if (config.output_thinning_mode == "adaptive") {
+      std::cout << " (threshold " << config.adaptive_threshold << ")";
+    }
+    std::cout << std::endl;
 
     // インパルス設定表示
     if (config.impulse.enabled) {
@@ -641,7 +659,12 @@ int main(int argc, char* argv[]) {
 
       // 積分ループ
       double current_time = 0.0;
-      int output_interval = std::max(1, num_steps / 1000);  // 最大1000点出力
+      // 出力間引き間隔の計算
+      int output_interval = 1;  // デフォルト: 間引きなし
+      if (config.output_thinning_mode == "fixed") {
+        output_interval = std::max(1, num_steps / config.output_max_points);
+      }
+      // "none" または "adaptive" の場合は output_interval = 1 (毎ステップ出力判定)
 
       // カオス指標時系列データ
       std::vector<std::pair<double, double>> chaos_timeseries;
@@ -973,8 +996,25 @@ int main(int argc, char* argv[]) {
         // 周波数解析用にデータを収集
         freq_buffer.Push(current_time, state);
 
-        // 間引いて出力
-        if ((step + 1) % output_interval == 0 || step == num_steps - 1) {
+        // 間引いて出力判定
+        bool should_output = false;
+        if (config.output_thinning_mode == "none") {
+          // 間引きなし: 毎ステップ出力
+          should_output = true;
+        } else if (config.output_thinning_mode == "adaptive") {
+          // 適応的間引き: 軌道変化が大きい場合は必ず出力
+          double dx = state.x - prev_state.x;
+          double dy = state.y - prev_state.y;
+          double dz = state.z - prev_state.z;
+          double displacement = std::sqrt(dx * dx + dy * dy + dz * dz);
+          should_output = (displacement >= config.adaptive_threshold) ||
+                          (step == num_steps - 1);
+        } else {
+          // fixed モード: 固定間隔で出力
+          should_output = ((step + 1) % output_interval == 0) || (step == num_steps - 1);
+        }
+
+        if (should_output) {
           double jacobi_value = crtbp::calc_jacobi_integral(state, kMU);
           if (config.chaos_index_type != ChaosIndexType::NONE) {
             ofs << current_time << "," << state.x << "," << state.y << "," << state.z << ","

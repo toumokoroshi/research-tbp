@@ -345,8 +345,10 @@ class OrbitContinuator {
 
     // 継続を実行（Halo継続モードを有効化）
     is_halo_continuation_ = true;
+    expected_z_sign_ = north_branch ? 1.0 : -1.0;  // z符号を記録
     family = ContinueFamily(initial_orbit);
     is_halo_continuation_ = false;  // 終了後にリセット
+    expected_z_sign_ = 0.0;
 
     // 族の種類を設定
     family.family_type = north_branch ? OrbitFamilyType::HALO_L2_NORTH
@@ -362,6 +364,7 @@ class OrbitContinuator {
   ContinuationConfig<ScalarType> config_;
   ScalarType current_step_size_;
   bool is_halo_continuation_ = false;  ///< Halo継続モードフラグ
+  ScalarType expected_z_sign_ = 0.0;   ///< 期待されるz符号 (+1: North, -1: South, 0: auto)
 
   /**
    * @brief 自然パラメータ継続法
@@ -393,7 +396,8 @@ class OrbitContinuator {
           next_orbit = RefinePeriodicOrbitHalo(
               predicted_state, mu_,
               config_.newton_max_iterations, config_.newton_tolerance,
-              config_.max_integration_time, config_.integration_timestep, &conv_info);
+              config_.max_integration_time, config_.integration_timestep, &conv_info,
+              expected_z_sign_);
         } else {
           // Lyapunov軌道用の2変数対称Newton法を使用
           next_orbit = RefinePeriodicOrbitSymmetric(
@@ -489,7 +493,7 @@ class OrbitContinuator {
       }
 
       // 接線方向を計算（前の2軌道の差分）
-      std::array<ScalarType, 4> tangent = ComputeTangentVector(prev_prev_orbit, prev_orbit);
+      std::array<ScalarType, 5> tangent = ComputeTangentVector(prev_prev_orbit, prev_orbit);
 
       // 予測ステップ
       State<ScalarType> predicted_state = PredictAlongTangent(prev_orbit, tangent);
@@ -503,7 +507,8 @@ class OrbitContinuator {
           next_orbit = RefinePeriodicOrbitHalo(
               predicted_state, mu_,
               config_.newton_max_iterations, config_.newton_tolerance,
-              config_.max_integration_time, config_.integration_timestep, &conv_info);
+              config_.max_integration_time, config_.integration_timestep, &conv_info,
+              expected_z_sign_);
         } else {
           // Lyapunov軌道用の2変数対称Newton法を使用
           next_orbit = RefinePeriodicOrbitSymmetric(
@@ -583,7 +588,8 @@ class OrbitContinuator {
         next_orbit = RefinePeriodicOrbitHalo(
             predicted_state, mu_,
             config_.newton_max_iterations, config_.newton_tolerance,
-            config_.max_integration_time, config_.integration_timestep, &conv_info);
+            config_.max_integration_time, config_.integration_timestep, &conv_info,
+            expected_z_sign_);
       } else {
         // Lyapunov軌道用の2変数対称Newton法を使用
         next_orbit = RefinePeriodicOrbitSymmetric(
@@ -607,6 +613,7 @@ class OrbitContinuator {
    * @brief 次の状態を予測（振幅増加方向）
    * @details Lyapunov軌道では振幅(x - x_L)に比例してvyもスケールする
    *          ステップサイズは振幅の相対増加率として解釈
+   *          L1 (x < 1) と L2 (x > 1) の両方に対応
    */
   State<ScalarType> PredictNextState(const PeriodicOrbit<ScalarType>& orbit) {
     // Halo継続モードの場合はHalo用予測を使用
@@ -616,26 +623,38 @@ class OrbitContinuator {
     
     State<ScalarType> predicted = orbit.initial_state;
 
-    // L2点の位置を推定（mu << 1 のとき x_L2 ≈ 1 + (mu/3)^(1/3)）
-    ScalarType x_L2 = 1.0 + std::cbrt(mu_ / 3.0);
+    // L1/L2の自動判定: x < 1 なら L1、x > 1 なら L2
+    LagrangePoint point;
+    if (orbit.initial_state.x < 1.0) {
+      point = LagrangePoint::L1;
+    } else {
+      point = LagrangePoint::L2;
+    }
     
-    // 現在の振幅 = x - x_L2
-    ScalarType current_amplitude = std::abs(orbit.initial_state.x - x_L2);
+    // Lyapunov係数を計算
+    auto coeff = ComputeLyapunovCoefficients(point, mu_);
     
-    // ステップサイズを相対増加率として使用（例：0.1 = 10%増加）
-    // current_step_size_ を絶対値から相対率に再解釈
-    ScalarType relative_step = std::max(0.05, std::min(0.5, current_step_size_ * 100.0));
+    // 現在の振幅 = |x - x_L|
+    ScalarType current_amplitude = std::abs(orbit.initial_state.x - coeff.x_L);
+    
+    // ステップサイズを相対増加率として使用（例：0.001 = 0.1%増加）
+    // 最小値を0.001 (0.1%)に設定して小振幅軌道に対応
+    ScalarType relative_step = std::max(0.001, std::min(0.5, current_step_size_ * 100.0));
     ScalarType scale_factor = 1.0 + relative_step;
     
     // 新しい振幅
     ScalarType new_amplitude = current_amplitude * scale_factor;
     
-    // x と vy を同じ比率でスケール
-    predicted.x = x_L2 + new_amplitude;
-    predicted.vy = orbit.initial_state.vy * scale_factor;
+    // Lyapunov軌道の初期条件生成ロジックと同じ方法で予測
+    // x₀ = x_L + A_x（L1の場合も + で良い。ComputeLyapunovCoefficientsがx_Lを正しく計算）
+    // vy₀ = -κ ω A_x
+    predicted.x = coeff.x_L + new_amplitude;
+    predicted.vy = -coeff.kappa * coeff.omega_xy * new_amplitude;
     
     return predicted;
   }
+
+
   
   /**
    * @brief Halo軌道用の次の状態を予測（3D振幅増加方向）
@@ -660,20 +679,22 @@ class OrbitContinuator {
   }
 
   /**
-   * @brief 接線方向ベクトルを計算
+   * @brief 接線方向ベクトルを計算（5次元: Halo対応）
    */
-  std::array<ScalarType, 4> ComputeTangentVector(const PeriodicOrbit<ScalarType>& orbit1,
+  std::array<ScalarType, 5> ComputeTangentVector(const PeriodicOrbit<ScalarType>& orbit1,
                                                  const PeriodicOrbit<ScalarType>& orbit2) {
-    // (x0, vy0, T, C) 空間での接線
-    std::array<ScalarType, 4> tangent;
+    // (x0, z0, vy0, T, C) 空間での接線（Halo軌道対応）
+    std::array<ScalarType, 5> tangent;
     tangent[0] = orbit2.initial_state.x - orbit1.initial_state.x;
-    tangent[1] = orbit2.initial_state.vy - orbit1.initial_state.vy;
-    tangent[2] = orbit2.period - orbit1.period;
-    tangent[3] = orbit2.jacobi_constant - orbit1.jacobi_constant;
+    tangent[1] = orbit2.initial_state.z - orbit1.initial_state.z;  // z成分を追加
+    tangent[2] = orbit2.initial_state.vy - orbit1.initial_state.vy;
+    tangent[3] = orbit2.period - orbit1.period;
+    tangent[4] = orbit2.jacobi_constant - orbit1.jacobi_constant;
 
     // 正規化
-    ScalarType norm = std::sqrt(tangent[0] * tangent[0] + tangent[1] * tangent[1] +
-                                tangent[2] * tangent[2] + tangent[3] * tangent[3]);
+    ScalarType norm = 0.0;
+    for (const auto& t : tangent) norm += t * t;
+    norm = std::sqrt(norm);
     if (norm > 1e-14) {
       for (auto& t : tangent) t /= norm;
     }
@@ -682,13 +703,14 @@ class OrbitContinuator {
   }
 
   /**
-   * @brief 接線方向に沿って予測
+   * @brief 接線方向に沿って予測（5次元: Halo対応）
    */
   State<ScalarType> PredictAlongTangent(const PeriodicOrbit<ScalarType>& orbit,
-                                        const std::array<ScalarType, 4>& tangent) {
+                                        const std::array<ScalarType, 5>& tangent) {
     State<ScalarType> predicted = orbit.initial_state;
     predicted.x += current_step_size_ * tangent[0];
-    predicted.vy += current_step_size_ * tangent[1];
+    predicted.z += current_step_size_ * tangent[1];  // z成分を追加
+    predicted.vy += current_step_size_ * tangent[2];
     return predicted;
   }
 

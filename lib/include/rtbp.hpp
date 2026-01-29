@@ -1303,7 +1303,7 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
   // AU/Day → AU/T* (無次元時間) の変換係数
   // T* は 1年 = 2π となる無次元時間系
   // v[AU/T*] = v[AU/Day] * (365.25 Day/Year) / (2π T*/Year)
-  constexpr ScalarType k_AU_DAY_TO_ND = k_DAYS_PER_YEAR / k_TWO_PI;  // ≈ 58.13
+  constexpr ScalarType k_AU_DAY_TO_AU_TSTAR = k_DAYS_PER_YEAR / k_TWO_PI;  // ≈ 58.13
 
   // --- 1. 状態量の取得 (J2000 Helio-centric) ---
   // 位置: 両方とも [AU]
@@ -1313,7 +1313,7 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
   // 速度: 単位系が異なる
   // 地球速度: [AU/Day] (JPL DE ephemeris) → [AU/T*] に変換
   Vector3d<ScalarType> v_e_j2000_day(p2_state.vx, p2_state.vy, p2_state.vz);  // [AU/Day]
-  Vector3d<ScalarType> v_e_j2000 = v_e_j2000_day * k_AU_DAY_TO_ND;            // [AU/T*]
+  Vector3d<ScalarType> v_e_j2000 = v_e_j2000_day * k_AU_DAY_TO_AU_TSTAR;      // [AU/T*]
 
   // 小惑星速度: 既に [AU/T*] (無次元時間系)
   Vector3d<ScalarType> v_a_j2000(ast_state.vx, ast_state.vy, ast_state.vz);  // [AU/T*]
@@ -1377,12 +1377,10 @@ const State<ScalarType> ConvertInertial2RotatingV2(const State<ScalarType>& ast_
   // 位置: L* で無次元化
   Vector3d<ScalarType> r_rot_nd = r_rot_dim / L_star;
 
-  // 速度: 小惑星速度は既に [AU/T*] なので、追加の無次元化は不要
-  // ただし、CRTBPの無次元系では V* = L* × n = L* × 2π/年 で無次元化するが、
-  // 入力が既に T* (1年 = 2π) で無次元化されているため、
-  // 最終的な無次元速度は v_rot_dim を n で割る必要がある
-  // v_nd = v[AU/T*] / (L* × n / L*) = v[AU/T*] / n
-  Vector3d<ScalarType> v_rot_nd = v_rot_dim / n_rad_nd;
+  // 速度: v_rot_dim は [AU/T*]。
+  //       CRTBP 無次元系 (L*=1, n=1) では v* = L*×n で正規化するため、
+  //       v_rot_nd = v_rot_dim / (L_star × n_rad_nd) とする。
+  Vector3d<ScalarType> v_rot_nd = v_rot_dim / (L_star * n_rad_nd);
 
   return {State<ScalarType>(r_rot_nd.x(), r_rot_nd.y(), r_rot_nd.z(), v_rot_nd.x(), v_rot_nd.y(),
                             v_rot_nd.z())};

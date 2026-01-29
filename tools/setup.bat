@@ -118,7 +118,7 @@ goto :use_oneapi
 
 :use_oneapi
 echo Using Intel oneAPI + Ninja configuration.
-set "BUILD_PRESET=ninja-intel"
+set "BUILD_PRESET=vs-intel"
 set "USE_ONEAPI=1"
 goto :compiler_selected
 

@@ -7,6 +7,8 @@ add_executable(StableManifoldComputation main.cpp)
 target_compile_definitions(StableManifoldComputation PRIVATE
     CONFIG_DIR="${CMAKE_SOURCE_DIR}/configs"
     OUTPUT_DIR="${CMAKE_SOURCE_DIR}/data"
+    BOOST_NO_EXCEPTIONS
+    BOOST_EXCEPTION_DISABLE
 )
 
 # インクルードパス

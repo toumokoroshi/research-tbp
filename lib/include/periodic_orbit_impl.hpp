@@ -151,6 +151,10 @@ std::optional<State<ScalarType>> ApplyPoincareMapSafe(
   int same_direction_count = 0;
   int first_crossing_direction = 0;       // +1 for positive, -1 for negative, 0 for unknown
   ScalarType next_progress_print = 0.5;  // Debug: print progress every 1 time units, start early
+  
+  // Wall-clock timeout (30 seconds)
+  auto wall_start = std::chrono::steady_clock::now();
+  constexpr int kWallTimeoutSeconds = 30;
 
   // 初期状態が断面上にある場合のフラグ
   // y=0から開始する場合、最初の交差は無視して次の同方向交差を探す
@@ -171,6 +175,14 @@ std::optional<State<ScalarType>> ApplyPoincareMapSafe(
   std::cout << std::endl;
 
   while (time < max_time) {
+    // Wall-clock timeout check
+    auto wall_now = std::chrono::steady_clock::now();
+    auto wall_elapsed = std::chrono::duration_cast<std::chrono::seconds>(wall_now - wall_start).count();
+    if (wall_elapsed > kWallTimeoutSeconds) {
+      std::cout << "        [Poincare] WALL-CLOCK TIMEOUT after " << wall_elapsed << "s\n";
+      return std::nullopt;
+    }
+    
     // Debug progress output (every 1 time unit)
     if (time > next_progress_print) {
       std::cout << "        [Poincare] t=" << time << ", y=" << current_state.y
@@ -883,6 +895,8 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitSymmetric(
  * @details Halo軌道の対称性を利用: y=0, vx=0で開始し、半周期後にy=0でvx=0, vz=0となる
  *          変数: (x₀, z₀, vy₀)
  *          目標: vx(T/2) = 0, vz(T/2) = 0
+ *          注意: 3変数・2条件のため、1自由度残る。継続法でz振幅をパラメータとする場合は
+ *                z0の変化量を制限する「進行方向拘束」を追加。
  * @param initial_guess 初期推定状態 (y=0, vx=0, vz=0 を想定、z≠0)
  * @param mu 質量パラメータ
  * @param max_iterations 最大反復回数
@@ -890,6 +904,7 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitSymmetric(
  * @param max_time 最大積分時間
  * @param dt 積分刻み
  * @param convergence_info 収束情報（オプション）
+ * @param expected_z_sign 期待されるz符号（+1 for North, -1 for South, 0 for auto）
  * @return 精密化されたHalo周期軌道
  */
 template <typename ScalarType>
@@ -900,13 +915,20 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
     ScalarType tolerance,
     ScalarType max_time,
     ScalarType dt,
-    NewtonConvergenceInfo<ScalarType>* convergence_info = nullptr) {
+    NewtonConvergenceInfo<ScalarType>* convergence_info = nullptr,
+    ScalarType expected_z_sign = 0.0) {
   
-  // 2変数Newton法: x₀, vy₀ を変数として解く
-  // z₀ は固定パラメータとして扱う（これにより Lyapunov解(z=0)への収束を防ぐ）
+  // 3変数Newton法: x₀, z₀, vy₀ を変数として解く
+  // 2条件（vx=0, vz=0）に対して3自由度なので、z方向への進行を優先
   ScalarType x0 = initial_guess.x;
-  const ScalarType z0 = initial_guess.z;  // 固定！
+  ScalarType z0 = initial_guess.z;  // 可変！
   ScalarType vy0 = initial_guess.vy;
+  
+  // z0の初期符号を記録（North/South Halo判定用）
+  // expected_z_sign が指定されていればそれを使用、そうでなければ initial_guess から推定
+  const ScalarType initial_z_sign = (expected_z_sign != 0.0) ? expected_z_sign
+                                    : ((z0 >= 0) ? 1.0 : -1.0);
+  const ScalarType kMinZMagnitude = 1e-8;  // 符号保護の最小z値
   
   bool converged = false;
   int iteration = 0;
@@ -914,8 +936,8 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
   ScalarType half_period = 0.0;
   State<ScalarType> crossing_state;
   
-  std::cout << "    [HaloRefine] Starting 2-variable Newton (z0 fixed) for Halo orbit...\n";
-  std::cout << "    [HaloRefine] Initial: x0=" << x0 << ", z0=" << z0 << " (FIXED), vy0=" << vy0 << "\n";
+  std::cout << "    [HaloRefine] Starting 3-variable Newton for Halo orbit...\n";
+  std::cout << "    [HaloRefine] Initial: x0=" << x0 << ", z0=" << z0 << ", vy0=" << vy0 << "\n";
   
   // z0 が 0 に近すぎる場合は警告
   if (std::abs(z0) < 1e-10) {
@@ -927,7 +949,7 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
     State<ScalarType> state;
     state.x = x0;
     state.y = 0.0;
-    state.z = z0;  // 固定値を使用
+    state.z = z0;
     state.vx = 0.0;
     state.vy = vy0;
     state.vz = 0.0;
@@ -957,7 +979,8 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
               << ": |vx|=" << std::scientific << std::abs(vx_error)
               << ", |vz|=" << std::abs(vz_error)
               << ", residual=" << residual
-              << ", T/2=" << std::fixed << half_period << "\n";
+              << ", z0=" << std::fixed << z0
+              << ", T/2=" << half_period << "\n";
     
     // 収束判定
     if (residual < tolerance) {
@@ -966,10 +989,11 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
       break;
     }
     
-    // ヤコビアン計算（2x2: 2変数、2条件）
-    // J = [∂vx/∂x₀  ∂vx/∂vy₀]
-    //     [∂vz/∂x₀  ∂vz/∂vy₀]
+    // ヤコビアン計算（2x3: 2条件、3変数）
+    // J = [∂vx/∂x₀  ∂vx/∂z₀  ∂vx/∂vy₀]
+    //     [∂vz/∂x₀  ∂vz/∂z₀  ∂vz/∂vy₀]
     const ScalarType eps_x = 1e-8 * std::max(1.0, std::abs(x0));
+    const ScalarType eps_z = 1e-8 * std::max(1.0, std::abs(z0));
     const ScalarType eps_vy = 1e-8 * std::max(1.0, std::abs(vy0));
     
     // ∂/∂x₀
@@ -982,6 +1006,16 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
       dvz_dx = (result_px->first.vz - crossing_state.vz) / eps_x;
     }
     
+    // ∂/∂z₀
+    State<ScalarType> state_pz = state;
+    state_pz.z = z0 + eps_z;
+    auto result_pz = IntegrateToHalfPeriodCrossing(state_pz, mu, max_time, dt);
+    ScalarType dvx_dz = 0.0, dvz_dz = 0.0;
+    if (result_pz) {
+      dvx_dz = (result_pz->first.vx - crossing_state.vx) / eps_z;
+      dvz_dz = (result_pz->first.vz - crossing_state.vz) / eps_z;
+    }
+    
     // ∂/∂vy₀
     State<ScalarType> state_pvy = state;
     state_pvy.vy = vy0 + eps_vy;
@@ -992,36 +1026,68 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
       dvz_dvy = (result_pvy->first.vz - crossing_state.vz) / eps_vy;
     }
     
-    // 2x2 線形方程式を解く: J * [dx; dvy] = -[vx_error; vz_error]
-    // J = [dvx_dx  dvx_dvy]
-    //     [dvz_dx  dvz_dvy]
-    ScalarType det = dvx_dx * dvz_dvy - dvx_dvy * dvz_dx;
-    if (std::abs(det) < 1e-20) {
-      std::cout << "      WARNING: Jacobian singular, using small random step\n";
-      // 発振を避けるため、小さなランダムステップ
-      x0 -= 0.001 * vx_error;
-      vy0 -= 0.0001 * vz_error;
-      continue;
-    }
+    // 2x3システム: 最小ノルム解を求める（擬似逆行列）
+    // J^T * J * delta = -J^T * F  を解く代わりに、
+    // 劣決定系なのでz変化量を0に近づける正則化を追加
+    // 
+    // 解法: 2x2部分行列（x, vy に関して）を解き、zは小さな修正のみ
+    ScalarType det_xvy = dvx_dx * dvz_dvy - dvx_dvy * dvz_dx;
     
-    // クラメルの公式で解く
-    ScalarType dx = (-vx_error * dvz_dvy + dvx_dvy * vz_error) / det;
-    ScalarType dvy = (-dvx_dx * vz_error + vx_error * dvz_dx) / det;
+    ScalarType dx, dz, dvy;
+    
+    if (std::abs(det_xvy) > 1e-20) {
+      // x, vy で主に解き、z は補助的に調整
+      dx = (-vx_error * dvz_dvy + dvx_dvy * vz_error) / det_xvy;
+      dvy = (-dvx_dx * vz_error + vx_error * dvz_dx) / det_xvy;
+      
+      // z 方向の補正: 残差を減らす方向に小さく調整
+      // vx_error * dvx_dz + vz_error * dvz_dz の符号でz方向を決定
+      ScalarType z_gradient = vx_error * dvx_dz + vz_error * dvz_dz;
+      dz = -0.1 * z_gradient / (dvx_dz * dvx_dz + dvz_dz * dvz_dz + 1e-20);
+    } else {
+      // x, vy 部分が特異 → z, vy で解く
+      ScalarType det_zvy = dvx_dz * dvz_dvy - dvx_dvy * dvz_dz;
+      if (std::abs(det_zvy) > 1e-20) {
+        dz = (-vx_error * dvz_dvy + dvx_dvy * vz_error) / det_zvy;
+        dvy = (-dvx_dz * vz_error + vx_error * dvz_dz) / det_zvy;
+        dx = 0.0;
+      } else {
+        // 全て特異 → 勾配降下
+        std::cout << "      WARNING: Jacobian singular, using gradient descent\n";
+        ScalarType grad_scale = 0.001;
+        dx = -grad_scale * (vx_error * dvx_dx + vz_error * dvz_dx);
+        dz = -grad_scale * (vx_error * dvx_dz + vz_error * dvz_dz);
+        dvy = -grad_scale * (vx_error * dvx_dvy + vz_error * dvz_dvy);
+      }
+    }
     
     // ステップサイズ制限
     const ScalarType max_dx = 0.01;   // x方向最大変化
+    const ScalarType max_dz = 0.005;  // z方向最大変化（より保守的）
     const ScalarType max_dvy = 0.001; // vy方向最大変化
     
     ScalarType scale = 1.0;
     if (std::abs(dx) > max_dx) scale = std::min(scale, max_dx / std::abs(dx));
+    if (std::abs(dz) > max_dz) scale = std::min(scale, max_dz / std::abs(dz));
     if (std::abs(dvy) > max_dvy) scale = std::min(scale, max_dvy / std::abs(dvy));
     
     dx *= scale;
+    dz *= scale;
     dvy *= scale;
     
-    // 更新（z0は更新しない！）
+    // 更新
     x0 += dx;
+    z0 += dz;
     vy0 += dvy;
+    
+    // z0の符号保護: 初期符号と反転した場合はクランプ
+    if (initial_z_sign > 0 && z0 <= 0) {
+      z0 = kMinZMagnitude;
+      std::cout << "      [SignProtect] z0 clamped to +" << z0 << "\n";
+    } else if (initial_z_sign < 0 && z0 >= 0) {
+      z0 = -kMinZMagnitude;
+      std::cout << "      [SignProtect] z0 clamped to " << z0 << "\n";
+    }
   }
   
   // 収束情報
@@ -1040,7 +1106,7 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
   PeriodicOrbit<ScalarType> orbit;
   orbit.initial_state.x = x0;
   orbit.initial_state.y = 0.0;
-  orbit.initial_state.z = z0;  // 固定値
+  orbit.initial_state.z = z0;
   orbit.initial_state.vx = 0.0;
   orbit.initial_state.vy = vy0;
   orbit.initial_state.vz = 0.0;
@@ -1048,7 +1114,7 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitHalo(
   orbit.jacobi_constant = calc_jacobi_integral(orbit.initial_state, mu);
   
   std::cout << "    [HaloRefine] Final Halo orbit:\n";
-  std::cout << "      x0=" << x0 << ", z0=" << z0 << " (FIXED), vy0=" << vy0 << "\n";
+  std::cout << "      x0=" << x0 << ", z0=" << z0 << ", vy0=" << vy0 << "\n";
   std::cout << "      Period=" << orbit.period << ", C=" << orbit.jacobi_constant << "\n";
   
   return orbit;

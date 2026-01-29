@@ -96,8 +96,22 @@ FetchContent_Declare(
   GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
   GIT_TAG 3.4.0
 )
-FetchContent_MakeAvailable(eigen)
-
+FetchContent_GetProperties(eigen)
+if(NOT eigen_POPULATED)
+  FetchContent_Populate(eigen)
+  
+  # ここで変数をセットすれば、EigenのCMakeLists.txtよりも優先されます
+  set(EIGEN_BUILD_TESTING OFF CACHE BOOL "Disable Eigen testing" FORCE)
+  set(EIGEN_BUILD_DOC OFF CACHE BOOL "Disable Eigen docs" FORCE)
+  set(EIGEN_BUILD_PKGCONFIG OFF CACHE BOOL "Disable Eigen pkgconfig" FORCE)
+  set(EIGEN_LEAVE_TEST_IN_ALL_TARGET OFF CACHE BOOL "" FORCE)
+  
+  # Fortranのチェックを完全にスキップさせるためのダミー設定
+  set(CMAKE_Fortran_COMPILER_WORKS TRUE)
+  
+  # サブディレクトリとして追加
+  add_subdirectory(${eigen_SOURCE_DIR} ${eigen_BINARY_DIR} EXCLUDE_FROM_ALL)
+endif()
 # Boost
 find_package(Boost 1.71 REQUIRED)
 

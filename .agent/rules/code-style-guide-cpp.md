@@ -17,8 +17,14 @@ description: when implementing cpp
 - **Error**: Prefer `std::optional` over Exceptions for predictable errors.
 
 # Documentation
-- **Format**: Doxygen (Language: Japanese)
-- **Ref**: CITE paper/DOI for complex math formulas.
+
+- **Format**: Doxygen Javadoc style (`/** ... */`) in header files (`.hpp`).
+- **Language**: Japanese.
+- **Math**: Use LaTeX format (`\f$ ... \f$`) for physical equations.
+- **Mandatory Fields**:
+    - **Units/Frames**: `@param` and `@return` descriptions MUST include units (e.g., `[km/s]`) and reference frames (e.g., `[ECI]`, `[Body]`).
+    - **Reference**: Cite algorithms using `[AuthorYear] Title (DOI/URL)`.
+    - **Pre/Post-conditions**: Explicitly state validity range of inputs (e.g., "eccentricity must be < 1.0").
 
 # Output Policy
 - **Order**: Code Block FIRST -> Explanation.

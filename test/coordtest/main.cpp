@@ -34,22 +34,6 @@ using namespace param;
 using namespace utils;
 
 /**
- * @brief 積分器の種類
- */
-enum class IntegratorType {
-  kSymplectic6th,  ///< 6次吉田法（デフォルト）
-  kSymplectic4th,  ///< 4次吉田法
-};
-
-/**
- * @brief カオス指標の種類
- */
-enum class ChaosIndexType {
-  SALI,  ///< SALI (K=2) - デフォルト
-  GALI   ///< GALI (K可変)
-};
-
-/**
  * @brief 設定パラメータ構造体
  */
 struct TrajectorySaliConfig {
@@ -73,8 +57,8 @@ struct TrajectorySaliConfig {
  */
 struct OrbitDataRow {
   double time_j2000;       ///< J2000時刻
-  State<double> asteroid;  ///< 小惑星状態量（AU, AU/day）
-  State<double> earth;     ///< 地球状態量（AU, AU/day）
+  State<double> asteroid;  ///< 小惑星状態量（位置: [AU]、速度: [AU/T*]）
+  State<double> earth;     ///< 地球状態量（位置: [AU]、速度: [AU/day]）
 };
 
 /**
@@ -185,10 +169,10 @@ bool LoadOrbitData(const std::string& filepath, int phase_step, std::vector<Orbi
 
   std::string line;
   bool data_started = false;
-  int line_count = 0;
+  int parsed_count = 0;
 
   while (std::getline(ifs, line)) {
-    // 空行でデータ開始
+    // 空行を境に「接近区間」データが始まる仕様
     if (!data_started) {
       if (line.empty() || line.find_first_not_of(" \t\r\n") == std::string::npos) {
         data_started = true;
@@ -201,13 +185,6 @@ bool LoadOrbitData(const std::string& filepath, int phase_step, std::vector<Orbi
       continue;
     }
 
-    // 間引き
-    if (line_count % phase_step != 0) {
-      line_count++;
-      continue;
-    }
-    line_count++;
-
     // データパース: 時刻 小惑星(6) 地球(6) = 13個
     std::stringstream ss(line);
     OrbitDataRow row;
@@ -216,9 +193,17 @@ bool LoadOrbitData(const std::string& filepath, int phase_step, std::vector<Orbi
     ss >> row.asteroid.vx >> row.asteroid.vy >> row.asteroid.vz;
     ss >> row.earth.x >> row.earth.y >> row.earth.z;
     ss >> row.earth.vx >> row.earth.vy >> row.earth.vz;
-    if (!ss.fail()) {
-      data->push_back(row);
+    if (ss.fail()) {
+      continue;
     }
+
+    // 間引きは「パースできたデータ行」に対して適用する
+    if (phase_step > 1 && (parsed_count % phase_step) != 0) {
+      parsed_count++;
+      continue;
+    }
+    parsed_count++;
+    data->push_back(row);
   }
   return !data->empty();
 }
@@ -519,7 +504,8 @@ int main() {
            << "\n";
 
       // J2000→CR3BP回転座標変換
-      State<double> asteroid_rot = ConvertInertial2Rotating(row.asteroid, row.earth, astro_params);
+      State<double> asteroid_rot =
+          ConvertInertial2RotatingV2<double>(row.asteroid, row.earth, astro_params);
 
       buf << phase_idx << "," << asteroid_rot.x << "," << asteroid_rot.y << "," << asteroid_rot.z
           << "," << asteroid_rot.vx << "," << asteroid_rot.vy << "," << asteroid_rot.vz << ","
@@ -538,7 +524,7 @@ int main() {
     State<double> asteroid_init_2000 = orbit_data[0].asteroid;
     State<double> earth_init_j2000 = orbit_data[0].earth;
     State<double> asteroid_rot_init =
-        ConvertInertial2Rotating(asteroid_init_2000, earth_init_j2000, astro_params);
+        ConvertInertial2RotatingV2<double>(asteroid_init_2000, earth_init_j2000, astro_params);
     double jacobi_init = calc_jacobi_integral(asteroid_rot_init, kMU);
 
     class EquationOfMotion<double> rtbp_eom(astro_params);
