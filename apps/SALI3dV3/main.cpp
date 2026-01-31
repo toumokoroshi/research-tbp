@@ -366,6 +366,7 @@ int main(int argc, char* argv[]) {
     ofs1 << "# SIMULATION TIME=" << SALI_CALCTIME_THRESHOLD << std::endl;
     ofs1 << "# RADIUSofSOI=" << SOI_RADIUS << std::endl;
     ofs1 << "# FOREBIDDEN AREA RADIUS=" << FOREBIDDEN_AREA_RADIUS << std::endl;
+    ofs1 << std::setprecision(16);
     ofs1 << "# INITIAL JACOBI INTEGRAL=" << JACOBI_INTEGRAL << std::endl;
     ofs1 << "# INCLINATION AGAINST XY PLANE=" << inclination / std::acos(-1) * 180. << std::endl;
     ofs1 << "# LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;

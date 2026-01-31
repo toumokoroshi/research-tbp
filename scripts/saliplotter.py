@@ -51,15 +51,9 @@ def load_mu_parameter():
 MU_PARAMETER = load_mu_parameter()
 print(f"Loaded mu parameter: {MU_PARAMETER:.10f}")
 
-try:
-    # Windowsの場合
-    plt.rcParams["font.family"] = "Yu Gothic"
-    # Macの場合 (どちらかの行を有効にする)
-    # plt.rcParams['font.family'] = 'Hiragino Sans'
-except:
-    # 上記フォントがない場合のフォールバック
-    plt.rcParams["font.family"] = "sans-serif"
-
+# Font settings (unified with zvc_2d_interactive.py)
+plt.rcParams["font.family"] = "Times New Roman"
+plt.rcParams["mathtext.fontset"] = "stix"
 plt.rcParams["axes.unicode_minus"] = False
 
 
@@ -227,6 +221,11 @@ class SALIContourApp:
         ttk.Checkbutton(
             hill_frame, text="離脱(Escape)を表示", variable=self.show_escape
         ).grid(row=6, column=0, columnspan=2, sticky=tk.W, pady=2)
+
+        self.hide_forbidden = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            hill_frame, text="禁止領域内を非表示", variable=self.hide_forbidden
+        ).grid(row=7, column=0, columnspan=2, sticky=tk.W, pady=2)
 
         # --- プロットモード選択 ---
         plot_mode_frame = ttk.LabelFrame(control_frame, text="プロットモード")
@@ -756,6 +755,26 @@ class SALIContourApp:
                 messagebox.showerror("エラー", f"Z = {z_target} のデータがありません")
                 return
 
+            # 禁止領域内のデータを除外
+            if self.hide_forbidden.get() and self.jacobi_constant is not None:
+                mu = self.mu if self.mu is not None else MU_PARAMETER
+                eps = 1e-9
+                x_arr = sliced_data["x"].values
+                y_arr = sliced_data["y"].values
+                z_arr = sliced_data["z"].values
+                r1 = np.sqrt((x_arr + mu) ** 2 + y_arr ** 2 + z_arr ** 2)
+                r2 = np.sqrt((x_arr - (1 - mu)) ** 2 + y_arr ** 2 + z_arr ** 2)
+                r1 = np.maximum(r1, eps)
+                r2 = np.maximum(r2, eps)
+                omega = 0.5 * (x_arr ** 2 + y_arr ** 2) + (1 - mu) / r1 + mu / r2
+                zvc_value = 2 * omega - self.jacobi_constant
+                # zvc_value >= 0 は許可領域、zvc_value < 0 は禁止領域
+                allowed_mask = zvc_value >= 0
+                sliced_data = sliced_data[allowed_mask].copy()
+                if len(sliced_data) == 0:
+                    messagebox.showwarning("警告", "禁止領域フィルタ後、表示データがありません")
+                    return
+
             self.figure.clear()
             self.ax = self.figure.add_subplot(1, 1, 1)
 
@@ -778,7 +797,7 @@ class SALIContourApp:
                     plot_values = valid_data["lower_limit_reach_time"].values
                     vmin = plot_values.min()
                     vmax = plot_values.max()
-                    label_str = "閾値到達時間 (無次元時間)"
+                    label_str = "Threshold Reach Time (non-dimensional)"
 
                     scatter = self.ax.scatter(
                         valid_data["x"],
@@ -807,10 +826,10 @@ class SALIContourApp:
                         marker="s",
                         edgecolors="none",
                         zorder=1,
-                        label="未到達 (閾値未達成)",
+                        label="Not Reached (below threshold)",
                     )
 
-                title_str = f"閾値到達時間 カラーコンター (Z = {z_target:.6f} AU)"
+                title_str = f"Threshold Reach Time Color Contour (Z = {z_target:.6f} AU)"
 
             elif plot_mode == "ThresholdMap":
                 # --- SALI閾値判定モード ---
@@ -842,7 +861,7 @@ class SALIContourApp:
                         marker="s",
                         edgecolors="none",
                         zorder=2,
-                        label=f"カオス的 (SALI ≤ {threshold:.2e})",
+                        label=f"Chaotic (SALI ≤ {threshold:.2e})",
                     )
 
                 # 秩序的 (SALI > threshold) -> 青
@@ -855,7 +874,7 @@ class SALIContourApp:
                         marker="s",
                         edgecolors="none",
                         zorder=2,
-                        label=f"秩序的 (SALI > {threshold:.2e})",
+                        label=f"Regular (SALI > {threshold:.2e})",
                     )
 
                 # 無効なSALI (-1) -> グレー
@@ -874,7 +893,7 @@ class SALIContourApp:
                 # 凡例を自動追加
                 self.ax.legend(loc="upper left")
 
-                title_str = f"SALI閾値判定マップ (Z = {z_target:.6f} AU, 閾値 = {threshold:.2e})"
+                title_str = f"SALI Threshold Map (Z = {z_target:.6f} AU, Threshold = {threshold:.2e})"
 
             else:
                 # --- SALIモード（デフォルト）---
@@ -944,7 +963,7 @@ class SALIContourApp:
                     self.colorbar = self.figure.colorbar(scatter, ax=self.ax)
                     self.colorbar.set_label(label_str, fontsize=12)
 
-                title_str = f"SALI カラーコンター (Z = {z_target:.6f} AU)"
+                title_str = f"SALI Color Contour (Z = {z_target:.6f} AU)"
 
             # 3. 衝突・離脱のオーバーレイ
             if self.show_collision.get():
