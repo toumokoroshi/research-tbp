@@ -42,23 +42,49 @@ echo [2/8] Checking CMake...
 where cmake >nul 2>&1
 if errorlevel 1 (
     echo     [MISSING] CMake is not installed or not in PATH.
-    echo              Please install CMake from: https://cmake.org/
-    set "MISSING_REQUIRED=1"
+    set /p "INSTALL_CMAKE=    Install CMake now? [Y/n]: "
+    if /i "!INSTALL_CMAKE!"=="" set "INSTALL_CMAKE=Y"
+    if /i "!INSTALL_CMAKE!"=="Y" (
+        echo     Installing CMake...
+        winget install Kitware.CMake --silent
+        if errorlevel 1 (
+            echo     [ERROR] CMake installation failed.
+            set "MISSING_REQUIRED=1"
+        ) else (
+            echo     [OK] CMake installed. Please restart this script.
+            set "MISSING_REQUIRED=1"
+        )
+    ) else (
+        set "MISSING_REQUIRED=1"
+    )
 ) else (
     for /f "tokens=3" %%v in ('cmake --version ^| findstr /i "cmake version"') do set "CMAKE_VERSION=%%v"
     echo     [OK] CMake !CMAKE_VERSION!
 )
 
 rem ---------------------------------------------
-rem [3] Ninja Check (Optional - for Intel oneAPI)
+rem [3] Ninja Check (Required for vs-intel)
 rem ---------------------------------------------
 echo [3/8] Checking Ninja...
 where ninja >nul 2>&1
 if errorlevel 1 (
     echo     [NOT FOUND] Ninja is not installed or not in PATH.
-    echo                 Ninja is optional but recommended for faster builds.
-    echo                 Install via: winget install Ninja-build.Ninja
-    set "HAS_NINJA=0"
+    echo                 Ninja is required for Intel oneAPI builds.
+    set /p "INSTALL_NINJA=    Install Ninja now? [Y/n]: "
+    if /i "!INSTALL_NINJA!"=="" set "INSTALL_NINJA=Y"
+    if /i "!INSTALL_NINJA!"=="Y" (
+        echo     Installing Ninja...
+        winget install Ninja-build.Ninja --silent
+        if errorlevel 1 (
+            echo     [ERROR] Ninja installation failed.
+            set "HAS_NINJA=0"
+        ) else (
+            echo     [OK] Ninja installed.
+            set "HAS_NINJA=1"
+        )
+    ) else (
+        set "HAS_NINJA=0"
+    )
 ) else (
     for /f "tokens=1" %%v in ('ninja --version') do set "NINJA_VERSION=%%v"
     echo     [OK] Ninja !NINJA_VERSION!
@@ -66,7 +92,7 @@ if errorlevel 1 (
 )
 
 rem ---------------------------------------------
-rem [4] Intel oneAPI Check (Optional)
+rem [4] Intel oneAPI Check (Recommended)
 rem ---------------------------------------------
 echo [4/8] Checking Intel oneAPI...
 if exist "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" (
@@ -82,9 +108,25 @@ if exist "C:\Program Files (x86)\Intel\oneAPI\setvars.bat" (
     )
 ) else (
     echo     [NOT FOUND] Intel oneAPI is not installed.
-    echo                 oneAPI is optional but provides better performance.
-    echo                 Download from: https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html
-    set "HAS_ONEAPI=0"
+    echo                 Intel oneAPI is recommended for best performance.
+    set /p "INSTALL_ONEAPI=    Install Intel oneAPI Base Toolkit now? [Y/n]: "
+    if /i "!INSTALL_ONEAPI!"=="" set "INSTALL_ONEAPI=Y"
+    if /i "!INSTALL_ONEAPI!"=="Y" (
+        echo.
+        echo     Installing Intel oneAPI Base Toolkit...
+        echo     This may take 10-30 minutes...
+        winget install Intel.oneAPI.BaseToolkit --silent
+        if errorlevel 1 (
+            echo     [ERROR] Intel oneAPI installation failed.
+            echo              Manual download: https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html
+            set "HAS_ONEAPI=0"
+        ) else (
+            echo     [OK] Intel oneAPI installed. Please restart this script.
+            set "HAS_ONEAPI=1"
+        )
+    ) else (
+        set "HAS_ONEAPI=0"
+    )
 )
 
 rem ---------------------------------------------
