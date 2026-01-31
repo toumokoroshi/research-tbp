@@ -122,14 +122,32 @@ if defined WINSDK_RC_EXE (
 ) else (
     echo     [MISSING] Windows SDK is not installed or rc.exe not found.
     echo              vcpkg requires Windows SDK to build packages.
-    echo              Please install Windows SDK via Visual Studio Installer:
-    echo              1. Open Visual Studio Installer
-    echo              2. Click 'Modify' on Visual Studio / Build Tools
-    echo              3. Go to 'Individual components' tab
-    echo              4. Search and check 'Windows 10 SDK' or 'Windows 11 SDK'
-    echo              5. Click 'Modify' to install
-    set "HAS_WINSDK=0"
-    set "MISSING_REQUIRED=1"
+    echo.
+    set /p "INSTALL_VSBT=    Install Visual Studio Build Tools now? [Y/n]: "
+    if /i "!INSTALL_VSBT!"=="" set "INSTALL_VSBT=Y"
+    if /i "!INSTALL_VSBT!"=="Y" (
+        echo.
+        echo     Installing Visual Studio Build Tools with required components...
+        echo     This may take several minutes...
+        winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.Windows11SDK.22621"
+        if errorlevel 1 (
+            echo     [ERROR] Installation failed. Please install manually.
+            set "HAS_WINSDK=0"
+            set "MISSING_REQUIRED=1"
+        ) else (
+            echo     [OK] Visual Studio Build Tools installed successfully.
+            echo          Please restart this script to detect the new installation.
+            set "HAS_WINSDK=0"
+            set "MISSING_REQUIRED=1"
+        )
+    ) else (
+        echo.
+        echo              Manual install via Visual Studio Installer ^(Individual components^):
+        echo                - Windows 11 SDK ^(10.0.22621^)
+        echo                - MSVC v143 - VS 2022 C++ x64/x86 build tools
+        set "HAS_WINSDK=0"
+        set "MISSING_REQUIRED=1"
+    )
 )
 
 rem ---------------------------------------------
