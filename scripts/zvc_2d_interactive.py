@@ -13,7 +13,7 @@ from typing import Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.widgets import Slider, Button, TextBox
+from matplotlib.widgets import Slider, Button, TextBox, RadioButtons
 
 # Font settings
 plt.rcParams["font.family"] = "Times New Roman"
@@ -35,7 +35,7 @@ SLIDER_RES_DPI: int = 10
 def compute_effective_potential(
     x: np.ndarray, y: np.ndarray, mu: float
 ) -> np.ndarray:
-    """Compute the effective potential (Jacobi integral C = 2Ω)."""
+    """Compute the effective potential (Jacobi integral C = 2Ω) for x-y plane (z=0)."""
     x1: float = -mu
     x2: float = 1.0 - mu
 
@@ -45,7 +45,37 @@ def compute_effective_potential(
     r1 = np.maximum(r1, 1e-10)
     r2 = np.maximum(r2, 1e-10)
 
-    omega: np.ndarray = 0.5 * (x ** 2 + y ** 2) + (1 - mu) / r1 + mu / r2
+    # C++コードとの整合性のためmu*(1-mu)/2を追加
+    omega: np.ndarray = 0.5 * (x ** 2 + y ** 2) + (1 - mu) / r1 + mu / r2 + mu * (1 - mu) * 0.5
+    return 2 * omega
+
+
+def compute_effective_potential_3d(
+    x: np.ndarray, y: np.ndarray, z: np.ndarray, mu: float
+) -> np.ndarray:
+    """Compute the effective potential (Jacobi integral C = 2Ω) in 3D space.
+    
+    Args:
+        x: X座標（回転座標系）
+        y: Y座標（回転座標系）
+        z: Z座標（回転座標系）
+        mu: 質量パラメータ
+    
+    Returns:
+        有効ポテンシャル C = 2Ω
+    """
+    x1: float = -mu  # Primary body position
+    x2: float = 1.0 - mu  # Secondary body position
+
+    r1: np.ndarray = np.sqrt((x - x1) ** 2 + y ** 2 + z ** 2)
+    r2: np.ndarray = np.sqrt((x - x2) ** 2 + y ** 2 + z ** 2)
+
+    r1 = np.maximum(r1, 1e-10)
+    r2 = np.maximum(r2, 1e-10)
+
+    # 回転項は x^2 + y^2 のみ（z方向には遠心力なし）
+    # C++コードとの整合性のためmu*(1-mu)/2を追加
+    omega: np.ndarray = 0.5 * (x ** 2 + y ** 2) + (1 - mu) / r1 + mu / r2 + mu * (1 - mu) * 0.5
     return 2 * omega
 
 
@@ -95,15 +125,22 @@ def compute_jacobi_at_lagrange_points(
 class ZVCPlotter2D:
     """Interactive 2D Zero Velocity Curve and Forbidden Region plotter."""
 
+    VALID_PLANES = ("xy", "xz", "yz")
+
     def __init__(
         self,
         mu: float = MU_SUN_EARTH,
         resolution: int = 3000,
         preview_resolution: int = 500,
+        plane: str = "xy",
     ) -> None:
         self.mu = mu
         self.resolution = resolution  # High-res for saving
         self.preview_resolution = preview_resolution  # Low-res for interactive
+        
+        if plane not in self.VALID_PLANES:
+            raise ValueError(f"Invalid plane: {plane}. Must be one of {self.VALID_PLANES}")
+        self.plane = plane
 
         self.lagrange_points = compute_lagrange_points(mu)
         self.jacobi_at_lp = compute_jacobi_at_lagrange_points(
@@ -123,17 +160,26 @@ class ZVCPlotter2D:
         """Compute grid dynamically for current view.
         
         Args:
-            xlim: X軸の範囲
-            ylim: Y軸の範囲
+            xlim: 水平軸の範囲
+            ylim: 垂直軸の範囲
             use_high_res: Trueなら高解像度(保存用)、Falseなら低解像度(プレビュー用)
         """
         res = self.resolution if use_high_res else self.preview_resolution
         margin = 0.1 * max(xlim[1] - xlim[0], ylim[1] - ylim[0])
-        x = np.linspace(xlim[0] - margin, xlim[1] + margin, res)
-        y = np.linspace(ylim[0] - margin, ylim[1] + margin, res)
-        X, Y = np.meshgrid(x, y)
-        C = compute_effective_potential(X, Y, self.mu)
-        return X, Y, C
+        h_axis = np.linspace(xlim[0] - margin, xlim[1] + margin, res)
+        v_axis = np.linspace(ylim[0] - margin, ylim[1] + margin, res)
+        H, V = np.meshgrid(h_axis, v_axis)
+        
+        # 平面に応じて3D座標を設定
+        if self.plane == "xy":
+            X, Y, Z = H, V, np.zeros_like(H)
+        elif self.plane == "xz":
+            X, Y, Z = H, np.zeros_like(H), V
+        else:  # yz
+            X, Y, Z = np.zeros_like(H), H, V
+        
+        C = compute_effective_potential_3d(X, Y, Z, self.mu)
+        return H, V, C
 
     def plot(self, ax: plt.Axes, use_high_res: bool = False) -> None:
         """Plot ZVC and forbidden regions.
@@ -148,13 +194,13 @@ class ZVCPlotter2D:
         xlim = (self.current_xcenter - half_size, self.current_xcenter + half_size)
         ylim = (self.current_ycenter - half_size, self.current_ycenter + half_size)
 
-        X, Y, C = self._compute_grid_for_view(xlim, ylim, use_high_res=use_high_res)
+        H, V, C = self._compute_grid_for_view(xlim, ylim, use_high_res=use_high_res)
 
         # Forbidden region: where C < jacobi_c
         c_min = C.min()
         if c_min < self.current_jacobi:
             ax.contourf(
-                X, Y, C,
+                H, V, C,
                 levels=[c_min, self.current_jacobi],
                 colors=[FORBIDDEN_REGION_COLOR],
                 alpha=0.7,
@@ -163,102 +209,90 @@ class ZVCPlotter2D:
         # Zero velocity curve (only if jacobi_c is within the data range)
         if c_min <= self.current_jacobi <= C.max():
             ax.contour(
-                X, Y, C,
+                H, V, C,
                 levels=[self.current_jacobi],
                 colors=[ZERO_VELOCITY_COLOR],
                 linewidths=2.0,
             )
 
-        # Sun and Earth positions
+        # 平面に応じた軸ラベル設定
+        if self.plane == "xy":
+            h_label, v_label = "x [AU]", "y [AU]"
+        elif self.plane == "xz":
+            h_label, v_label = "x [AU]", "z [AU]"
+        else:  # yz
+            h_label, v_label = "y [AU]", "z [AU]"
+
+        # Sun and Earth positions (only in xy and xz planes)
         x_sun = -self.mu
         x_earth = 1.0 - self.mu
-        # ax.plot(x_sun, 0, "yo", markersize=15, label="Sun")
-        # ax.plot(x_earth, 0, "bo", markersize=8, label="Earth")
-        ax.plot(x_sun, 0, "yo", markersize=15)
-        ax.plot(x_earth, 0, "bo", markersize=8)
-
-        # Earth annotation
-        ax.annotate(
-            "EARTH", (x_earth, 0),
-            textcoords="offset points",
-            xytext=(0, -20),
-            fontsize=12,
-            fontweight="bold",
-            color="darkblue",
-            ha="center",
-        )
-        # sun annotation
-        ax.annotate(
-            "SUN", (x_sun, 0),
-            textcoords="offset points",
-            xytext=(0, -20),
-            fontsize=12,
-            fontweight="bold",
-            color="darkorange",
-            ha="center",
-        )
-
-        # Forbidden region annotations
-        # 禁止領域の上部と下部の中央にラベルを配置
-        half_size = self.current_zoom / 2
-        label_y_top = self.current_ycenter + half_size * 0.7
-        label_y_bottom = self.current_ycenter - half_size * 0.7
-        label_x = self.current_xcenter
-
-        # ax.text(
-        #     label_x, label_y_top, "FORBIDDEN REGION",
-        #     fontsize=14, fontweight="bold", color=ZERO_VELOCITY_COLOR,
-        #     ha="center", va="center",
-        # )
-        # ax.text(
-        #     label_x, label_y_bottom, "FORBIDDEN REGION",
-        #     fontsize=14, fontweight="bold", color=ZERO_VELOCITY_COLOR,
-        #     ha="center", va="center",
-        # )
-
-        # Lagrange points (with arrow lines instead of markers)
-        for name, (x, y) in self.lagrange_points.items():
-            # 矢印の方向とオフセットを設定
-            if name in ["L1"]:
-                xytext = (-30, 15)
-            elif name in ["L2", "L3"]:
-                xytext = (30, 15)
-            elif name == "L4":
-                # L4は右上方向
-                xytext = (20, 15)
-            else:  # L5
-                # L5は右下方向
-                xytext = (20, -15)
-            
+        
+        if self.plane == "xy":
+            # x-y平面: 太陽と地球は y=0 上
+            ax.plot(x_sun, 0, "yo", markersize=15)
+            ax.plot(x_earth, 0, "bo", markersize=8)
             ax.annotate(
-                name, (x, y),
-                textcoords="offset points",
-                xytext=xytext,
-                fontsize=10,
-                color="#8e44ad",
-                ha="center",
-                arrowprops=dict(
-                    arrowstyle="-",
-                    color="#8e44ad",
-                    lw=1.0,
-                ),
+                "EARTH", (x_earth, 0),
+                textcoords="offset points", xytext=(0, -20),
+                fontsize=12, fontweight="bold", color="darkblue", ha="center",
             )
+            ax.annotate(
+                "SUN", (x_sun, 0),
+                textcoords="offset points", xytext=(0, -20),
+                fontsize=12, fontweight="bold", color="darkorange", ha="center",
+            )
+        elif self.plane == "xz":
+            # x-z平面: 太陽と地球は z=0 上
+            ax.plot(x_sun, 0, "yo", markersize=15)
+            ax.plot(x_earth, 0, "bo", markersize=8)
+            ax.annotate(
+                "EARTH", (x_earth, 0),
+                textcoords="offset points", xytext=(0, -20),
+                fontsize=12, fontweight="bold", color="darkblue", ha="center",
+            )
+            ax.annotate(
+                "SUN", (x_sun, 0),
+                textcoords="offset points", xytext=(0, -20),
+                fontsize=12, fontweight="bold", color="darkorange", ha="center",
+            )
+        # yz平面では太陽と地球は表示しない（x軸上にあるため見えない）
+
+        # Lagrange points (only in xy plane)
+        if self.plane == "xy":
+            for name, (x, y) in self.lagrange_points.items():
+                if name in ["L1"]:
+                    xytext = (-30, 15)
+                elif name in ["L2", "L3"]:
+                    xytext = (30, 15)
+                elif name == "L4":
+                    xytext = (20, 15)
+                else:  # L5
+                    xytext = (20, -15)
+                
+                ax.annotate(
+                    name, (x, y),
+                    textcoords="offset points",
+                    xytext=xytext,
+                    fontsize=10,
+                    color="#8e44ad",
+                    ha="center",
+                    arrowprops=dict(arrowstyle="-", color="#8e44ad", lw=1.0),
+                )
 
         ax.set_xlim(xlim)
         ax.set_ylim(ylim)
         ax.set_aspect("equal")
-        ax.set_xlabel("x [AU]", fontsize=12)
-        ax.set_ylabel("y [AU]", fontsize=12)
+        ax.set_xlabel(h_label, fontsize=12)
+        ax.set_ylabel(v_label, fontsize=12)
         
         # 軸のオフセット表記を無効化（絶対値で表示）
         ax.ticklabel_format(useOffset=False, style='plain')
         
         ax.set_title(
-            f"ZVC & Forbidden Regions\n"
+            f"ZVC & Forbidden Regions ({self.plane.upper()} plane)\n"
             f"Jacobi C = {self.current_jacobi:.10f}",
             fontsize=14,
         )
-        # ax.legend(loc="upper right")
         ax.grid(True, linestyle="--", alpha=0.5)
 
         # Lagrange point info
@@ -281,6 +315,11 @@ class ZVCPlotter2D:
         # Image save settings
         self.save_figsize = 10
         self.save_dpi = 300
+
+        # Plane selection radio buttons
+        ax_plane = plt.axes([0.88, 0.75, 0.10, 0.15])
+        radio_plane = RadioButtons(ax_plane, self.VALID_PLANES, active=0)
+        ax_plane.set_title("Plane", fontsize=10)
 
         # Sliders
         ax_jacobi = plt.axes([0.15, 0.30, 0.50, 0.03])
@@ -360,6 +399,12 @@ class ZVCPlotter2D:
             tb_xcenter.set_val(f"{self.current_xcenter:.4f}")
             tb_ycenter.set_val(f"{self.current_ycenter:.4f}")
             tb_zoom.set_val(f"{self.current_zoom:.4f}")
+            self.plot(ax)
+            fig.canvas.draw_idle()
+
+        def update_plane(label: str) -> None:
+            """Handle plane selection change."""
+            self.plane = label
             self.plot(ax)
             fig.canvas.draw_idle()
 
@@ -463,6 +508,8 @@ class ZVCPlotter2D:
         slider_xcenter.on_changed(update_from_sliders)
         slider_ycenter.on_changed(update_from_sliders)
         slider_zoom.on_changed(update_from_sliders)
+
+        radio_plane.on_clicked(update_plane)
 
         tb_jacobi.on_submit(update_jacobi_from_text)
         tb_xcenter.on_submit(update_xcenter_from_text)

@@ -588,7 +588,7 @@ class SALIContourApp:
             info = f"データ読み込み成功\n\n"
             info += f"=== ヘッダ情報 ===\n"
             if self.jacobi_constant is not None:
-                info += f"Jacobi積分: {self.jacobi_constant:.6f}\n"
+                info += f"Jacobi積分: {self.jacobi_constant:.10f}\n"
             if self.header_info.get("timestep"):
                 info += f"タイムステップ: {self.header_info['timestep']}\n"
             if self.header_info.get("time_threshold"):
@@ -717,7 +717,7 @@ class SALIContourApp:
                     [],
                     color=ZERO_VELOCITY_COLOR,
                     linewidth=2.0,
-                    label=f"Zero-velocity curve (C={self.jacobi_constant:.4f})",
+                    label=f"ZVC",
                 )
         return None
 
@@ -1007,7 +1007,7 @@ class SALIContourApp:
                 self.ax.text(
                     0.02,
                     0.98,
-                    f"C_J = {self.jacobi_constant:.4f}",
+                    f"C_J = {self.jacobi_constant:.10f}",
                     transform=self.ax.transAxes,
                     fontsize=10,
                     fontweight="bold",
@@ -1033,9 +1033,9 @@ class SALIContourApp:
                         (hill_cx, hill_cy),
                         hill_radius,
                         fill=False,
-                        linestyle="--",
+                        linestyle=":",
                         linewidth=1.5,
-                        edgecolor="green",
+                        edgecolor="blue",
                         label="Earth Hill sphere",
                     )
                     self.ax.add_patch(hill_circle)
