@@ -729,7 +729,8 @@ class SALIContourApp:
         r2 = np.sqrt((x_grid - (1 - mu)) ** 2 + y_grid**2 + z_plane**2)
         r1 = np.maximum(r1, eps)
         r2 = np.maximum(r2, eps)
-        omega = 0.5 * (x_grid**2 + y_grid**2) + (1 - mu) / r1 + mu / r2
+        # C++コードとの整合性のためmu*(1-mu)/2を追加
+        omega = 0.5 * (x_grid**2 + y_grid**2) + (1 - mu) / r1 + mu / r2 + mu * (1 - mu) * 0.5
         return 2 * omega - self.jacobi_constant
 
     def create_contour(self):
@@ -766,7 +767,7 @@ class SALIContourApp:
                 r2 = np.sqrt((x_arr - (1 - mu)) ** 2 + y_arr ** 2 + z_arr ** 2)
                 r1 = np.maximum(r1, eps)
                 r2 = np.maximum(r2, eps)
-                omega = 0.5 * (x_arr ** 2 + y_arr ** 2) + (1 - mu) / r1 + mu / r2
+                omega = 0.5 * (x_arr ** 2 + y_arr ** 2) + (1 - mu) / r1 + mu / r2 + mu * (1 - mu) * 0.5
                 zvc_value = 2 * omega - self.jacobi_constant
                 # zvc_value >= 0 は許可領域、zvc_value < 0 は禁止領域
                 allowed_mask = zvc_value >= 0
