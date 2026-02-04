@@ -4,14 +4,65 @@ setlocal enabledelayedexpansion
 rem ============================================
 rem TBP Project - Main Setup Script
 rem ============================================
-rem Usage: scripts\setup.bat
+rem Usage: tools\setup.bat [options]
+rem 
+rem Options:
+rem   --unattended, -y    Non-interactive mode (auto-install all)
+rem   --with-oneapi       Install Intel oneAPI (skipped by default in unattended)
+rem   --skip-python       Skip Python environment setup
+rem   --skip-test         Skip running tests after build
+rem   --help, -h          Show this help message
 rem 
 rem This script will:
 rem   1. Check dependencies (git, cmake, ninja, oneAPI, MinGW)
 rem   2. Install vcpkg and Boost if needed
 rem   3. Set up environment variables (BOOST_ROOT)
 rem   4. Configure and build the project
+rem   5. (Optional) Set up Python environment
+rem   6. (Optional) Run tests to verify build
 rem ============================================
+
+rem ---------------------------------------------
+rem Parse command line arguments
+rem ---------------------------------------------
+set "UNATTENDED=0"
+set "WITH_ONEAPI=0"
+set "SKIP_PYTHON=0"
+set "SKIP_TEST=0"
+
+:parse_args
+if "%~1"=="" goto :args_done
+if /i "%~1"=="--unattended" set "UNATTENDED=1" & shift & goto :parse_args
+if /i "%~1"=="-y" set "UNATTENDED=1" & shift & goto :parse_args
+if /i "%~1"=="--with-oneapi" set "WITH_ONEAPI=1" & shift & goto :parse_args
+if /i "%~1"=="--skip-python" set "SKIP_PYTHON=1" & shift & goto :parse_args
+if /i "%~1"=="--skip-test" set "SKIP_TEST=1" & shift & goto :parse_args
+if /i "%~1"=="--help" goto :show_help
+if /i "%~1"=="-h" goto :show_help
+echo [WARNING] Unknown option: %~1
+shift
+goto :parse_args
+
+:show_help
+echo.
+echo Usage: tools\setup.bat [options]
+echo.
+echo Options:
+echo   --unattended, -y    Non-interactive mode (auto-install all)
+echo   --with-oneapi       Install Intel oneAPI (best performance, takes 10-30 min)
+echo   --skip-python       Skip Python environment setup
+echo   --skip-test         Skip running tests after build
+echo   --help, -h          Show this help message
+echo.
+echo Examples:
+echo   tools\setup.bat                    Interactive setup
+echo   tools\setup.bat --unattended       Fully automated setup (uses MinGW)
+echo   tools\setup.bat -y --with-oneapi   Auto setup with Intel oneAPI
+echo   tools\setup.bat -y --skip-test     Auto setup without tests
+echo.
+exit /b 0
+
+:args_done
 
 echo.
 echo ============================================================
@@ -19,6 +70,11 @@ echo   TBP Project Setup
 echo ============================================================
 echo   This script will set up your development environment
 echo   and build the project.
+if "!UNATTENDED!"=="1" (
+echo   Mode: UNATTENDED (non-interactive)
+) else (
+echo   Mode: Interactive
+)
 echo ============================================================
 echo.
 
@@ -38,16 +94,33 @@ echo   Step 1: Checking Dependencies
 echo ============================================================
 echo.
 
-call "!SCRIPT_DIR!check_dependencies.bat"
+rem Pass UNATTENDED and WITH_ONEAPI flags to check_dependencies.bat
+call "!SCRIPT_DIR!check_dependencies.bat" !UNATTENDED! !WITH_ONEAPI!
 if errorlevel 1 (
     echo.
     echo [ERROR] Dependency check failed. Please install missing required dependencies.
-    pause
+    if "!UNATTENDED!"=="0" pause
     exit /b 1
 )
 
 rem Variables are exported from check_dependencies.bat:
 rem   HAS_ONEAPI, HAS_NINJA, HAS_MINGW, HAS_BOOST, HAS_VCPKG
+
+rem ---------------------------------------------
+rem [1.5] Add winget portable packages to PATH (e.g., Ninja)
+rem ---------------------------------------------
+rem winget portable packages are not added to PATH automatically
+set "WINGET_PACKAGES=%LOCALAPPDATA%\Microsoft\WinGet\Packages"
+if exist "!WINGET_PACKAGES!" (
+    rem Search for Ninja in winget packages
+    for /d %%D in ("!WINGET_PACKAGES!\Ninja-build.Ninja_*") do (
+        if exist "%%D\ninja.exe" (
+            echo Adding Ninja to PATH from winget: %%D
+            set "PATH=%%D;!PATH!"
+            set "HAS_NINJA=1"
+        )
+    )
+)
 
 rem ---------------------------------------------
 rem [2] Install vcpkg and Boost if needed
@@ -61,11 +134,11 @@ echo.
 if "!HAS_BOOST!"=="0" (
     echo Boost is not installed. Installing via vcpkg...
     echo.
-    call "!SCRIPT_DIR!install_vcpkg_boost.bat"
+    call "!SCRIPT_DIR!install_vcpkg_boost.bat" !UNATTENDED!
     if errorlevel 1 (
         echo.
         echo [ERROR] Failed to install Boost.
-        pause
+        if "!UNATTENDED!"=="0" pause
         exit /b 1
     )
 ) else (
@@ -98,11 +171,25 @@ if "!HAS_ONEAPI!"=="1" if "!HAS_NINJA!"=="1" (
     set "ONEAPI_AVAILABLE=0"
 )
 
+rem In unattended mode, auto-select best available compiler
+if "!UNATTENDED!"=="1" (
+    if "!ONEAPI_AVAILABLE!"=="1" (
+        echo [AUTO] Selecting Intel oneAPI + Ninja
+        goto :use_oneapi
+    ) else if "!HAS_MINGW!"=="1" (
+        echo [AUTO] Selecting MinGW-gcc (Intel oneAPI not available)
+        goto :use_mingw
+    ) else (
+        goto :no_compiler
+    )
+)
+
+rem Interactive mode - ask user if both are available
 if "!ONEAPI_AVAILABLE!"=="1" if "!HAS_MINGW!"=="1" (
     rem Both options available - ask user
     echo Available build configurations:
-    echo   1. Intel oneAPI + Ninja [Recommended - best performance]
-    echo   2. MinGW-gcc + Ninja [Alternative - good compatibility]
+    echo   1. Intel oneAPI + Ninja [Recommended]
+    echo   2. MinGW-gcc + Ninja [Alternative]
     echo.
     set /p "BUILD_CHOICE=Select configuration [1 or 2]: "
 )
@@ -118,7 +205,7 @@ goto :use_oneapi
 
 :use_oneapi
 echo Using Intel oneAPI + Ninja configuration.
-set "BUILD_PRESET=vs-intel"
+set "BUILD_PRESET=ninja-intel"
 set "USE_ONEAPI=1"
 goto :compiler_selected
 
@@ -131,7 +218,8 @@ goto :compiler_selected
 :no_compiler
 echo [ERROR] No suitable compiler found!
 echo         Please install Intel oneAPI or MinGW-gcc.
-pause
+if "!UNATTENDED!"=="0" pause
+exit /b 1
 exit /b 1
 
 :compiler_selected
@@ -153,29 +241,58 @@ if "!USE_ONEAPI!"=="1" (
     
     rem Intel oneAPI requires MSVC linker - call vcvars64.bat first
     set "VCVARS_PATH="
-    if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
-    ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
-        set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+    
+    rem Search for vcvars64.bat in various VS installations
+    rem VS 2022+ Insiders/Preview (Program Files)
+    for /d %%V in ("C:\Program Files\Microsoft Visual Studio\*") do (
+        for /d %%E in ("%%V\*") do (
+            if exist "%%E\VC\Auxiliary\Build\vcvars64.bat" (
+                if not defined VCVARS_PATH (
+                    set "VCVARS_PATH=%%E\VC\Auxiliary\Build\vcvars64.bat"
+                )
+            )
+        )
+    )
+    rem VS 2022 Standard editions (Program Files)
+    if not defined VCVARS_PATH (
+        if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+        )
+    )
+    rem VS 2022 (Program Files x86)
+    if not defined VCVARS_PATH (
+        if exist "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+        )
+    )
+    rem VS 2019 (Program Files x86)
+    if not defined VCVARS_PATH (
+        if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+            set "VCVARS_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+        )
     )
     
     if defined VCVARS_PATH (
         echo   Calling: !VCVARS_PATH!
         call "!VCVARS_PATH!"
+        if errorlevel 1 (
+            echo [WARNING] vcvars64.bat returned an error.
+        )
     ) else (
         echo [WARNING] vcvars64.bat not found. Intel oneAPI may not work correctly.
+        echo          Please install Visual Studio Build Tools with C++ workload.
     )
     
     echo Setting up Intel oneAPI environment...
@@ -188,7 +305,7 @@ if "!USE_ONEAPI!"=="1" (
             set "USE_ONEAPI=0"
         ) else (
             echo [ERROR] No fallback compiler available.
-            pause
+            if "!UNATTENDED!"=="0" pause
             exit /b 1
         )
     )
@@ -207,14 +324,18 @@ echo   Step 5: Configuring Project with CMake
 echo ============================================================
 echo.
 
-rem Ask about cleaning build directory
+rem Ask about cleaning build directory (skip in unattended mode - keep existing)
 if exist "!PROJECT_ROOT!\build" (
-    echo Build directory exists.
-    set /p "CLEAN_BUILD=Do you want to clean and reconfigure? (Y/N): "
-    if /i "!CLEAN_BUILD!"=="Y" (
-        echo Deleting old build directory...
-        rmdir /s /q "!PROJECT_ROOT!\build"
-        if exist "!PROJECT_ROOT!\CMakeCache.txt" del "!PROJECT_ROOT!\CMakeCache.txt"
+    if "!UNATTENDED!"=="1" (
+        echo Build directory exists. Keeping existing configuration.
+    ) else (
+        echo Build directory exists.
+        set /p "CLEAN_BUILD=Do you want to clean and reconfigure? (Y/N): "
+        if /i "!CLEAN_BUILD!"=="Y" (
+            echo Deleting old build directory...
+            rmdir /s /q "!PROJECT_ROOT!\build"
+            if exist "!PROJECT_ROOT!\CMakeCache.txt" del "!PROJECT_ROOT!\CMakeCache.txt"
+        )
     )
 )
 
@@ -232,7 +353,7 @@ if errorlevel 1 (
     echo   1. Ensure BOOST_ROOT is set correctly: !BOOST_ROOT!
     echo   2. Check that Boost headers exist at: !BOOST_ROOT!\include\boost
     echo   3. Try running this script again after fixing issues.
-    pause
+    if "!UNATTENDED!"=="0" pause
     exit /b 1
 )
 
@@ -249,12 +370,73 @@ cmake --build build
 if errorlevel 1 (
     echo.
     echo [ERROR] Build failed.
-    pause
+    if "!UNATTENDED!"=="0" pause
     exit /b 1
 )
 
 rem ---------------------------------------------
-rem [7] Summary
+rem [7] Python Environment Setup (Optional)
+rem ---------------------------------------------
+if "!SKIP_PYTHON!"=="0" (
+    echo.
+    echo ============================================================
+    echo   Step 7: Setting up Python Environment (Optional)
+    echo ============================================================
+    echo.
+    
+    where python >nul 2>&1
+    if errorlevel 1 (
+        echo [SKIP] Python is not installed. Skipping Python setup.
+    ) else (
+        if exist "!PROJECT_ROOT!\scripts\requirements.txt" (
+            echo Installing Python dependencies...
+            python -m pip install -r "!PROJECT_ROOT!\scripts\requirements.txt" --quiet
+            if errorlevel 1 (
+                echo [WARNING] Failed to install some Python packages.
+                echo          You can install them manually later:
+                echo          pip install -r scripts\requirements.txt
+            ) else (
+                echo [OK] Python dependencies installed.
+            )
+        ) else (
+            echo [SKIP] No requirements.txt found.
+        )
+    )
+) else (
+    echo.
+    echo [SKIP] Python setup skipped (--skip-python).
+)
+
+rem ---------------------------------------------
+rem [8] Run Tests (Optional)
+rem ---------------------------------------------
+if "!SKIP_TEST!"=="0" (
+    echo.
+    echo ============================================================
+    echo   Step 8: Running Tests
+    echo ============================================================
+    echo.
+    
+    where ctest >nul 2>&1
+    if errorlevel 1 (
+        echo [SKIP] CTest not found. Skipping tests.
+    ) else (
+        echo Running tests to verify build...
+        ctest --test-dir build --output-on-failure -C Debug
+        if errorlevel 1 (
+            echo.
+            echo [WARNING] Some tests failed. Check the output above.
+        ) else (
+            echo [OK] All tests passed.
+        )
+    )
+) else (
+    echo.
+    echo [SKIP] Tests skipped (--skip-test).
+)
+
+rem ---------------------------------------------
+rem [9] Summary
 rem ---------------------------------------------
 echo.
 echo ============================================================
@@ -272,9 +454,12 @@ echo.
 echo   To reconfigure:
 echo     cmake --preset=!BUILD_PRESET!
 echo.
+echo   To run tests:
+echo     ctest --test-dir build -C Debug
+echo.
 echo ============================================================
 echo.
 
-pause
+if "!UNATTENDED!"=="0" pause
 endlocal
 exit /b 0

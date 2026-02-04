@@ -7,10 +7,18 @@ rem ============================================
 rem This script installs vcpkg and Boost to
 rem the external/ directory and sets up
 rem environment variables.
+rem 
+rem Usage: install_vcpkg_boost.bat [UNATTENDED]
+rem   UNATTENDED=1 : Auto-install without prompts
 rem ============================================
+
+rem Parse argument
+set "UNATTENDED=0"
+if "%~1"=="1" set "UNATTENDED=1"
 
 echo ============================================
 echo   TBP Project - vcpkg ^& Boost Installer
+if "!UNATTENDED!"=="1" echo   (Unattended Mode)
 echo ============================================
 echo.
 
@@ -104,7 +112,12 @@ if defined BOOST_ROOT (
     )
     
     echo       BOOST_ROOT is set to a different path.
-    set /p "OVERWRITE=       Do you want to update BOOST_ROOT? (Y/N): "
+    if "!UNATTENDED!"=="1" (
+        echo       [AUTO] Updating BOOST_ROOT to new path.
+        set "OVERWRITE=Y"
+    ) else (
+        set /p "OVERWRITE=       Do you want to update BOOST_ROOT? (Y/N): "
+    )
     if /i "!OVERWRITE!" neq "Y" (
         echo       Keeping existing BOOST_ROOT.
         goto :skip_setx

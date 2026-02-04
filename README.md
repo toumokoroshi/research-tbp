@@ -14,20 +14,59 @@
 ---
 
 ## クイックスタート
+バッチファイルを走らせると、必要な環境の有無の確認と必要な環境のインストールを行うように作ってあります。
+
+> [!NOTE]
+> **Windows専用**: このセットアップスクリプトは Windows 環境でのみ動作します。
+> 
+> Linux / macOS ニキは [手動セットアップ](#手動セットアップ) を参照してください。
 
 リポジトリをクローンした後、以下のコマンドを実行するだけで環境構築とビルドが完了します：
 
+### 完全自動セットアップ（推奨）
+
 ```batch
 git clone <repository-url>
-cd TBP
+cd research-tbp
+tools\setup.bat --unattended --with-oneapi
+```
+
+`--unattended` オプションにより、すべての依存関係が自動的にインストールされます。
+`--with-oneapi` オプションによりIntel oneAPI のインストールが有効化されます（インストールに10-30分かかりますよドンマイ）。
+
+### 完全自動セットアップ（gcc代替）
+
+```batch
+tools\setup.bat --unattended --with-oneapi
+```
+
+### 対話モード（何がインストールされるか確認しながらやりたいとき）
+
+```batch
+git clone <repository-url>
+cd research-tbp
 tools\setup.bat
 ```
 
-セットアップスクリプトは以下を自動的に行います：
-- 依存関係のチェック（Git, CMake, Ninja, コンパイラ）
-- vcpkg と Boost のインストール（`external/` ディレクトリに）
-- `BOOST_ROOT` 環境変数の永続的な登録
-- プロジェクトのビルド
+### セットアップオプション
+
+| オプション | 説明 |
+|-----------|------|
+| `--unattended`, `-y` | 非対話モード（すべて自動インストール） |
+| `--with-oneapi` | Intel oneAPI をインストール（推奨、10-30分） |
+| `--skip-python` | Python環境セットアップをスキップ |
+| `--skip-test` | ビルド後のテスト実行をスキップ |
+| `--help`, `-h` | ヘルプを表示 |
+
+### セットアップスクリプトが行うこと
+
+1. 依存関係のチェック（Git, CMake, Ninja, コンパイラ）
+2. 不足しているツールの自動インストール（winget経由）
+3. vcpkg と Boost のインストール（`external/` ディレクトリに）
+4. `BOOST_ROOT` 環境変数の永続的な登録
+5. 最適なコンパイラの自動選択とプロジェクトのビルド
+6. Python依存パッケージのインストール（オプション）
+7. テスト実行によるビルド検証（オプション）
 
 ---
 
@@ -44,8 +83,8 @@ tools\setup.bat
 
 | コンパイラ | 推奨度 | インストール方法 |
 |-----------|-------|-----------------|
-| Intel oneAPI + Ninja | ⭐⭐⭐ 推奨 | [Intel oneAPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html) |
-| MinGW-gcc | ⭐⭐ 代替 | `winget install -e --id mingw.mingw-w64-ucrt-x86_64` |
+| Intel oneAPI + Ninja | 推奨 | [Intel oneAPI](https://www.intel.com/content/www/us/en/developer/tools/oneapi/toolkits.html) |
+| MinGW-gcc | 代替 | `winget install -e --id mingw.mingw-w64-ucrt-x86_64` |
 
 ### オプション
 

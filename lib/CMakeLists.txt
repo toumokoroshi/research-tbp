@@ -11,6 +11,7 @@ add_library(my_lib INTERFACE)
 target_include_directories(my_lib
     INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${eigen_SOURCE_DIR}  # Eigen ヘッダパス
         $<INSTALL_INTERFACE:include>
 )
 
