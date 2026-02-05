@@ -227,34 +227,34 @@ class ZVCPlotter2D:
         x_sun = -self.mu
         x_earth = 1.0 - self.mu
         
-        if self.plane == "xy":
-            # x-y平面: 太陽と地球は y=0 上
-            ax.plot(x_sun, 0, "yo", markersize=15)
-            ax.plot(x_earth, 0, "bo", markersize=8)
-            ax.annotate(
-                "EARTH", (x_earth, 0),
-                textcoords="offset points", xytext=(0, -20),
-                fontsize=12, fontweight="bold", color="darkblue", ha="center",
-            )
-            ax.annotate(
-                "SUN", (x_sun, 0),
-                textcoords="offset points", xytext=(0, -20),
-                fontsize=12, fontweight="bold", color="darkorange", ha="center",
-            )
-        elif self.plane == "xz":
-            # x-z平面: 太陽と地球は z=0 上
-            ax.plot(x_sun, 0, "yo", markersize=15)
-            ax.plot(x_earth, 0, "bo", markersize=8)
-            ax.annotate(
-                "EARTH", (x_earth, 0),
-                textcoords="offset points", xytext=(0, -20),
-                fontsize=12, fontweight="bold", color="darkblue", ha="center",
-            )
-            ax.annotate(
-                "SUN", (x_sun, 0),
-                textcoords="offset points", xytext=(0, -20),
-                fontsize=12, fontweight="bold", color="darkorange", ha="center",
-            )
+        # if self.plane == "xy":
+        #     # x-y平面: 太陽と地球は y=0 上
+        #     ax.plot(x_sun, 0, "yo", markersize=15)
+        #     ax.plot(x_earth, 0, "bo", markersize=8)
+        #     ax.annotate(
+        #         "EARTH", (x_earth, 0),
+        #         textcoords="offset points", xytext=(0, -20),
+        #         fontsize=12, fontweight="bold", color="darkblue", ha="center",
+        #     )
+        #     ax.annotate(
+        #         "SUN", (x_sun, 0),
+        #         textcoords="offset points", xytext=(0, -20),
+        #         fontsize=12, fontweight="bold", color="darkorange", ha="center",
+        #     )
+        # elif self.plane == "xz":
+        #     # x-z平面: 太陽と地球は z=0 上
+        #     ax.plot(x_sun, 0, "yo", markersize=15)
+        #     ax.plot(x_earth, 0, "bo", markersize=8)
+        #     ax.annotate(
+        #         "EARTH", (x_earth, 0),
+        #         textcoords="offset points", xytext=(0, -20),
+        #         fontsize=12, fontweight="bold", color="darkblue", ha="center",
+        #     )
+        #     ax.annotate(
+        #         "SUN", (x_sun, 0),
+        #         textcoords="offset points", xytext=(0, -20),
+        #         fontsize=12, fontweight="bold", color="darkorange", ha="center",
+        #     )
         # yz平面では太陽と地球は表示しない（x軸上にあるため見えない）
 
         # Lagrange points (only in xy plane)
