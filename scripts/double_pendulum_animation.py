@@ -4,89 +4,99 @@ import matplotlib.animation as animation
 from scipy.integrate import odeint
 
 
-# --- 1. 物理モデルの定義 ---
-def derivs(state, t, L1, L2, m1, m2, g):
+# --- 1. 物理モデルの定義 (無次元化) ---
+def double_pendulum_derivs_dimensionless(state, tau, l, mu):
     """
-    二重振り子の運動方程式 (ラグランジュ力学より導出)
-    state: [theta1, omega1, theta2, omega2]
+    無次元化された二重振り子の運動方程式 (Hamiltonian系に由来)
+
+    Args:
+        state: [theta1, omega1, theta2, omega2]
+        tau: 無次元時間
+        l: 長さの比 (L2 / L1)
+        mu: 質量の比 (m2 / m1)
+
+    Returns:
+        状態ベクトルの時間微分
     """
-    theta1, w1, theta2, w2 = state
+    th1, w1, th2, w2 = state
+    delta = th2 - th1
+    cos_delta = np.cos(delta)
+    sin_delta = np.sin(delta)
 
-    delta = theta2 - theta1
-    den1 = (m1 + m2) * L1 - m2 * L1 * np.cos(delta) * np.cos(delta)
-    den2 = (L2 / L1) * den1
+    den1 = (1 + mu) - mu * cos_delta**2
+    den2 = l * den1
 
-    # dw1/dt (角加速度1)
-    dw1 = (
-        m2 * L1 * w1 * w1 * np.sin(delta) * np.cos(delta)
-        + m2 * g * np.sin(theta2) * np.cos(delta)
-        + m2 * L2 * w2 * w2 * np.sin(delta)
-        - (m1 + m2) * g * np.sin(theta1)
-    ) / den1
+    dydt = np.zeros_like(state)
+    dydt[0] = w1
+    dydt[2] = w2
 
-    # dw2/dt (角加速度2)
-    dw2 = (
-        -m2 * L2 * w2 * w2 * np.sin(delta) * np.cos(delta)
-        + (m1 + m2) * g * np.sin(theta1) * np.cos(delta)
-        - (m1 + m2) * L1 * w1 * w1 * np.sin(delta)
-        - (m1 + m2) * g * np.sin(theta2)
-    ) / den2
+    num1 = (
+        mu * w1**2 * sin_delta * cos_delta
+        + mu * np.sin(th2) * cos_delta
+        + mu * l * w2**2 * sin_delta
+        - (1 + mu) * np.sin(th1)
+    )
+    dydt[1] = num1 / den1
 
-    return [w1, dw1, w2, dw2]
+    num2 = -mu * l * w2**2 * sin_delta * cos_delta + (1 + mu) * (
+        np.sin(th1) * cos_delta - w1**2 * sin_delta - np.sin(th2)
+    )
+    dydt[3] = num2 / den2
+
+    return dydt
 
 
-# --- 2. パラメータ設定 ---
-# 物理定数
-L1, L2 = 1.0, 1.0  # ロッドの長さ (m)
-m1, m2 = 1.0, 1.0  # 重りの質量 (kg)
-g = 9.8  # 重力加速度 (m/s^2)
+# --- 2. 無次元パラメータ設定 ---
+l = 1.0  # 長さの比 (L2 / L1)
+mu = 1.0  # 質量の比 (m2 / m1)
 
 # 時間設定
-dt = 0.04  # 時間刻み (秒) -> アニメーションのフレームレートに影響
+dt = 0.04  # 無次元時間刻み -> アニメーションのフレームレートに影響
 t_max = 20.0  # シミュレーション終了時間
 t = np.arange(0, t_max, dt)
 
 # --- 3. 初期条件の設定 (2つのケース) ---
 # ケース1: 基準となる初期状態
-# [theta1, omega1, theta2, omega2] (角度はラジアン, 120度からスタート)
+# [theta1, omega1, theta2, omega2] (角度はラジアン)
 th1 = 180
 th2 = 90
 state1_init = np.radians([th1, 0, th2, 0])
 
 # ケース2: ケース1から「わずかに」ずらした状態
-# theta1を 0.1度 だけ変える
+# theta1を 0.001度 だけ変える
 state2_init = np.radians([th1 + 0.001, 0, th2, 0])
 
 # --- 4. 運動方程式を解く ---
 print("シミュレーション計算中...")
-# args=(L1, L2, m1, m2, g) で定数を渡す
-y1 = odeint(derivs, state1_init, t, args=(L1, L2, m1, m2, g))
-y2 = odeint(derivs, state2_init, t, args=(L1, L2, m1, m2, g))
+y1 = odeint(double_pendulum_derivs_dimensionless, state1_init, t, args=(l, mu))
+y2 = odeint(double_pendulum_derivs_dimensionless, state2_init, t, args=(l, mu))
 
 
 # --- 5. 座標変換 (極座標 -> 直交座標) ---
-def get_coords(y, L1, L2):
+# 無次元化: L1 = 1 (基準長), L2 = l * L1 = l
+def get_coords(y, l):
     theta1 = y[:, 0]
     theta2 = y[:, 2]
 
-    x1 = L1 * np.sin(theta1)
-    y1 = -L1 * np.cos(theta1)
+    x1 = np.sin(theta1)
+    y1 = -np.cos(theta1)
 
-    x2 = x1 + L2 * np.sin(theta2)
-    y2 = y1 - L2 * np.cos(theta2)
+    x2 = x1 + l * np.sin(theta2)
+    y2 = y1 - l * np.cos(theta2)
     return x1, y1, x2, y2
 
 
-x1_a, y1_a, x2_a, y2_a = get_coords(y1, L1, L2)
-x1_b, y1_b, x2_b, y2_b = get_coords(y2, L1, L2)
+x1_a, y1_a, x2_a, y2_a = get_coords(y1, l)
+x1_b, y1_b, x2_b, y2_b = get_coords(y2, l)
 
 # --- 6. アニメーション設定 ---
 fig, ax = plt.subplots(figsize=(8, 8))
-ax.set_xlim(-(L1 + L2 + 0.2), (L1 + L2 + 0.2))
-ax.set_ylim(-(L1 + L2 + 0.2), (L1 + L2 + 0.2))
+lim = 1 + l + 0.2
+ax.set_xlim(-lim, lim)
+ax.set_ylim(-lim, lim)
 ax.set_aspect("equal")
 ax.grid()
-ax.set_title("Double Pendulum Simulation (Chaos)")
+ax.set_title(f"Double Pendulum (Dimensionless: l={l}, μ={mu})")
 
 # 描画オブジェクトの初期化
 # 振り子1 (Blue)

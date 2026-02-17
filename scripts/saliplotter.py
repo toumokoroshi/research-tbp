@@ -69,74 +69,40 @@ class SALIContourApp:
         self.create_widgets()
 
     def create_widgets(self):
-        # 制御パネル
-        control_frame = ttk.Frame(self.root, padding="10")
-        control_frame.pack(side=tk.LEFT, fill=tk.Y)
+        # --- スクロール可能な制御パネル ---
+        outer_frame = ttk.Frame(self.root)
+        outer_frame.pack(side=tk.LEFT, fill=tk.Y)
 
-        # ... (ファイル選択、ヘッダ行数、区切り文字、自動検出 の部分は変更なし) ...
-
-        # ファイル選択
-        ttk.Label(control_frame, text="ファイル選択:").pack(anchor=tk.W, pady=(0, 5))
-        file_frame = ttk.Frame(control_frame)
-        file_frame.pack(fill=tk.X, pady=(0, 10))
-
-        self.file_path = tk.StringVar()
-        ttk.Entry(file_frame, textvariable=self.file_path, width=30).pack(
-            side=tk.LEFT, fill=tk.X, expand=True
+        self._ctrl_canvas = tk.Canvas(outer_frame, width=280, highlightthickness=0)
+        ctrl_scrollbar = ttk.Scrollbar(
+            outer_frame, orient=tk.VERTICAL, command=self._ctrl_canvas.yview
         )
-        ttk.Button(file_frame, text="参照", command=self.browse_file).pack(
-            side=tk.LEFT, padx=(5, 0)
+        control_frame = ttk.Frame(self._ctrl_canvas, padding="10")
+
+        control_frame.bind(
+            "<Configure>",
+            lambda e: self._ctrl_canvas.configure(
+                scrollregion=self._ctrl_canvas.bbox("all")
+            ),
         )
+        self._ctrl_canvas.create_window((0, 0), window=control_frame, anchor=tk.NW)
+        self._ctrl_canvas.configure(yscrollcommand=ctrl_scrollbar.set)
 
-        # ヘッダ行数
-        ttk.Label(control_frame, text="ヘッダ行数:").pack(anchor=tk.W, pady=(0, 5))
-        self.header_lines = tk.IntVar(value=0)
-        ttk.Spinbox(
-            control_frame, from_=0, to=100, textvariable=self.header_lines, width=10
-        ).pack(anchor=tk.W, pady=(0, 10))
+        ctrl_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self._ctrl_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # 区切り文字
-        ttk.Label(control_frame, text="区切り文字:").pack(anchor=tk.W, pady=(0, 5))
-        self.delimiter = tk.StringVar(value="スペース")
-        delimiter_combo = ttk.Combobox(
-            control_frame,
-            textvariable=self.delimiter,
-            values=["スペース", "タブ", "コンマ", "セミコロン"],
-            width=15,
-        )
-        delimiter_combo.pack(anchor=tk.W, pady=(0, 10))
+        # マウスホイールでスクロール（制御パネル上のみ）
+        def _on_mousewheel(event):
+            self._ctrl_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-        # 自動ヘッダ検出
-        self.auto_detect = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            control_frame, text="ヘッダを自動検出", variable=self.auto_detect
-        ).pack(anchor=tk.W, pady=(0, 10))
+        def _bind_mousewheel(event):
+            self._ctrl_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
-        hill_frame = ttk.LabelFrame(control_frame, text="??Hill???????")
-        hill_frame.pack(fill=tk.X, pady=(0, 10))
-        hill_frame.columnconfigure(1, weight=1)
+        def _unbind_mousewheel(event):
+            self._ctrl_canvas.unbind_all("<MouseWheel>")
 
-        self.show_hill = tk.BooleanVar(value=False)
-        ttk.Checkbutton(hill_frame, text="Hill????", variable=self.show_hill).grid(
-            row=0, column=0, columnspan=2, sticky=tk.W, pady=2
-        )
-
-        ttk.Label(hill_frame, text="?? (AU)").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.hill_radius = tk.DoubleVar(value=0.01)
-        ttk.Entry(hill_frame, textvariable=self.hill_radius, width=10).grid(
-            row=1, column=1, sticky=tk.EW, pady=2
-        )
-
-        ttk.Label(hill_frame, text="??X (AU)").grid(
-            row=2, column=0, sticky=tk.W, pady=2
-        )
-
-    def create_widgets(self):
-        # 制御パネル
-        control_frame = ttk.Frame(self.root, padding="10")
-        control_frame.pack(side=tk.LEFT, fill=tk.Y)
-
-        # ... (ファイル選択、ヘッダ行数、区切り文字、自動検出 の部分は変更なし) ...
+        self._ctrl_canvas.bind("<Enter>", _bind_mousewheel)
+        self._ctrl_canvas.bind("<Leave>", _unbind_mousewheel)
 
         # ファイル選択
         ttk.Label(control_frame, text="ファイル選択:").pack(anchor=tk.W, pady=(0, 5))
@@ -236,6 +202,12 @@ class SALIContourApp:
             plot_mode_frame, text="SALI", variable=self.plot_mode, value="SALI"
         ).pack(anchor=tk.W, pady=2)
         ttk.Radiobutton(
+            plot_mode_frame, text="SALI (時間平均)", variable=self.plot_mode, value="SALIAvg"
+        ).pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(
+            plot_mode_frame, text="SALI (後半最大値)", variable=self.plot_mode, value="SALIMax"
+        ).pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(
             plot_mode_frame,
             text="閾値到達時間 (lower_limit_reach_time)",
             variable=self.plot_mode,
@@ -308,6 +280,81 @@ class SALIContourApp:
         self.z_count_label.pack(side=tk.LEFT)
         # --- 変更ここまで ---
 
+        # --- 描画領域スケール設定 ---
+        axis_scale_frame = ttk.LabelFrame(control_frame, text="描画領域スケール設定")
+        axis_scale_frame.pack(fill=tk.X, pady=(0, 10))
+
+        self.axis_scale_mode = tk.StringVar(value="Auto")
+        ttk.Radiobutton(
+            axis_scale_frame,
+            text="自動 (matplotlib)",
+            variable=self.axis_scale_mode,
+            value="Auto",
+            command=self._toggle_axis_scale_entries,
+        ).pack(anchor=tk.W, pady=2)
+        ttk.Radiobutton(
+            axis_scale_frame,
+            text="データ範囲に合わせる",
+            variable=self.axis_scale_mode,
+            value="DataFit",
+            command=self._toggle_axis_scale_entries,
+        ).pack(anchor=tk.W, pady=2)
+
+        # マージン設定 (DataFit用)
+        margin_frame = ttk.Frame(axis_scale_frame)
+        margin_frame.pack(fill=tk.X, padx=(20, 0), pady=2)
+        ttk.Label(margin_frame, text="マージン (%)").pack(side=tk.LEFT)
+        self.axis_margin_pct = tk.DoubleVar(value=5.0)
+        self.axis_margin_entry = ttk.Entry(
+            margin_frame, textvariable=self.axis_margin_pct, width=6
+        )
+        self.axis_margin_entry.pack(side=tk.LEFT, padx=5)
+
+        ttk.Radiobutton(
+            axis_scale_frame,
+            text="手動設定",
+            variable=self.axis_scale_mode,
+            value="Manual",
+            command=self._toggle_axis_scale_entries,
+        ).pack(anchor=tk.W, pady=2)
+
+        # 手動設定フレーム
+        manual_frame = ttk.Frame(axis_scale_frame)
+        manual_frame.pack(fill=tk.X, padx=(20, 0), pady=2)
+        manual_frame.columnconfigure(1, weight=1)
+        manual_frame.columnconfigure(3, weight=1)
+
+        ttk.Label(manual_frame, text="X min").grid(row=0, column=0, sticky=tk.W, pady=1)
+        self.axis_xmin = tk.DoubleVar(value=-1.5)
+        self.axis_xmin_entry = ttk.Entry(
+            manual_frame, textvariable=self.axis_xmin, width=8
+        )
+        self.axis_xmin_entry.grid(row=0, column=1, sticky=tk.EW, padx=2)
+
+        ttk.Label(manual_frame, text="X max").grid(row=0, column=2, sticky=tk.W, pady=1, padx=(5, 0))
+        self.axis_xmax = tk.DoubleVar(value=1.5)
+        self.axis_xmax_entry = ttk.Entry(
+            manual_frame, textvariable=self.axis_xmax, width=8
+        )
+        self.axis_xmax_entry.grid(row=0, column=3, sticky=tk.EW, padx=2)
+
+        ttk.Label(manual_frame, text="Y min").grid(row=1, column=0, sticky=tk.W, pady=1)
+        self.axis_ymin = tk.DoubleVar(value=-1.5)
+        self.axis_ymin_entry = ttk.Entry(
+            manual_frame, textvariable=self.axis_ymin, width=8
+        )
+        self.axis_ymin_entry.grid(row=1, column=1, sticky=tk.EW, padx=2)
+
+        ttk.Label(manual_frame, text="Y max").grid(row=1, column=2, sticky=tk.W, pady=1, padx=(5, 0))
+        self.axis_ymax = tk.DoubleVar(value=1.5)
+        self.axis_ymax_entry = ttk.Entry(
+            manual_frame, textvariable=self.axis_ymax, width=8
+        )
+        self.axis_ymax_entry.grid(row=1, column=3, sticky=tk.EW, padx=2)
+
+        # 初期状態ではマージン・手動入力を無効化
+        self._toggle_axis_scale_entries()
+
         # 実行ボタン
         ttk.Button(control_frame, text="データ読み込み", command=self.load_data).pack(
             fill=tk.X, pady=(10, 5)
@@ -338,6 +385,20 @@ class SALIContourApp:
 
         # マウス移動イベントを接続
         self.canvas.mpl_connect("motion_notify_event", self.on_mouse_move)
+
+    def _toggle_axis_scale_entries(self):
+        """描画領域スケールモードに応じて入力欄の有効/無効を切り替える"""
+        mode = self.axis_scale_mode.get()
+        margin_state = "normal" if mode == "DataFit" else "disabled"
+        manual_state = "normal" if mode == "Manual" else "disabled"
+        self.axis_margin_entry.config(state=margin_state)
+        for entry in (
+            self.axis_xmin_entry,
+            self.axis_xmax_entry,
+            self.axis_ymin_entry,
+            self.axis_ymax_entry,
+        ):
+            entry.config(state=manual_state)
 
     def on_mouse_move(self, event):
         """マウス移動時に座標を表示"""
@@ -521,7 +582,38 @@ class SALIContourApp:
 
             num_cols = temp_df.shape[1]
 
-            if num_cols == 11:
+            if num_cols == 13:
+                col_names = [
+                    "meshnum",
+                    "SALI",
+                    "x",
+                    "y",
+                    "z",
+                    "vx",
+                    "vy",
+                    "vz",
+                    "collision",
+                    "escape",
+                    "lower_limit_reach_time",
+                    "sali_avg",
+                    "sali_max",
+                ]
+            elif num_cols == 12:
+                col_names = [
+                    "meshnum",
+                    "SALI",
+                    "x",
+                    "y",
+                    "z",
+                    "vx",
+                    "vy",
+                    "vz",
+                    "collision",
+                    "escape",
+                    "lower_limit_reach_time",
+                    "sali_avg",
+                ]
+            elif num_cols == 11:
                 col_names = [
                     "meshnum",
                     "SALI",
@@ -896,6 +988,83 @@ class SALIContourApp:
 
                 title_str = f"SALI Threshold Map (Z = {z_target:.6f} AU, Threshold = {threshold:.2e})"
 
+            elif plot_mode in ("SALIAvg", "SALIMax"):
+                # --- SALI時間平均 / 後半最大値モード ---
+                if plot_mode == "SALIMax":
+                    col_key = "sali_max"
+                    col_label_base = "SALI_max"
+                    title_mode = "Max (Last 1/4)"
+                    required_cols = 13
+                else:
+                    col_key = "sali_avg"
+                    col_label_base = "SALI_avg"
+                    title_mode = "Time-Averaged"
+                    required_cols = 12
+
+                if col_key not in sliced_data.columns:
+                    messagebox.showerror(
+                        "エラー",
+                        f"{col_key}列が見つかりません。\n{required_cols}列フォーマットのデータが必要です。",
+                    )
+                    return
+
+                invalid_sali_mask = sliced_data[col_key] == -1
+                valid_sali_mask = ~invalid_sali_mask
+
+                valid_data = sliced_data[valid_sali_mask]
+                invalid_data = sliced_data[invalid_sali_mask]
+
+                scale_mode = self.scale_mode.get()
+
+                colors = ["#ffffff", "#ff0000"]
+                cmap = LinearSegmentedColormap.from_list(
+                    "sali_complementary", colors, N=256
+                )
+
+                plot_values = valid_data[col_key].values
+                vmin = 0
+                vmax = np.sqrt(2)
+
+                if scale_mode == "Log10":
+                    eps = 1e-16
+                    plot_values = np.log10(np.maximum(plot_values, eps))
+                    vmin = np.log10(eps)
+                    vmax = np.log10(np.sqrt(2))
+                    label_str = f"Log10({col_label_base})"
+                else:
+                    label_str = col_label_base
+
+                if len(invalid_data) > 0:
+                    self.ax.scatter(
+                        invalid_data["x"],
+                        invalid_data["y"],
+                        c="blue",
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=1,
+                        label=f"Undefined ({col_label_base}=-1)",
+                    )
+
+                if len(valid_data) > 0:
+                    scatter = self.ax.scatter(
+                        valid_data["x"],
+                        valid_data["y"],
+                        c=plot_values,
+                        cmap=cmap,
+                        vmin=vmin,
+                        vmax=vmax,
+                        s=20,
+                        marker="s",
+                        edgecolors="none",
+                        zorder=2,
+                    )
+
+                    self.colorbar = self.figure.colorbar(scatter, ax=self.ax)
+                    self.colorbar.set_label(label_str, fontsize=12)
+
+                title_str = f"SALI ({title_mode}) Color Contour (Z = {z_target:.6f} AU)"
+
             else:
                 # --- SALIモード（デフォルト）---
                 # SALI = -1 (計算不可) を分離
@@ -996,6 +1165,43 @@ class SALIContourApp:
                         label="Escape",
                     )
                     legend_handles.append(esc_scatter)
+
+            # --- 描画領域スケール適用 ---
+            axis_mode = self.axis_scale_mode.get()
+            if axis_mode == "DataFit":
+                try:
+                    margin_pct = float(self.axis_margin_pct.get()) / 100.0
+                except (tk.TclError, ValueError):
+                    margin_pct = 0.05
+                x_data_min = float(sliced_data["x"].min())
+                x_data_max = float(sliced_data["x"].max())
+                y_data_min = float(sliced_data["y"].min())
+                y_data_max = float(sliced_data["y"].max())
+                x_span = max(x_data_max - x_data_min, 1e-6)
+                y_span = max(y_data_max - y_data_min, 1e-6)
+                self.ax.set_xlim(
+                    x_data_min - x_span * margin_pct,
+                    x_data_max + x_span * margin_pct,
+                )
+                self.ax.set_ylim(
+                    y_data_min - y_span * margin_pct,
+                    y_data_max + y_span * margin_pct,
+                )
+            elif axis_mode == "Manual":
+                try:
+                    self.ax.set_xlim(
+                        float(self.axis_xmin.get()),
+                        float(self.axis_xmax.get()),
+                    )
+                    self.ax.set_ylim(
+                        float(self.axis_ymin.get()),
+                        float(self.axis_ymax.get()),
+                    )
+                except (tk.TclError, ValueError):
+                    messagebox.showwarning(
+                        "警告", "描画領域の手動設定値が不正です。自動スケールを使用します。"
+                    )
+            # axis_mode == "Auto" の場合は matplotlib に任せる
 
             # --- 装飾 ---
             self.ax.set_xlabel("X (AU)", fontsize=12)

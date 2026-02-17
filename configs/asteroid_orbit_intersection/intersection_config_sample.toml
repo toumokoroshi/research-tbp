@@ -1,0 +1,46 @@
+# AsteroidOrbitIntersection サンプル設定
+[trajectory]
+orbit_data_folder = "path/to/orbit_data_folder"
+orbit_file_pattern = "*.txt"
+phase_step = 1
+
+[initial_conditions]
+source = "trajectory"
+trajectory_step = 10
+
+[mesh]
+type = "concentric"
+r_min = 0.001
+r_max = 0.03
+n_radial = 10
+n_angular = 36
+grid_size = 10
+
+[jacobi]
+target_jacobi = 3.0
+velocity_angle_min = -30.0
+velocity_angle_max = 30.0
+velocity_angle_step = 10.0
+
+[poincare_section]
+section_plane = "y"
+section_value = 0.0
+crossing_direction = "both"
+
+[newton_raphson]
+max_iterations = 50
+tolerance = 1e-12
+max_integration_time = 100.0
+dt = 0.0001
+
+[intersection]
+threshold_distance = 0.001
+verification_time = 500.0
+
+[integrator]
+type = "symplectic6"
+
+[output]
+tag = ""
+enable_phase2 = false
+enable_phase3 = true

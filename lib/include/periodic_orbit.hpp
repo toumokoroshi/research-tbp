@@ -1,7 +1,22 @@
 /**
  * @file periodic_orbit.hpp
  * @brief 周期軌道の検出・安定性解析・不変多様体計算のためのライブラリ
- * @details CR3BP（円制限三体問題）における周期軌道の解析ツール
+ * @details CR3BP（円制限三体問題）における周期軌道の解析ツール。
+ *
+ * @par 理論的背景
+ * 周期軌道はポアンカレ写像 \f$ P: \Sigma \to \Sigma \f$ の不動点として
+ * 定義される。すなわち、断面 \f$ \Sigma \f$ を出発し、流れに沿って
+ * 再び \f$ \Sigma \f$ に戻ったときに同一状態となる点が周期軌道の初期条件。
+ * Newton-Raphson法で \f$ P(\mathbf{x}) - \mathbf{x} = 0 \f$ を解くことで精密化する。
+ *
+ * @par 参考文献
+ * - [Koon2011] Koon, W.S. et al. "Dynamical Systems, the Three-Body Problem
+ *   and Space Mission Design" (Marsden Books, 2011) - Ch.6: 周期軌道と不変多様体
+ * - [Parker2006] Parker, J.S., Lo, M.W. "Practical Methods for Libration Point
+ *   Orbit Analysis" - Ch.4: 微分修正法
+ * - [Meyer2009] Meyer, K.R. et al. "Introduction to Hamiltonian Dynamical
+ *   Systems and the N-Body Problem" (Springer, 2009)
+ *
  * @date 2025-12-24
  */
 
@@ -29,18 +44,31 @@ using namespace my_type;
 
 /**
  * @brief 周期軌道の情報を保持する構造体
+ *
+ * @par モノドロミー行列
+ * モノドロミー行列 \f$ M = \Phi(T, 0) \f$ は、周期軌道の初期点からの
+ * 微小摂動が1周期後にどう変化するかを記述する状態遷移行列である:
+ * \f[ \delta\mathbf{x}(T) = M \cdot \delta\mathbf{x}(0) \f]
+ *
+ * @par ハミルトン系の制約
+ * CR3BPはハミルトン系であるため、\f$ M \f$ はシンプレクティック行列となり、
+ * \f$ \det(M) = 1 \f$ かつ固有値は必ず逆数ペア \f$ (\lambda, 1/\lambda) \f$ で現れる。
+ * 周期軌道自体の方向には常に \f$ \lambda = 1 \f$ の固有値のペアが存在する。
+ *
+ * @see [Meyer2009] シンプレクティック構造と固有値の制約
+ * @see [Koon2011] Ch.6: モノドロミー行列と安定性
  */
 template <typename ScalarType>
 struct PeriodicOrbit {
-  State<ScalarType> initial_state;   ///< 初期状態 (x, y, z, vx, vy, vz)
-  ScalarType period = 0.0;           ///< 周期 (無次元時間)
-  ScalarType jacobi_constant = 0.0;  ///< ヤコビ積分の値
+  State<ScalarType> initial_state;   ///< 初期状態 \f$ (x, y, z, \dot{x}, \dot{y}, \dot{z}) \f$ [無次元、回転座標系]
+  ScalarType period = 0.0;           ///< 周期 \f$ T \f$ [無次元時間]
+  ScalarType jacobi_constant = 0.0;  ///< ヤコビ積分の値 \f$ C_J \f$
 
   // 安定性解析結果
   bool stability_computed = false;                    ///< 安定性解析が実行されたか
-  std::vector<std::complex<ScalarType>> eigenvalues;  ///< モノドロミー行列の固有値
-  bool is_stable = false;                             ///< 安定か不安定か (SPO/UPO)
-  ScalarType stability_index = 0.0;                   ///< 安定性指数 (最大固有値の絶対値)
+  std::vector<std::complex<ScalarType>> eigenvalues;  ///< モノドロミー行列の固有値 \f$ \lambda_i \f$
+  bool is_stable = false;                             ///< 全 \f$ |\lambda_i| \leq 1 \f$ なら安定 (SPO)
+  ScalarType stability_index = 0.0;                   ///< 安定性指数 \f$ \max_i |\lambda_i| \f$
 
   // モノドロミー行列 (6x6)
   std::array<std::array<ScalarType, 6>, 6> monodromy_matrix;
@@ -66,15 +94,30 @@ struct NewtonConvergenceInfo {
 
 /**
  * @brief 不変多様体の設定を保持する構造体
+ *
+ * @par 理論的背景
+ * 不安定周期軌道 (UPO) の安定/不安定多様体は、モノドロミー行列の
+ * \f$ |\lambda| < 1 \f$ / \f$ |\lambda| > 1 \f$ の固有ベクトル方向に沿って存在する。
+ *
+ * @par 安定多様体定理
+ * 周期軌道 \f$ \gamma \f$ の各点 \f$ x_0 \f$ において、安定多様体 \f$ W^s(\gamma) \f$ は
+ * 安定固有空間 \f$ E^s \f$ に接する滑らかな曲面である:
+ * \f[ T_{x_0} W^s(\gamma) = E^s(x_0) \f]
+ * したがって、十分小さい \f$ \varepsilon \f$ に対して
+ * \f$ x_0 + \varepsilon \mathbf{v}_s \f$ は近似的に \f$ W^s \f$ 上にあり、
+ * 線形近似の誤差は \f$ O(\varepsilon^2) \f$ である。
+ *
+ * @see [Koon2011] Ch.6: 不変多様体の計算手法
+ * @see [Parker2006] 数値的不変多様体計算の実装
  */
 template <typename ScalarType>
 struct ManifoldConfig {
-  ScalarType epsilon = 1e-6;          ///< 固有ベクトル方向への初期変位量
-  ScalarType forward_time = 100.0;    ///< 正方向積分時間
-  ScalarType backward_time = -100.0;  ///< 負方向積分時間
-  int num_initial_points = 20;        ///< 各多様体の初期点数
-  bool compute_stable = true;         ///< 安定多様体を計算するか
-  bool compute_unstable = true;       ///< 不安定多様体を計算するか
+  ScalarType epsilon = 1e-6;          ///< 固有ベクトル方向への初期変位量 \f$ \varepsilon \f$
+  ScalarType forward_time = 100.0;    ///< 正方向積分時間 [無次元時間]
+  ScalarType backward_time = -100.0;  ///< 負方向積分時間 [無次元時間]
+  int num_initial_points = 20;        ///< 周期軌道上の初期点数
+  bool compute_stable = true;         ///< 安定多様体 \f$ W^s \f$ を計算するか
+  bool compute_unstable = true;       ///< 不安定多様体 \f$ W^u \f$ を計算するか
   std::string integrator_type = "rk4";     ///< "rk4" or "rk45"
   ScalarType abs_tolerance = 1e-12;        ///< RK45用 abs tol
   ScalarType rel_tolerance = 1e-12;        ///< RK45用 rel tol

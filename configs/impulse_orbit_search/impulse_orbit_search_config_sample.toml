@@ -1,0 +1,58 @@
+# ImpulseOrbitSearch 設定ファイル サンプル
+# 小惑星軌道上の各点からインパルスを与え、安定軌道を探索する
+
+[data]
+# 軌道データディレクトリ（このディレクトリ内のマッチするファイルをすべて処理）
+orbit_data_dir = "C:/path/to/orbit/data/directory"
+
+# ファイル名の正規表現パターン
+orbit_file_pattern = "OBT_\\d+_Earth\\.txt"
+
+# 軌道データの間引きステップ（1 = 全て使用）
+phase_step = 1
+
+[target]
+# 目標ヤコビ積分（必須）
+# 注意: 元の軌道のヤコビ積分より低い値を設定すること
+jacobi_integral = 3.000
+
+[velocity_sweep]
+# 適応的サンプリングを使用するか
+enable_adaptive_sampling = true
+
+# Phase 1: 粗いサンプリング
+in_plane_divisions_coarse = 10 # 軌道面内分割数
+out_plane_divisions_coarse = 0 # 軌道面外分割数
+
+# 走査角度範囲（度単位）
+# in_plane: 軌道面内での元の速度からの角度（0=同方向, ±180=逆方向）
+# out_plane: 軌道面外への角度（0=軌道面内, ±90=法線方向）
+in_plane_min_deg = -30.0
+in_plane_max_deg = 30.0
+out_plane_min_deg = 0.0
+out_plane_max_deg = 0.0
+
+# Phase 2: 細分化
+refine_high_sali = false
+sali_refine_threshold = 0.1
+refine_no_escape = true
+refine_no_collision = true
+in_plane_divisions_fine = 6
+out_plane_divisions_fine = 6
+
+# Δvフィルタ
+enable_dv_filter = false
+dv_max_threshold = 0.1
+
+[simulation]
+calc_duration_nd = 10.0
+calc_timestep_nd = 0.00001
+escape_dist = 0.03
+collision_dist = 1e-6
+
+[chaos]
+index_type = "SALI"
+
+[output]
+output_stable_only = false
+output_trajectory = false

@@ -1,7 +1,23 @@
 /**
  * @file periodic_orbit_impl.hpp
  * @brief 周期軌道解析関数の実装
- * @details Newton-Raphson法、ポアンカレ写像評価などの実装
+ * @details Newton-Raphson法、ポアンカレ写像評価などの実装。
+ *
+ * @par 理論的背景
+ * 周期軌道の探索は、ポアンカレ写像 \f$ P \f$ の不動点問題
+ * \f$ P(\mathbf{x}) - \mathbf{x} = \mathbf{0} \f$ として定式化される。
+ * 朱期軌道の対称性を利用することで、変数数を削減し、
+ * Newton法の収束性と堅牢性を向上させることができる。
+ *
+ * @par 参考文献
+ * - [Koon2011] Koon, W.S. et al. "Dynamical Systems, the Three-Body Problem
+ *   and Space Mission Design" (Marsden Books, 2011) - Ch.6: 微分修正法
+ * - [Parker2006] Parker, J.S., Lo, M.W. "Practical Methods for Libration Point
+ *   Orbit Analysis" - Ch.4: 周期軌道のNewton法
+ * - [Howell1984] Howell, K.C. "Three-Dimensional, Periodic, 'Halo' Orbits"
+ *   (Celestial Mechanics, 32, 53-71, 1984) DOI:10.1007/BF01358403
+ * - [Seydel2010] Seydel, R. "Practical Bifurcation and Stability Analysis"
+ *   (Springer, 3rd ed., 2010) - Ch.4: 反復法と収束性
  */
 
 #ifndef PERIODIC_ORBIT_IMPL_HPP
@@ -277,6 +293,24 @@ State<ScalarType> ApplyPoincareMapImpl(const State<ScalarType>& state, ScalarTyp
 // ---------------------------------------------------------------------------
 // Newton-Raphson法による周期軌道の精密化（実装）
 // ---------------------------------------------------------------------------
+/**
+ * @brief ポアンカレ写像の不動点として周期軌道を精密化（一般5変数版）
+ *
+ * @par アルゴリズム
+ * ポアンカレ断面 \f$ \Sigma \f$ 上の5変数（断面変数を除く6成分）に対して
+ * Newton法を適用する。残差関数は \f$ F(\mathbf{x}) = P(\mathbf{x}) - \mathbf{x} \f$
+ * であり、修正方程式は:
+ * \f[ (J_P - I) \delta\mathbf{x} = -F(\mathbf{x}) \f]
+ * ここで \f$ J_P \f$ はポアンカレ写像のヤコビ行列（数値有限差分で計算）。
+ *
+ * @par 堅牢化
+ * - 修正量のクリッピング（大きすぎる修正の抑制）
+ * - Armijo条件に基づくLine Search
+ * - 発散検出とバックトラッキング
+ *
+ * @see [Parker2006] Ch.4: Poincaré写像と微分修正法
+ * @see [Seydel2010] Ch.4: Newton法の収束性と安定化技法
+ */
 template <typename ScalarType>
 PeriodicOrbit<ScalarType> RefinePeriodicOrbitImpl(
     const State<ScalarType>& initial_guess, ScalarType mu, int section_index,
@@ -725,8 +759,24 @@ std::optional<std::pair<State<ScalarType>, ScalarType>> IntegrateToHalfPeriodCro
 
 /**
  * @brief 対称性を利用した周期軌道精密化（Lyapunov軌道向け）
- * @details 2変数Newton法 (x₀, vy₀) を使用。半周期でy=0交差時に|vx|を最小化。
- *          Lyapunov軌道の鏡映対称性を利用した堅牢な収束法。
+ *
+ * @par 理論的背景
+ * Lyapunov軌道はxy平面内の周期軌道であり、鏡映対称性を持つ:
+ * \f[ (x, y, \dot{x}, \dot{y}) \to (x, -y, -\dot{x}, \dot{y}) \f]
+ * この対称性から、\f$ y=0 \f$ 断面で \f$ \dot{x}=0 \f$ となる条件が導かれる。
+ * したがって、初期条件 \f$ (x_0, 0, 0, 0, \dot{y}_0, 0) \f$ から
+ * 半周期積分し、\f$ y=0 \f$ 交差時に \f$ |\dot{x}| \to 0 \f$ となるよう
+ * \f$ (x_0, \dot{y}_0) \f$ の2変数Newton法で解く。
+ *
+ * @par 利点
+ * - 変数数が5→ 2に削減され、収束が速い
+ * - 対称性から全周期 = 2 × 半周期と計算できる
+ * - ポアンカレ写像の評価が半分で済む
+ *
+ * @see [Howell1984] Howell, K.C. "Three-Dimensional, Periodic, 'Halo' Orbits"
+ *   - 対称性を利用した微分修正法の原著
+ * @see [Koon2011] Ch.6: 対称Lyapunov軌道の計算
+ *
  * @param initial_guess 初期推定状態 (y=0, z=0, vx=0, vz=0 を想定)
  * @param mu 質量パラメータ
  * @param max_iterations 最大反復回数
@@ -892,11 +942,24 @@ PeriodicOrbit<ScalarType> RefinePeriodicOrbitSymmetric(
 // ---------------------------------------------------------------------------
 /**
  * @brief Halo軌道の精密化（3変数Newton法）
- * @details Halo軌道の対称性を利用: y=0, vx=0で開始し、半周期後にy=0でvx=0, vz=0となる
- *          変数: (x₀, z₀, vy₀)
- *          目標: vx(T/2) = 0, vz(T/2) = 0
- *          注意: 3変数・2条件のため、1自由度残る。継続法でz振幅をパラメータとする場合は
- *                z0の変化量を制限する「進行方向拘束」を追加。
+ *
+ * @par 理論的背景
+ * Halo軌道は3次元周期軌道であり、以下の対称性を持つ:
+ * \f[ (x, y, z, \dot{x}, \dot{y}, \dot{z}) \to (x, -y, z, -\dot{x}, \dot{y}, -\dot{z}) \f]
+ * この対称性から、\f$ y=0 \f$ 断面で \f$ \dot{x}=0, \dot{z}=0 \f$ となる。
+ * 初期条件 \f$ (x_0, 0, z_0, 0, \dot{y}_0, 0) \f$ から半周期積分し、
+ * \f$ y=0 \f$ 交差時に \f$ \dot{x}(T/2) = 0, \dot{z}(T/2) = 0 \f$ を満たすよう
+ * \f$ (x_0, z_0, \dot{y}_0) \f$ の3変数Newton法で解く。
+ *
+ * @par 劣決定系の処理
+ * 3変数・2条件のため1自由度が残る。この実装では、\f$ (x_0, \dot{y}_0) \f$ を
+ * 主変数として解き、\f$ z_0 \f$ は補助的に小さく調整する。
+ * 継続法では\f$ z \f$振幅が自然パラメータとして変化する。
+ *
+ * @see [Howell1984] Howell, K.C. "Three-Dimensional, Periodic, 'Halo' Orbits"
+ *   DOI:10.1007/BF01358403 - Halo軌道の対称性と微分修正法
+ * @see [Thurman1996] Thurman, R., Worfolk, P.A. "The Geometry of Halo Orbits
+ *   in the CR3BP" (Univ. Minnesota, 1996) - Halo軌道の幾何学的構造
  * @param initial_guess 初期推定状態 (y=0, vx=0, vz=0 を想定、z≠0)
  * @param mu 質量パラメータ
  * @param max_iterations 最大反復回数
