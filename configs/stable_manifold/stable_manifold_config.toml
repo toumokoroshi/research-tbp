@@ -1,0 +1,50 @@
+# L2 Halo軌道（North）の安定多様体計算設定
+# orbit_type = "halo" でHalo軌道用のNewton法を使用
+
+[orbit_input]
+input_mode = "direct"
+orbit_data_file = ""
+orbit_type = "halo"  # "lyapunov" or "halo"
+
+# L2 Halo North軌道 (data/halo_continuation/l2_halo_north.csv #100付近)
+# z ≠ 0 の3次元軌道
+initial_x = 1.011228557599029
+initial_y = 0.0
+initial_z = 0.0003882425458945927
+initial_vx = 0.0
+initial_vy = -0.008936713473141395
+initial_vz = 0.0
+orbit_period = 3.102378488725016
+
+[newton_raphson]
+max_iterations = 50
+tolerance = 1e-10
+
+[poincare_section]
+section_var = "y"
+section_value = 0.0
+
+[manifold]
+epsilon = 1e-6          # 固有ベクトル方向への初期変位量
+backward_time = 10.0    # 安定多様体：逆時間積分の長さ
+forward_time = 10.0     # 不安定多様体：正時間積分の長さ
+num_initial_points = 20  # 周期軌道上の初期点数
+compute_stable = true    # 安定多様体を計算
+compute_unstable = true  # 不安定多様体を計算
+
+[integrator]
+type = "rk45"
+abs_tolerance = 1e-12
+rel_tolerance = 1e-12
+timestep = 0.01
+max_integration_time = 50.0
+
+[system]
+# Sun-Earth系 質量比
+mu = 3.003480593e-06
+
+[output]
+output_dir = "data/stable_manifold"
+tag = "L2_halo_north"
+save_trajectory = true
+output_velocity_map = true

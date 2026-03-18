@@ -1,0 +1,52 @@
+# 任意ヤコビ積分値における軌道・不変多様体計算設定
+# Orbit and Manifold Computation by Jacobi Integral
+
+[target]
+# 軌道タイプ: "lyapunov" または "halo"
+orbit_type = "halo"
+
+# ラグランジュ点: "L1" または "L2"
+lagrange_point = "L2"
+
+# Halo軌道の場合の分岐: "north" または "south"
+halo_branch = "north"
+
+# 目的のヤコビ積分値
+target_jacobi = 3.0005
+
+[orbit_database]
+# 軌道族CSVファイルのパス
+l1_lyapunov_file = "data/l1_lyapunov_continuation/l1_lyapunov_family.csv"
+l2_lyapunov_file = "data/lyapunov_continuation/l2_lyapunov_family.csv"
+l1_halo_north_file = "data/halo_continuation/l1_halo_north.csv"
+l1_halo_south_file = "data/halo_continuation/l1_halo_south.csv"
+l2_halo_north_file = "data/halo_continuation/l2_halo_north.csv"
+l2_halo_south_file = "data/halo_continuation/l2_halo_south.csv"
+
+[newton_raphson]
+max_iterations = 100
+tolerance = 1e-12
+
+[manifold]
+epsilon = 1e-6
+backward_time = 20.0
+forward_time = 20.0
+num_initial_points = 50
+compute_stable = true
+compute_unstable = true
+
+[integrator]
+timestep = 0.001
+max_integration_time = 50.0
+
+[system]
+# 太陽-地球系の質量パラメータ
+mu = 3.0404233870218e-06
+
+[poincare_section]
+section_var = "y"
+section_value = 0.0
+
+[output]
+output_dir = "data/orbit_manifold_by_jacobi"
+output_velocity_map = true

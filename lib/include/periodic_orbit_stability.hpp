@@ -1,6 +1,21 @@
 /**
  * @file periodic_orbit_stability.hpp
  * @brief モノドロミー行列計算と安定性解析の実装
+ *
+ * @par 理論的背景
+ * 周期軌道の安定性は、状態遷移行列 (STM) \f$ \Phi(t, 0) \f$ を1周期分
+ * 積分したモノドロミー行列 \f$ M = \Phi(T, 0) \f$ の固有値解析により判定する。
+ * STMは変分方程式 \f$ \dot{\Phi} = A(t)\Phi \f$ を満たし、\f$ \Phi(0,0) = I \f$ である。
+ *
+ * @par 参考文献
+ * - [Parker2006] Parker, J.S., Lo, M.W. "Practical Methods for Libration Point
+ *   Orbit Analysis" - STMの数値計算手法
+ * - [Koon2011] Koon, W.S. et al. "Dynamical Systems, the Three-Body Problem
+ *   and Space Mission Design" (Marsden Books, 2011) - Ch.6: 安定性解析
+ * - [Szebehely1967] Szebehely, V. "Theory of Orbits" (Academic Press, 1967)
+ *   Ch.5: 変分方程式の導出
+ * - [Meyer2009] Meyer, K.R. et al. "Introduction to Hamiltonian Dynamical
+ *   Systems" (Springer, 2009) - シンプレクティック構造と固有値制約
  */
 
 #ifndef PERIODIC_ORBIT_STABILITY_HPP
@@ -178,6 +193,29 @@ STMState<ScalarType> operator+(ScalarType scalar, const STMState<ScalarType>& st
 
 /**
  * @brief CR3BPの変分方程式（軌道 + STM）
+ *
+ * @par 変分方程式の構造
+ * 状態遷移行列 \f$ \Phi \f$ の時間発展は、ヤコビ行列 \f$ A(t) \f$ を用いて:
+ * \f[ \frac{d\Phi}{dt} = A(t) \Phi, \quad \Phi(0) = I \f]
+ * ここで \f$ A(t) \f$ は運動方程式のヤコビ行列:
+ * \f[
+ *   A = \begin{pmatrix}
+ *     0_{3\times 3} & I_{3\times 3} \\
+ *     \nabla^2 U & 2\Omega
+ *   \end{pmatrix}
+ * \f]
+ *
+ * @par ポテンシャルのHessian
+ * 有効ポテンシャルの2階偏微分 \f$ \nabla^2 U \f$ の各成分は、
+ * 主天体・副天体からの距離 \f$ r_1, r_2 \f$ を用いて:
+ * \f[
+ *   U_{xx} = 1 - \frac{1-\mu}{r_1^3} - \frac{\mu}{r_2^3}
+ *          + 3(1-\mu)\frac{(x+\mu)^2}{r_1^5} + 3\mu\frac{(x-1+\mu)^2}{r_2^5}
+ * \f]
+ * 等。\f$ 2\Omega \f$ はコリオリ行列 \f$ \Omega = \begin{pmatrix} 0&1&0 \\ -1&0&0 \\ 0&0&0 \end{pmatrix} \f$ である。
+ *
+ * @see [Szebehely1967] Ch.5: 変分方程式の導出
+ * @see [Parker2006] STMの数値積分手法
  */
 template <typename ScalarType>
 class VariationalEquation {
@@ -210,7 +248,7 @@ class VariationalEquation {
         -2.0 * orbit.vx + orbit.y - (1.0 - mu_) * orbit.y * r1_inv3 - mu_ * orbit.y * r2_inv3;
     dsdt.orbit.vz = -(1.0 - mu_) * orbit.z * r1_inv3 - mu_ * orbit.z * r2_inv3;
 
-    // ポテンシャルの2階微分（Hessian）
+    // ポテンシャルの2階微分（Hessian \f$ \nabla^2 U \f$ ）
     ScalarType Uxx = 1.0 - (1.0 - mu_) * r1_inv3 - mu_ * r2_inv3 +
                      3.0 * (1.0 - mu_) * x1 * x1 * r1_inv5 + 3.0 * mu_ * x2 * x2 * r2_inv5;
     ScalarType Uyy = 1.0 - (1.0 - mu_) * r1_inv3 - mu_ * r2_inv3 +
@@ -226,10 +264,9 @@ class VariationalEquation {
     ScalarType Uyz =
         3.0 * (1.0 - mu_) * orbit.y * orbit.z * r1_inv5 + 3.0 * mu_ * orbit.y * orbit.z * r2_inv5;
 
-    // STMの時間微分: d(Φ)/dt = A(t) * Φ
-    // A = [  0    I  ]
-    //     [ ∇²U  2Ω ]
-    // where Ω = [0 1 0; -1 0 0; 0 0 0]
+    // STMの時間微分: \f$ d\Phi/dt = A(t) \cdot \Phi \f$
+    // \f$ A = \begin{pmatrix} 0 & I \\ \nabla^2 U & 2\Omega \end{pmatrix} \f$
+    // \f$ \Omega = \begin{pmatrix} 0&1&0 \\ -1&0&0 \\ 0&0&0 \end{pmatrix} \f$
 
     std::array<std::array<ScalarType, 6>, 6> A_Phi;
     for (int i = 0; i < 6; ++i) {
@@ -330,6 +367,16 @@ ScalarType PowerMethod(const std::array<std::array<ScalarType, 6>, 6>& matrix, i
 
 /**
  * @brief 安定性解析の実装（Eigenライブラリによる完全固有値計算）
+ *
+ * @par 安定性判定基準
+ * ハミルトン系ではモノドロミー行列はシンプレクティックであり、
+ * 固有値は逆数ペア \f$ (\lambda, 1/\lambda) \f$ で現れる。
+ * 安定性の判定: 全ての固有値が \f$ |\lambda_i| \leq 1 \f$ を満たすとき安定 (SPO)。
+ * \f$ |\lambda_i| > 1 \f$ の固有値が存在するとき不安定 (UPO) となり、
+ * 対応する固有ベクトル方向に不安定多様体 \f$ W^u \f$ が存在する。
+ *
+ * @see [Meyer2009] ハミルトン系のシンプレクティック構造と固有値制約
+ * @see [Koon2011] Ch.6: 周期軌道の安定性指数
  */
 template <typename ScalarType>
 void AnalyzeStabilityImpl(PeriodicOrbit<ScalarType>* orbit, ScalarType eigenvalue_threshold) {
@@ -373,9 +420,21 @@ void AnalyzeStabilityImpl(PeriodicOrbit<ScalarType>* orbit, ScalarType eigenvalu
 
 /**
  * @brief 分岐方向ベクトルを抽出
- * @details ピッチフォーク分岐（λ=+1）の固有ベクトルを返す
+ * @details ピッチフォーク分岐（\f$ \lambda = +1 \f$ 通過）の固有ベクトルを返す。
+ *
+ * @par 物理的意味
+ * Lyapunov軌道族の継続過程でモノドロミー行列の固有値が \f$ +1 \f$ を
+ * 通過するとき、ピッチフォーク分岐が発生し、新たな軌道族（Halo軌道）が
+ * 分岐する。\f$ \lambda = +1 \f$ に対応する固有ベクトルはz成分を持ち、
+ * この方向への摂動がHalo軌道の生成に用いられる。
+ *
  * @param orbit 分岐点の周期軌道（モノドロミー行列計算済み）
- * @return z成分を持つ分岐方向ベクトル (6次元)
+ * @return z成分を持つ分岐方向ベクトル (6次元、正規化済み)
+ *
+ * @see [Doedel2007] Doedel, E.J. et al. "Elemental Periodic Orbits Associated
+ *   with the Libration Points in the CR3BP" (Int. J. Bifurcation Chaos, 17, 2007)
+ * @see [Howell1984] Howell, K.C. "Three-Dimensional, Periodic, 'Halo' Orbits"
+ *   (Celestial Mechanics, 32, 53-71, 1984) DOI:10.1007/BF01358403
  */
 template <typename ScalarType>
 std::array<ScalarType, 6> ComputeBifurcationEigenvector(const PeriodicOrbit<ScalarType>& orbit) {

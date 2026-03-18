@@ -1,8 +1,31 @@
 /**
  * @file continuation.hpp
  * @brief 数値的継続法ライブラリ
- * @details 周期軌道族の系統的探索のための擬似弧長継続法・自然パラメータ継続法
- *          研究計画書 Step 1-2, 1-3 に対応
+ * @details 周期軌道族の系統的探索のための擬似弧長継続法・自然パラメータ継続法。
+ *
+ * @par 理論的背景
+ * 数値的継続法は、パラメータ空間中の解曲線を追跡する手法である。
+ * 周期軌道族の探索では、初期条件を少しずつ変化させながら
+ * Newton法で新たな周期軌道を次々と見つけていく。
+ * 主に2つのアプローチが存在する:
+ *
+ * 1. **自然パラメータ継続法**: 物理量（振幅等）を直接変化させる。
+ *    単純だが解曲線の折り返し点 (turning point) で失敗する。
+ * 2. **擬似弧長継続法**: 解曲線の接線方向に沿って予測し、
+ *    弧長条件付きNewton法で補正する。折り返し点も追跡可能。
+ *
+ * @par 参考文献
+ * - [Keller1977] Keller, H.B. "Numerical Solution of Bifurcation and Nonlinear
+ *   Eigenvalue Problems" (Academic Press, 1977) - 擬似弧長継続法の原著
+ * - [Seydel2010] Seydel, R. "Practical Bifurcation and Stability Analysis"
+ *   (Springer, 3rd ed., 2010) - Ch.4-5: 継続法の実装、Ch.8: 分岐検出
+ * - [Doedel2007] Doedel, E.J. et al. "Elemental Periodic Orbits Associated
+ *   with the Libration Points in the CR3BP" (Int. J. Bifurcation Chaos, 17, 2007)
+ * - [Howell1984] Howell, K.C. "Three-Dimensional, Periodic, 'Halo' Orbits"
+ *   (Celestial Mechanics, 32, 53-71, 1984) DOI:10.1007/BF01358403
+ * - [Breakwell1979] Breakwell, J.V., Brown, J.V. "The 'Halo' Family of
+ *   3-Dimensional Periodic Orbits" (Celestial Mechanics, 20, 1979)
+ *
  * @date 2026-01-01
  */
 
@@ -368,6 +391,14 @@ class OrbitContinuator {
 
   /**
    * @brief 自然パラメータ継続法
+   *
+   * @par アルゴリズム
+   * 物理的パラメータ（振幅）を直接変化させ、各ステップで
+   * Newton法による周期軌道の精密化を行う。
+   * 単純な方法だが、解曲線がパラメータ空間で折り返す
+   * （turning point）ときに失敗するのが欠点。
+   *
+   * @see [Seydel2010] Ch.4: 自然パラメータ継続法とその限界
    */
   void ContinueNaturalParameter(PeriodicOrbitFamily<ScalarType>* family) {
     current_step_size_ = config_.initial_step_size;
@@ -465,6 +496,19 @@ class OrbitContinuator {
 
   /**
    * @brief 擬似弧長継続法
+   *
+   * @par アルゴリズム
+   * 解曲線の接線方向（前の2軌道の差分から推定）に沿って次の解を予測し、
+   * Newton法で補正する。接線予測により、解曲線がパラメータ
+   * 空間で折り返す（turning point）場合も追跡できる。
+   * これはKeller (1977) により提案された手法である。
+   *
+   * @par 接線ベクトル
+   * 5次元空間 \f$ (x_0, z_0, \dot{y}_0, T, C_J) \f$ での接線方向を
+   * 前の2軌道の差分から正規化して推定する。
+   *
+   * @see [Keller1977] Keller, H.B. "擬似弧長継続法の原著"
+   * @see [Seydel2010] Ch.5: 擬似弧長継続法の実装と収束性
    */
   void ContinuePseudoArclength(PeriodicOrbitFamily<ScalarType>* family) {
     current_step_size_ = config_.initial_step_size;
@@ -716,6 +760,21 @@ class OrbitContinuator {
 
   /**
    * @brief 分岐点を検出
+   *
+   * @par 検出される分岐の種類
+   * - **ピッチフォーク分岐**: 固有値が \f$ +1 \f$ を通過。
+   *   Lyapunov族からHalo族が分岐する。
+   * - **周期倍分岐**: 固有値が \f$ -1 \f$ を通過。
+   *   周期が倍になる新たな族が分岐する。
+   * - **ネイマーク・サッカー分岐**: 複素固有値ペアが単位円を通過。
+   *   準周期トーラスが発生する。
+   *
+   * @par 検出方法
+   * 前後の軌道のモノドロミー行列固有値を比較し、
+   * 臨界値（\f$ +1, -1, \f$ または単位円）の通過を符号変化で検出する。
+   *
+   * @see [Seydel2010] Ch.8: 分岐検出の数値手法
+   * @see [Doedel2007] CR3BPにおける分岐構造の分類
    */
   BifurcationPoint<ScalarType> DetectBifurcation(const PeriodicOrbit<ScalarType>& prev_orbit,
                                                  const PeriodicOrbit<ScalarType>& curr_orbit,

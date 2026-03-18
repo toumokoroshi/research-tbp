@@ -1,0 +1,40 @@
+# ChaosIndicator 設定ファイル
+# velocity_mapからSALI/GALIを計算
+
+[input]
+# 入力モード: "velocity_map" or "coords"
+mode = "velocity_map"
+# velocity_mapファイルパス
+velocity_map_file = "data/stable_manifold/stable_manifold/26_0127_1054_L2_halo_north/velocity_map.csv"
+# サンプリング間隔 (1=全点使用)
+sample_step = 1
+# 最大点数 (0=制限なし)
+max_points = 0
+
+[integration]
+# 積分時間（無次元）
+duration = 5.0
+# タイムステップ（無次元）
+timestep = 0.00001
+# 積分器: "SYMPLECTIC6", "SYMPLECTIC4"
+integrator = "SYMPLECTIC6"
+
+[sali]
+# カオス指標タイプ: "SALI", "GALI2", "GALI4", "GALI6"
+index_type = "SALI"
+# カオス判定閾値
+threshold = 1e-8
+# 時系列出力間隔
+output_interval = 1.0
+
+[output]
+# 出力ディレクトリ
+output_dir = "data/chaos_indicator"
+# 時系列データ出力
+save_timeseries = true
+# サマリーのみ出力
+summary_only = true
+
+[physics]
+# 質量パラメータ (Sun-Earth)
+mu = 3.003480575402412e-06

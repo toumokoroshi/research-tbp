@@ -32,6 +32,8 @@ struct SaliOutputRow {
   int collision;
   int escape;
   double lower_limit_reach_time;
+  double sali_avg;
+  double sali_max;  // 後半1/4区間の最大値
 };
 
 bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row);
@@ -372,7 +374,8 @@ int main(int argc, char* argv[]) {
     ofs1 << "# LONGTITUDE AGAINST X AXIS=" << OMEGA / std::acos(-1) * 180. << std::endl;
     ofs1 << "# DEGREE FROM TANGENT(deg)=" << THETA / std::acos(-1) * 180. << std::endl;
     ofs1 << "# SALI LOWER LIMIT=" << SALI_LOWER_LIMIT << std::endl;
-    ofs1 << "Time,SALI,x,y,z,px,py,pz,collision,escape,lower_limit_reach_time\n";
+    ofs1 << "# SALI_AVG/MAX WINDOW=last 1/4 of integration time" << std::endl;
+    ofs1 << "Time,SALI,x,y,z,px,py,pz,collision,escape,lower_limit_reach_time,sali_avg,sali_max\n";
 
     // 計算のステップ数
     int num_step = static_cast<int>(SALI_CALCTIME_THRESHOLD / CALC_TIMESTEP);
@@ -396,6 +399,8 @@ int main(int argc, char* argv[]) {
         int mesh_num = idx + 1;
         bool velo_err = 0;
         double sali = -1;
+        double sali_avg = -1;
+        double sali_max = -1;
         double vx = 0.0, vy = 0.0, vz = 0.0;
         int collision_flag = 0;
         int escape_flag = 0;
@@ -451,6 +456,12 @@ int main(int argc, char* argv[]) {
             current_state_ptr = &gali6_state.state;
           }
 
+          // 時間平均SALI用の累積変数
+          int avg_start = num_step * 3 / 4;  // 後半1/4から平均化開始
+          double sali_sum = 0.0;
+          int sali_count = 0;
+          double sali_max_local = -1.0;  // 後半1/4区間の最大値
+
           // 積分ループ (オブザーバー無し)
           for (int step = 0; step < num_step; ++step) {
             if (chaos_index_type == ChaosIndexType::SALI ||
@@ -474,6 +485,15 @@ int main(int argc, char* argv[]) {
               current_state_ptr = &gali6_state.state;
             }
 
+            // 後半1/4でSALI平均を累積
+            if (step >= avg_start && sali >= 0) {
+              sali_sum += sali;
+              sali_count++;
+              if (sali > sali_max_local) {
+                sali_max_local = sali;
+              }
+            }
+
             if ((sali < SALI_LOWER_LIMIT) && lower_limit_reach_flag == 0) {
               lower_limit_reach_time = step * CALC_TIMESTEP;
               lower_limit_reach_flag = 1;
@@ -490,11 +510,13 @@ int main(int argc, char* argv[]) {
               }
             }
           }
+          sali_avg = (sali_count > 0) ? sali_sum / sali_count : sali;
+          sali_max = (sali_max_local >= 0) ? sali_max_local : sali;
         }
         local_output_buffer << mesh_num << "," << sali << "," << point.x << "," << point.y << ","
                             << point.z << "," << vx << "," << vy << "," << vz << ","
                             << collision_flag << "," << escape_flag << "," << lower_limit_reach_time
-                            << "\n";
+                            << "," << sali_avg << "," << sali_max << "\n";
         // 一定件数ごとにバッファをファイルに書き込む (排他制御)
         if (idx % kWriteInterval == 0) {
 #pragma omp critical(file_write)
@@ -583,7 +605,7 @@ bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
     fields.push_back(token);
   }
 
-  if (fields.size() != 11) {
+  if (fields.size() < 11 || fields.size() > 13) {
     return false;
   }
 
@@ -599,6 +621,8 @@ bool ParseSaliDataLine(const std::string& line, SaliOutputRow* output_row) {
     output_row->collision = std::stoi(fields[8]);
     output_row->escape = std::stoi(fields[9]);
     output_row->lower_limit_reach_time = std::stod(fields[10]);
+    output_row->sali_avg = (fields.size() >= 12) ? std::stod(fields[11]) : output_row->sali;
+    output_row->sali_max = (fields.size() >= 13) ? std::stod(fields[12]) : output_row->sali;
   } catch (const std::exception&) {
     return false;
   }
@@ -670,7 +694,8 @@ bool WriteSaliOutputsSortedByValue(const std::string& input_filename,
   for (const auto& row : rows) {
     output << row.mesh_num << "," << row.sali << "," << row.x << "," << row.y << "," << row.z << ","
            << row.vx << "," << row.vy << "," << row.vz << "," << row.collision << "," << row.escape
-           << "," << row.lower_limit_reach_time << "\n";
+           << "," << row.lower_limit_reach_time << "," << row.sali_avg << "," << row.sali_max
+           << "\n";
   }
 
   *sorted_output_filename = sorted_path.string();
