@@ -8,8 +8,10 @@ rem Usage: tools\setup.bat [options]
 rem 
 rem Options:
 rem   --unattended, -y    Non-interactive mode (auto-install all)
-rem   --with-oneapi       Install Intel oneAPI (skipped by default in unattended)
+rem   --with-oneapi       Install Intel oneAPI (default behavior)
+rem   --without-oneapi    Skip Intel oneAPI installation
 rem   --skip-python       Skip Python environment setup
+rem   --python-venv       Install Python dependencies into .venv
 rem   --skip-test         Skip running tests after build
 rem   --help, -h          Show this help message
 rem 
@@ -26,8 +28,9 @@ rem ---------------------------------------------
 rem Parse command line arguments
 rem ---------------------------------------------
 set "UNATTENDED=0"
-set "WITH_ONEAPI=0"
+set "WITH_ONEAPI=1"
 set "SKIP_PYTHON=0"
+set "PYTHON_VENV=0"
 set "SKIP_TEST=0"
 
 :parse_args
@@ -35,7 +38,9 @@ if "%~1"=="" goto :args_done
 if /i "%~1"=="--unattended" set "UNATTENDED=1" & shift & goto :parse_args
 if /i "%~1"=="-y" set "UNATTENDED=1" & shift & goto :parse_args
 if /i "%~1"=="--with-oneapi" set "WITH_ONEAPI=1" & shift & goto :parse_args
+if /i "%~1"=="--without-oneapi" set "WITH_ONEAPI=0" & shift & goto :parse_args
 if /i "%~1"=="--skip-python" set "SKIP_PYTHON=1" & shift & goto :parse_args
+if /i "%~1"=="--python-venv" set "PYTHON_VENV=1" & shift & goto :parse_args
 if /i "%~1"=="--skip-test" set "SKIP_TEST=1" & shift & goto :parse_args
 if /i "%~1"=="--help" goto :show_help
 if /i "%~1"=="-h" goto :show_help
@@ -49,15 +54,18 @@ echo Usage: tools\setup.bat [options]
 echo.
 echo Options:
 echo   --unattended, -y    Non-interactive mode (auto-install all)
-echo   --with-oneapi       Install Intel oneAPI (best performance, takes 10-30 min)
+echo   --with-oneapi       Install Intel oneAPI (default, best performance)
+echo   --without-oneapi    Skip Intel oneAPI installation
 echo   --skip-python       Skip Python environment setup
+echo   --python-venv       Install Python dependencies into .venv
 echo   --skip-test         Skip running tests after build
 echo   --help, -h          Show this help message
 echo.
 echo Examples:
 echo   tools\setup.bat                    Interactive setup
-echo   tools\setup.bat --unattended       Fully automated setup (uses MinGW)
-echo   tools\setup.bat -y --with-oneapi   Auto setup with Intel oneAPI
+echo   tools\setup.bat --unattended       Fully automated setup (oneAPI preferred)
+echo   tools\setup.bat -y --without-oneapi Auto setup without Intel oneAPI
+echo   tools\setup.bat -y --python-venv   Auto setup with isolated Python env
 echo   tools\setup.bat -y --skip-test     Auto setup without tests
 echo.
 exit /b 0
@@ -176,9 +184,12 @@ if "!UNATTENDED!"=="1" (
     if "!ONEAPI_AVAILABLE!"=="1" (
         echo [AUTO] Selecting Intel oneAPI + Ninja
         goto :use_oneapi
+    ) else if "!HAS_MINGW!"=="1" if "!HAS_NINJA!"=="1" (
+        echo [AUTO] Selecting MinGW-gcc + Ninja (Intel oneAPI not available)
+        goto :use_mingw_ninja
     ) else if "!HAS_MINGW!"=="1" (
-        echo [AUTO] Selecting MinGW-gcc (Intel oneAPI not available)
-        goto :use_mingw
+        echo [AUTO] Selecting MinGW-gcc + MinGW Makefiles (Ninja not available)
+        goto :use_mingw_make
     ) else (
         goto :no_compiler
     )
@@ -189,18 +200,24 @@ if "!ONEAPI_AVAILABLE!"=="1" if "!HAS_MINGW!"=="1" (
     rem Both options available - ask user
     echo Available build configurations:
     echo   1. Intel oneAPI + Ninja [Recommended]
-    echo   2. MinGW-gcc + Ninja [Alternative]
+    if "!HAS_NINJA!"=="1" (
+        echo   2. MinGW-gcc + Ninja [Alternative]
+    ) else (
+        echo   2. MinGW-gcc + MinGW Makefiles [No Ninja required]
+    )
     echo.
     set /p "BUILD_CHOICE=Select configuration [1 or 2]: "
 )
 
 rem Process choice using GOTO to avoid nested if parsing issues
 if "!ONEAPI_AVAILABLE!"=="0" if "!HAS_MINGW!"=="0" goto :no_compiler
-if "!ONEAPI_AVAILABLE!"=="0" goto :use_mingw
+if "!ONEAPI_AVAILABLE!"=="0" if "!HAS_NINJA!"=="1" goto :use_mingw_ninja
+if "!ONEAPI_AVAILABLE!"=="0" goto :use_mingw_make
 if "!HAS_MINGW!"=="0" goto :use_oneapi
 
 rem Both available - check user choice
-if "!BUILD_CHOICE!"=="2" goto :use_mingw
+if "!BUILD_CHOICE!"=="2" if "!HAS_NINJA!"=="1" goto :use_mingw_ninja
+if "!BUILD_CHOICE!"=="2" goto :use_mingw_make
 goto :use_oneapi
 
 :use_oneapi
@@ -209,9 +226,15 @@ set "BUILD_PRESET=ninja-intel"
 set "USE_ONEAPI=1"
 goto :compiler_selected
 
-:use_mingw
-echo Using MinGW-gcc configuration.
+:use_mingw_ninja
+echo Using MinGW-gcc + Ninja configuration.
 set "BUILD_PRESET=mingw-gcc"
+set "USE_ONEAPI=0"
+goto :compiler_selected
+
+:use_mingw_make
+echo Using MinGW-gcc + MinGW Makefiles configuration.
+set "BUILD_PRESET=mingw-gcc-make"
 set "USE_ONEAPI=0"
 goto :compiler_selected
 
@@ -301,7 +324,11 @@ if "!USE_ONEAPI!"=="1" (
         echo [WARNING] Failed to set up oneAPI environment.
         echo           Falling back to MinGW-gcc if available.
         if "!HAS_MINGW!"=="1" (
-            set "BUILD_PRESET=mingw-gcc"
+            if "!HAS_NINJA!"=="1" (
+                set "BUILD_PRESET=mingw-gcc"
+            ) else (
+                set "BUILD_PRESET=mingw-gcc-make"
+            )
             set "USE_ONEAPI=0"
         ) else (
             echo [ERROR] No fallback compiler available.
@@ -389,14 +416,43 @@ if "!SKIP_PYTHON!"=="0" (
         echo [SKIP] Python is not installed. Skipping Python setup.
     ) else (
         if exist "!PROJECT_ROOT!\scripts\requirements.txt" (
-            echo Installing Python dependencies...
-            python -m pip install -r "!PROJECT_ROOT!\scripts\requirements.txt" --quiet
-            if errorlevel 1 (
-                echo [WARNING] Failed to install some Python packages.
-                echo          You can install them manually later:
-                echo          pip install -r scripts\requirements.txt
+            if "!PYTHON_VENV!"=="1" (
+                set "VENV_DIR=!PROJECT_ROOT!\.venv"
+                if not exist "!VENV_DIR!\Scripts\python.exe" (
+                    echo Creating virtual environment: !VENV_DIR!
+                    python -m venv "!VENV_DIR!"
+                )
+                if exist "!VENV_DIR!\Scripts\python.exe" (
+                    echo Installing Python dependencies into .venv...
+                    "!VENV_DIR!\Scripts\python.exe" -m pip install -r "!PROJECT_ROOT!\scripts\requirements.txt" --quiet
+                    if errorlevel 1 (
+                        echo [WARNING] Failed to install some Python packages in .venv.
+                        echo          You can install them manually later:
+                        echo          .venv\Scripts\python -m pip install -r scripts\requirements.txt
+                    ) else (
+                        echo [OK] Python dependencies installed in .venv.
+                    )
+                ) else (
+                    echo [WARNING] Failed to create .venv. Falling back to global pip.
+                    python -m pip install -r "!PROJECT_ROOT!\scripts\requirements.txt" --quiet
+                    if errorlevel 1 (
+                        echo [WARNING] Failed to install some Python packages.
+                        echo          You can install them manually later:
+                        echo          pip install -r scripts\requirements.txt
+                    ) else (
+                        echo [OK] Python dependencies installed.
+                    )
+                )
             ) else (
-                echo [OK] Python dependencies installed.
+                echo Installing Python dependencies...
+                python -m pip install -r "!PROJECT_ROOT!\scripts\requirements.txt" --quiet
+                if errorlevel 1 (
+                    echo [WARNING] Failed to install some Python packages.
+                    echo          You can install them manually later:
+                    echo          pip install -r scripts\requirements.txt
+                ) else (
+                    echo [OK] Python dependencies installed.
+                )
             )
         ) else (
             echo [SKIP] No requirements.txt found.
